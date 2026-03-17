@@ -1,0 +1,117 @@
+module zltris.theme;
+
+struct Theme {
+    bg_outer u32,
+    bg_inner u32,
+    panel_bg u32,
+    panel_stroke u32,
+    board_bg u32,
+    board_grid u32,
+    text_main u32,
+    text_muted u32,
+    piece_i u32,
+    piece_o u32,
+    piece_t u32,
+    piece_j u32,
+    piece_l u32,
+    piece_s u32,
+    piece_z u32,
+}
+
+fun themeRgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
+    return (r as u32) |
+           ((g as u32) << 8) |
+           ((b as u32) << 16) |
+           ((a as u32) << 24);
+}
+
+fun themeCount() >> i32 { return 3; }
+
+fun themeName(index: i32) >> ptr<u8> {
+    if (index == 1) {
+        return "Synth Pulse";
+    }
+    if (index == 2) {
+        return "Night Circuit";
+    }
+    return "ZLang Neon";
+}
+
+fun setTheme(index: i32) >> Theme {
+    i32 idx = index;
+    if (idx < 0) {
+        idx = 0;
+    }
+    if (idx >= themeCount()) {
+        idx = themeCount() - 1;
+    }
+
+    if (idx == 1) {
+        return Theme{
+            bg_outer = themeRgba(14, 3, 34, 255),
+            bg_inner = themeRgba(55, 12, 120, 255),
+            panel_bg = themeRgba(22, 6, 58, 255),
+            panel_stroke = themeRgba(255, 72, 214, 255),
+            board_bg = themeRgba(30, 8, 72, 255),
+            board_grid = themeRgba(255, 72, 214, 104),
+            text_main = themeRgba(255, 231, 250, 255),
+            text_muted = themeRgba(255, 154, 235, 255),
+            piece_i = themeRgba(255, 118, 238, 255),
+            piece_o = themeRgba(255, 176, 238, 255),
+            piece_t = themeRgba(212, 88, 255, 255),
+            piece_j = themeRgba(178, 74, 245, 255),
+            piece_l = themeRgba(255, 105, 215, 255),
+            piece_s = themeRgba(250, 84, 196, 255),
+            piece_z = themeRgba(255, 54, 154, 255),
+        };
+    }
+
+    if (idx == 2) {
+        return Theme{
+            bg_outer = themeRgba(12, 4, 38, 255),
+            bg_inner = themeRgba(43, 10, 108, 255),
+            panel_bg = themeRgba(18, 7, 63, 255),
+            panel_stroke = themeRgba(156, 90, 255, 255),
+            board_bg = themeRgba(28, 8, 76, 255),
+            board_grid = themeRgba(156, 90, 255, 104),
+            text_main = themeRgba(243, 226, 255, 255),
+            text_muted = themeRgba(196, 151, 255, 255),
+            piece_i = themeRgba(176, 120, 255, 255),
+            piece_o = themeRgba(211, 151, 255, 255),
+            piece_t = themeRgba(156, 90, 255, 255),
+            piece_j = themeRgba(125, 71, 230, 255),
+            piece_l = themeRgba(190, 117, 255, 255),
+            piece_s = themeRgba(143, 81, 237, 255),
+            piece_z = themeRgba(225, 133, 255, 255),
+        };
+    }
+
+    return Theme{
+        bg_outer = themeRgba(5, 1, 24, 255),
+        bg_inner = themeRgba(31, 5, 82, 255),
+        panel_bg = themeRgba(6, 0, 35, 255),
+        panel_stroke = themeRgba(117, 48, 226, 255),
+        board_bg = themeRgba(31, 5, 82, 255),
+        board_grid = themeRgba(117, 48, 226, 114),
+        text_main = themeRgba(236, 222, 255, 255),
+        text_muted = themeRgba(180, 142, 255, 255),
+        piece_i = themeRgba(158, 94, 244, 255),
+        piece_o = themeRgba(190, 120, 242, 255),
+        piece_t = themeRgba(117, 48, 226, 255),
+        piece_j = themeRgba(98, 52, 204, 255),
+        piece_l = themeRgba(137, 76, 236, 255),
+        piece_s = themeRgba(111, 75, 235, 255),
+        piece_z = themeRgba(173, 116, 255, 255),
+    };
+}
+
+fun switchTheme(current_index: i32, direction: i32) >> i32 {
+    i32 idx = current_index + direction;
+    if (idx < 0) {
+        return themeCount() - 1;
+    }
+    if (idx >= themeCount()) {
+        return 0;
+    }
+    return idx;
+}

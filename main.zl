@@ -1,0 +1,1908 @@
+module zltris;
+use raylib
+use std.io
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.theme
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define VISIBLE_H 20
+#define HIDDEN_ROWS 2
+#define CELL 32
+#define BOARD_CELLS 220
+#define PREVIEW_COUNT 5
+#define QUEUE_CAP 14
+#define BAG_SIZE 7
+
+#define WINDOW_W 960
+#define WINDOW_H 920
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+#define BOARD_LEFT 48
+#define BOARD_TOP 82
+#define SIDEBAR_X 422
+
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
+#define PIECE_Z 6
+
+#define SCREEN_MENU 0
+#define SCREEN_GAME 1
+#define SCREEN_SETTINGS 2
+
+#define MODE_FREE_PLAY 0
+#define MODE_40_LINES 1
+
+#define ROUND_RUNNING 0
+#define ROUND_COUNTDOWN 1
+#define ROUND_FINISHED 2
+
+arr<i32, BOARD_CELLS> g_board = {0};
+arr<i32, QUEUE_CAP> g_queue = {0};
+arr<i32, BAG_SIZE> g_bag = {0};
+
+i32 g_piece_kind = PIECE_T;
+i32 g_piece_rotation = 0;
+i32 g_piece_x = 3;
+i32 g_piece_y = 0;
+i32 g_hold_kind = -1;
+bool g_hold_used = false;
+
+i32 g_queue_count = 0;
+i32 g_bag_pos = BAG_SIZE;
+i32 g_score = 0;
+i32 g_lines = 0;
+i32 g_theme_index = 0;
+
+f32 g_gravity_timer = 0.0;
+f32 g_soft_timer = 0.0;
+f32 g_lock_timer = 0.0;
+f32 g_shift_hold_timer = 0.0;
+f32 g_shift_repeat_timer = 0.0;
+f32 g_dcd_timer = 0.0;
+
+i32 g_shift_dir = 0;
+i32 g_last_horizontal_press = 0;
+
+f32 g_arr_frames = 1.4;
+f32 g_das_frames = 6.9;
+f32 g_dcd_frames = 2.0;
+f32 g_sdf_multiplier = 14.0;
+
+bool g_game_over = false;
+bool g_debug_colors = false;
+i32 g_screen = SCREEN_MENU;
+i32 g_settings_return_screen = SCREEN_MENU;
+bool g_double_row_ui = true;
+bool g_instant_restart = false;
+i32 g_game_mode = MODE_FREE_PLAY;
+i32 g_round_state = ROUND_RUNNING;
+f32 g_mode_timer = 0.0;
+f32 g_countdown_timer = 0.0;
+f32 g_restart_charge = 0.0;
+bool g_restart_hold_latched = false;
+
+fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
+    return (r as u32) |
+           ((g as u32) << 8) |
+           ((b as u32) << 16) |
+           ((a as u32) << 24);
+}
+
+fun currentTheme() >> Theme { return setTheme(g_theme_index); }
+
+fun toColor(color_rgba: u32) >> Color {
+    return Color{
+        r = (color_rgba & 255) as u8,
+        g = ((color_rgba >> 8) & 255) as u8,
+        b = ((color_rgba >> 16) & 255) as u8,
+        a = ((color_rgba >> 24) & 255) as u8,
+    };
+}
+
+fun handlingFramesToSeconds(frames: f32) >> f32 {
+    return frames / 60.0;
+}
+
+fun handlingArrSeconds() >> f32 {
+    return handlingFramesToSeconds(g_arr_frames);
+}
+
+fun handlingDasSeconds() >> f32 {
+    return handlingFramesToSeconds(g_das_frames);
+}
+
+fun handlingDcdSeconds() >> f32 {
+    return handlingFramesToSeconds(g_dcd_frames);
+}
+
+fun canUseDoubleRowLayout() >> bool {
+    if (!g_double_row_ui) {
+        return false;
+    }
+    i32 free_px = GetScreenWidth() - uiS(UI_BASE_W);
+    return free_px >= uiS(210);
+}
+
+fun isFortyLinesMode() >> bool {
+    return g_game_mode == MODE_40_LINES;
+}
+
+fun startGameMode(mode: i32) >> void {
+    g_game_mode = mode;
+    resetGame();
+    g_mode_timer = 0.0;
+    g_restart_charge = 0.0;
+    g_restart_hold_latched = false;
+    if (isFortyLinesMode()) {
+        g_round_state = ROUND_COUNTDOWN;
+        g_countdown_timer = 4.0;
+    } else {
+        g_round_state = ROUND_RUNNING;
+        g_countdown_timer = 0.0;
+    }
+}
+
+fun restartStripeTopScreen() >> i32 {
+    i32 screen_h = GetScreenHeight();
+    i32 top_target = uiY(852);
+    i32 top = (screen_h as f32 - ((screen_h - top_target) as f32) * g_restart_charge) as i32;
+    if (top < 0) {
+        top = 0;
+    }
+    return top;
+}
+
+fun restartHintAlpha() >> f32 {
+    if (g_restart_charge <= 0.0) {
+        return 1.0;
+    }
+    f32 stripe_top = restartStripeTopScreen() as f32;
+    f32 hint_y = uiY(831) as f32;
+    f32 fade_zone = uiS(180) as f32;
+    f32 dist = stripe_top - hint_y;
+    f32 a = dist / fade_zone;
+    if (a < 0.0) {
+        a = 0.0;
+    }
+    if (a > 1.0) {
+        a = 1.0;
+    }
+    return a;
+}
+
+fun drawRestartCharge(font: Font, theme: Theme) >> void {
+    if (g_restart_charge <= 0.0) {
+        return;
+    }
+
+    i32 top = restartStripeTopScreen();
+
+    f32 top_alpha = 0.26 + g_restart_charge * 0.44;
+    if (top_alpha > 0.86) {
+        top_alpha = 0.86;
+    }
+    u32 top_color = alphaColor(theme.panel_stroke, top_alpha);
+    u32 bottom_color = alphaColor(shadeColor(theme.bg_outer, 0.46), 0.92);
+    DrawRectangleGradientV(0, top, GetScreenWidth(), GetScreenHeight() - top, toColor(top_color), toColor(bottom_color));
+    DrawRectangle(0, top - 2, GetScreenWidth(), 2, toColor(alphaColor(theme.text_main, 0.52)));
+
+    ptr<u8> hint = "Hold for restart";
+    f32 hint_size = uiS(12) as f32;
+    Vector2 m = MeasureTextExSize(font, hint, hint_size, 0.0 as f32);
+    f32 tx = ((GetScreenWidth() as f32) - m.x) * 0.5;
+    f32 ty = (top as f32) + uiS(8) as f32;
+    f32 hint_alpha = 0.62 as f32 + g_restart_charge * (0.28 as f32);
+    DrawTextExXY(font, hint, tx, ty, hint_size, 0.0 as f32, toColor(alphaColor(theme.text_main, hint_alpha)));
+}
+
+fun updateRestartCharge(dt: f32) >> bool {
+    bool r_down = IsKeyDown(KEY_R);
+    if (!r_down) {
+        g_restart_hold_latched = false;
+    }
+
+    if (r_down && g_restart_hold_latched) {
+        return false;
+    }
+
+    if (r_down) {
+        g_restart_charge += dt / 1.04;
+        if (g_restart_charge >= 1.0) {
+            g_restart_charge = 1.0;
+            g_restart_hold_latched = true;
+            startGameMode(g_game_mode);
+            return true;
+        }
+        return false;
+    }
+
+    if (g_restart_charge > 0.0) {
+        g_restart_charge -= dt / 0.64;
+        if (g_restart_charge < 0.0) {
+            g_restart_charge = 0.0;
+        }
+    }
+    return false;
+}
+
+fun canShowHoldRestartEffect() >> bool {
+    if (g_instant_restart) {
+        return false;
+    }
+    if (g_game_over) {
+        return false;
+    }
+    if (isFortyLinesMode() && g_round_state != ROUND_RUNNING) {
+        return false;
+    }
+    return true;
+}
+
+fun applyDcd() >> void {
+    g_dcd_timer = handlingDcdSeconds();
+}
+
+fun alphaColor(base: u32, alpha: f32) >> u32 {
+    i32 a = ((base >> 24) & 255) as i32;
+    i32 scaled = ((a as f32) * alpha) as i32;
+    if (scaled < 0) {
+        scaled = 0;
+    }
+    if (scaled > 255) {
+        scaled = 255;
+    }
+    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
+}
+
+fun shadeColor(base: u32, factor: f32) >> u32 {
+    i32 r = (((base & 255) as i32) as f32 * factor) as i32;
+    i32 g = ((((base >> 8) & 255) as i32) as f32 * factor) as i32;
+    i32 b = ((((base >> 16) & 255) as i32) as f32 * factor) as i32;
+    i32 a = ((base >> 24) & 255) as i32;
+
+    if (r < 0) {
+        r = 0;
+    }
+    if (g < 0) {
+        g = 0;
+    }
+    if (b < 0) {
+        b = 0;
+    }
+    if (r > 255) {
+        r = 255;
+    }
+    if (g > 255) {
+        g = 255;
+    }
+    if (b > 255) {
+        b = 255;
+    }
+
+    return ((r as u32) & 255) |
+           (((g as u32) & 255) << 8) |
+           (((b as u32) & 255) << 16) |
+           (((a as u32) & 255) << 24);
+}
+
+fun colorR(color: u32) >> i32 { return (color & 255) as i32; }
+fun colorG(color: u32) >> i32 { return ((color >> 8) & 255) as i32; }
+fun colorB(color: u32) >> i32 { return ((color >> 16) & 255) as i32; }
+
+fun printColorDebug(theme: Theme) >> void {
+    printf("[zltris] color debug theme=%s index=%d\n", themeName(g_theme_index), g_theme_index);
+    for i32 i = 0; i < 7; i++ {
+        u32 c = pieceColor(theme, i);
+        printf("[zltris] kind=%d hex=0x%08X rgb=(%d,%d,%d)\n", i, c, colorR(c), colorG(c), colorB(c));
+    }
+    u32 cur = pieceColor(theme, g_piece_kind);
+    printf("[zltris] current kind=%d hex=0x%08X rgb=(%d,%d,%d)\n", g_piece_kind, cur, colorR(cur), colorG(cur), colorB(cur));
+}
+
+fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun drawGradientRectV(x: i64, y: i64, w: i64, h: i64, top_rgba: u32, bottom_rgba: u32) >> void {
+    DrawRectangleGradientV(uiX(x), uiY(y), uiS(w), uiS(h), toColor(top_rgba), toColor(bottom_rgba));
+}
+
+fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
+    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
+}
+
+fun drawTextCenteredInRect(font: Font, text: ptr<u8>, x: i64, y: i64, w: i64, h: i64, size: i64, color_rgba: u32) >> void {
+    f32 draw_size = uiS(size) as f32;
+    Vector2 m = MeasureTextExSize(font, text, draw_size, 0.0);
+    i32 rx = uiX(x);
+    i32 ry = uiY(y);
+    i32 rw = uiS(w);
+    i32 rh = uiS(h);
+    f32 tx = (rx as f32) + ((rw as f32) - m.x) * 0.5;
+    f32 ty = (ry as f32) + ((rh as f32) - m.y) * 0.5;
+    DrawTextExXY(font, text, tx, ty, draw_size, 0.0, toColor(color_rgba));
+}
+
+fun clearWithColor(color_rgba: u32) >> void {
+    ClearBackground(toColor(color_rgba));
+}
+
+fun ghostColor(base: u32) >> u32 { return alphaColor(base, 0.28); }
+
+fun pieceColor(theme: Theme, kind: i32) >> u32 {
+    if (kind == PIECE_I) {
+        return theme.piece_i;
+    }
+    if (kind == PIECE_O) {
+        return theme.piece_o;
+    }
+    if (kind == PIECE_T) {
+        return theme.piece_t;
+    }
+    if (kind == PIECE_J) {
+        return theme.piece_j;
+    }
+    if (kind == PIECE_L) {
+        return theme.piece_l;
+    }
+    if (kind == PIECE_S) {
+        return theme.piece_s;
+    }
+    return theme.piece_z;
+}
+
+fun normalizeRotation(rotation: i32) >> i32 {
+    i32 res = rotation % 4;
+    if (res < 0) {
+        res += 4;
+    }
+    return res;
+}
+
+fun boardIndex(x: i32, y: i32) >> i32 {
+    return y * BOARD_W + x;
+}
+
+fun boardGet(x: i32, y: i32) >> i32 {
+    return g_board[boardIndex(x, y)];
+}
+
+fun boardSet(x: i32, y: i32, value: i32) >> void {
+    g_board[boardIndex(x, y)] = value;
+}
+
+fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if (kind == PIECE_I) {
+        if (rot == 0) {
+            return idx;
+        }
+        if (rot == 1) {
+            return 2;
+        }
+        if (rot == 2) {
+            return idx;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_O) {
+        if (idx == 0 || idx == 2) {
+            return 1;
+        }
+        return 2;
+    }
+
+    if (kind == PIECE_T) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 1;
+            }
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if (idx == 2) {
+                return 2;
+            }
+            return 1;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 1;
+            }
+            return idx;
+        }
+        if (idx == 1) {
+            return 0;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_J) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 0;
+            }
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if (idx == 0 || idx == 2 || idx == 3) {
+                return 1;
+            }
+            return 2;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 2;
+            }
+            return idx;
+        }
+        if (idx == 2) {
+            return 0;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_L) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 2;
+            }
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if (idx == 3) {
+                return 2;
+            }
+            return 1;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 0;
+            }
+            return idx;
+        }
+        if (idx == 0) {
+            return 0;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_S) {
+        if (rot == 0) {
+            if (idx == 0 || idx == 3) {
+                return 1;
+            }
+            if (idx == 1) {
+                return 2;
+            }
+            return 0;
+        }
+        if (rot == 1) {
+            if (idx == 0 || idx == 1) {
+                return 1;
+            }
+            return 2;
+        }
+        if (rot == 2) {
+            if (idx == 0 || idx == 3) {
+                return 1;
+            }
+            if (idx == 1) {
+                return 2;
+            }
+            return 0;
+        }
+        if (idx == 0 || idx == 1) {
+            return 0;
+        }
+        return 1;
+    }
+
+    if (rot == 0) {
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 1 || idx == 2) {
+            return 1;
+        }
+        return 2;
+    }
+    if (rot == 1) {
+        if (idx == 0 || idx == 2) {
+            return 2;
+        }
+        return 1;
+    }
+    if (rot == 2) {
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 1 || idx == 2) {
+            return 1;
+        }
+        return 2;
+    }
+    if (idx == 0 || idx == 2) {
+        return 1;
+    }
+    return 0;
+}
+
+fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if (kind == PIECE_I) {
+        if (rot == 0) {
+            return 1;
+        }
+        if (rot == 1) {
+            return idx;
+        }
+        if (rot == 2) {
+            return 2;
+        }
+        return idx;
+    }
+
+    if (kind == PIECE_O) {
+        if (idx < 2) {
+            return 0;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_T) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        if (rot == 1) {
+            if (idx == 3) {
+                return 2;
+            }
+            if (idx == 2) {
+                return 1;
+            }
+            return idx;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 2;
+            }
+            return 1;
+        }
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 3) {
+            return 2;
+        }
+        return 1;
+    }
+
+    if (kind == PIECE_J) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        if (rot == 1) {
+            if (idx == 0 || idx == 1) {
+                return 0;
+            }
+            if (idx == 2) {
+                return 1;
+            }
+            return 2;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 2;
+            }
+            return 1;
+        }
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 1) {
+            return 1;
+        }
+        return 2;
+    }
+
+    if (kind == PIECE_L) {
+        if (rot == 0) {
+            if (idx == 0) {
+                return 0;
+            }
+            return 1;
+        }
+        if (rot == 1) {
+            if (idx == 3) {
+                return 2;
+            }
+            return idx;
+        }
+        if (rot == 2) {
+            if (idx == 3) {
+                return 2;
+            }
+            return 1;
+        }
+        if (idx < 2) {
+            return 0;
+        }
+        if (idx == 2) {
+            return 1;
+        }
+        return 2;
+    }
+
+    if (kind == PIECE_S) {
+        if (rot == 0) {
+            if (idx < 2) {
+                return 0;
+            }
+            return 1;
+        }
+        if (rot == 1) {
+            if (idx == 0) {
+                return 0;
+            }
+            if (idx == 3) {
+                return 2;
+            }
+            return 1;
+        }
+        if (rot == 2) {
+            if (idx < 2) {
+                return 1;
+            }
+            return 2;
+        }
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 3) {
+            return 2;
+        }
+        return 1;
+    }
+
+    if (rot == 0) {
+        if (idx < 2) {
+            return 0;
+        }
+        return 1;
+    }
+    if (rot == 1) {
+        if (idx == 0) {
+            return 0;
+        }
+        if (idx == 3) {
+            return 2;
+        }
+        return 1;
+    }
+    if (rot == 2) {
+        if (idx < 2) {
+            return 1;
+        }
+        return 2;
+    }
+    if (idx == 0) {
+        return 0;
+    }
+    if (idx == 3) {
+        return 2;
+    }
+    return 1;
+}
+
+fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if (test == 1 || test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if (test == 1 || test == 2 || test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if (test == 1 || test == 2 || test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if (test == 1 || test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if (test == 1 || test == 2 || test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if (test == 1 || test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if (test == 1 || test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (test == 1 || test == 2 || test == 4) {
+        return 1;
+    }
+    return 0;
+}
+
+fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if (test == 2) {
+            return 1;
+        }
+        if (test == 3) {
+            return -2;
+        }
+        if (test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if (test == 2) {
+            return -1;
+        }
+        if (test == 3) {
+            return 2;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if (test == 2) {
+            return -1;
+        }
+        if (test == 3) {
+            return 2;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if (test == 2) {
+            return 1;
+        }
+        if (test == 3) {
+            return -2;
+        }
+        if (test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if (test == 2) {
+            return 1;
+        }
+        if (test == 3) {
+            return -2;
+        }
+        if (test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if (test == 2) {
+            return -1;
+        }
+        if (test == 3) {
+            return 2;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if (test == 2) {
+            return -1;
+        }
+        if (test == 3) {
+            return 2;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (test == 2) {
+        return 1;
+    }
+    if (test == 3) {
+        return -2;
+    }
+    if (test == 4) {
+        return -2;
+    }
+    return 0;
+}
+
+fun iKickX(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if (test == 1 || test == 3) {
+            return -2;
+        }
+        if (test == 2 || test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if (test == 1 || test == 3) {
+            return 2;
+        }
+        if (test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if (test == 1 || test == 3) {
+            return -1;
+        }
+        if (test == 2 || test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if (test == 1 || test == 3) {
+            return 1;
+        }
+        if (test == 2 || test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if (test == 1 || test == 3) {
+            return 2;
+        }
+        if (test == 2 || test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if (test == 1 || test == 3) {
+            return -2;
+        }
+        if (test == 2 || test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if (test == 1 || test == 3) {
+            return 1;
+        }
+        if (test == 2 || test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (test == 1 || test == 3) {
+        return -1;
+    }
+    if (test == 2 || test == 4) {
+        return 2;
+    }
+    return 0;
+}
+
+fun iKickY(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if (test == 3) {
+            return -1;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if (test == 3) {
+            return 1;
+        }
+        if (test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if (test == 3) {
+            return 2;
+        }
+        if (test == 4) {
+            return -1;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if (test == 3) {
+            return -2;
+        }
+        if (test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if (test == 3) {
+            return 1;
+        }
+        if (test == 4) {
+            return -2;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if (test == 3) {
+            return -1;
+        }
+        if (test == 4) {
+            return 2;
+        }
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if (test == 3) {
+            return -2;
+        }
+        if (test == 4) {
+            return 1;
+        }
+        return 0;
+    }
+    if (test == 3) {
+        return 2;
+    }
+    if (test == 4) {
+        return -1;
+    }
+    return 0;
+}
+
+fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if (kind == PIECE_I) {
+        return iKickX(from, to, test);
+    }
+    if (kind == PIECE_O) {
+        return 0;
+    }
+    return jlstzKickX(from, to, test);
+}
+
+fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if (kind == PIECE_I) {
+        return iKickY(from, to, test);
+    }
+    if (kind == PIECE_O) {
+        return 0;
+    }
+    return jlstzKickY(from, to, test);
+}
+
+fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 x = base_x + minoX(kind, rotation, idx);
+        i32 y = base_y + minoY(kind, rotation, idx);
+
+        if (x < 0 || x >= BOARD_W) {
+            return false;
+        }
+        if (y >= BOARD_H) {
+            return false;
+        }
+        if (y >= 0 && boardGet(x, y) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fun currentFitsAt(x: i32, y: i32, rotation: i32) >> bool {
+    return pieceFits(g_piece_kind, rotation, x, y);
+}
+
+fun refillBag() >> void {
+    for i32 i = 0; i < BAG_SIZE; i++ {
+        g_bag[i] = i;
+    }
+
+    for i32 i = 0; i < BAG_SIZE; i++ {
+        i32 j = GetRandomValue(i as i32, (BAG_SIZE - 1) as i32) as i32;
+        i32 tmp = g_bag[i];
+        g_bag[i] = g_bag[j];
+        g_bag[j] = tmp;
+    }
+
+    g_bag_pos = 0;
+}
+
+fun enqueueFromBag() >> void {
+    if (g_bag_pos >= BAG_SIZE) {
+        refillBag();
+    }
+    g_queue[g_queue_count] = g_bag[g_bag_pos];
+    g_queue_count += 1;
+    g_bag_pos += 1;
+}
+
+fun ensureQueue() >> void {
+    for (g_queue_count < QUEUE_CAP) {
+        enqueueFromBag();
+    }
+}
+
+fun popQueue() >> i32 {
+    ensureQueue();
+    i32 res = g_queue[0];
+    for i32 i = 0; i < g_queue_count - 1; i++ {
+        g_queue[i] = g_queue[i + 1];
+    }
+    g_queue_count -= 1;
+    ensureQueue();
+    return res;
+}
+
+fun gravityInterval() >> f32 {
+    return 0.7;
+}
+
+fun spawnNextPiece() >> void {
+    g_piece_kind = popQueue();
+    g_piece_rotation = 0;
+    g_piece_x = 3;
+    g_piece_y = 0;
+    g_gravity_timer = 0.0;
+    g_soft_timer = 0.0;
+    g_lock_timer = 0.0;
+    g_shift_hold_timer = 0.0;
+    g_shift_repeat_timer = 0.0;
+    g_shift_dir = 0;
+    g_hold_used = false;
+    applyDcd();
+
+    if (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation)) {
+        g_game_over = true;
+    }
+}
+
+fun resetBoard() >> void {
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            boardSet(x, y, 0);
+        }
+    }
+}
+
+fun resetGame() >> void {
+    resetBoard();
+    g_queue_count = 0;
+    g_bag_pos = BAG_SIZE;
+    g_score = 0;
+    g_lines = 0;
+    g_hold_kind = -1;
+    g_hold_used = false;
+    g_game_over = false;
+    g_shift_hold_timer = 0.0;
+    g_shift_repeat_timer = 0.0;
+    g_shift_dir = 0;
+    g_last_horizontal_press = 0;
+    g_dcd_timer = 0.0;
+    refillBag();
+    ensureQueue();
+    spawnNextPiece();
+}
+
+fun holdCurrent() >> void {
+    if (g_hold_used) {
+        return;
+    }
+
+    i32 current = g_piece_kind;
+    if (g_hold_kind < 0) {
+        g_hold_kind = current;
+        spawnNextPiece();
+        g_hold_used = true;
+        return;
+    }
+
+    g_piece_kind = g_hold_kind;
+    g_hold_kind = current;
+    g_piece_rotation = 0;
+    g_piece_x = 3;
+    g_piece_y = 0;
+    g_gravity_timer = 0.0;
+    g_soft_timer = 0.0;
+    g_lock_timer = 0.0;
+    g_hold_used = true;
+    g_shift_hold_timer = 0.0;
+    g_shift_repeat_timer = 0.0;
+    g_shift_dir = 0;
+    applyDcd();
+
+    if (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation)) {
+        g_game_over = true;
+    }
+}
+
+fun tryMove(dx: i32, dy: i32) >> bool {
+    i32 next_x = g_piece_x + dx;
+    i32 next_y = g_piece_y + dy;
+    if (!currentFitsAt(next_x, next_y, g_piece_rotation)) {
+        return false;
+    }
+    g_piece_x = next_x;
+    g_piece_y = next_y;
+    g_lock_timer = 0.0;
+    return true;
+}
+
+fun tryRotate(dir: i32) >> bool {
+    i32 from = normalizeRotation(g_piece_rotation);
+    i32 to = normalizeRotation(g_piece_rotation + dir);
+
+    if (g_piece_kind == PIECE_O) {
+        if (currentFitsAt(g_piece_x, g_piece_y, to)) {
+            g_piece_rotation = to;
+            g_lock_timer = 0.0;
+            applyDcd();
+            return true;
+        }
+        return false;
+    }
+
+    for i32 test = 0; test < 5; test++ {
+        i32 dx = kickX(g_piece_kind, from, to, test);
+        i32 dy = kickY(g_piece_kind, from, to, test);
+        if (currentFitsAt(g_piece_x + dx, g_piece_y - dy, to)) {
+            g_piece_x += dx;
+            g_piece_y -= dy;
+            g_piece_rotation = to;
+            g_lock_timer = 0.0;
+            applyDcd();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fun currentGhostY() >> i32 {
+    i32 ghost_y = g_piece_y;
+    for (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, ghost_y + 1)) {
+        ghost_y += 1;
+    }
+    return ghost_y;
+}
+
+fun lockCurrentPiece() >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 x = g_piece_x + minoX(g_piece_kind, g_piece_rotation, idx);
+        i32 y = g_piece_y + minoY(g_piece_kind, g_piece_rotation, idx);
+        if (y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W) {
+            boardSet(x, y, g_piece_kind + 1);
+        }
+    }
+}
+
+fun awardLineClear(lines_cleared: i32) >> void {
+    if (lines_cleared == 1) {
+        g_score += 100;
+    }
+    if (lines_cleared == 2) {
+        g_score += 300;
+    }
+    if (lines_cleared == 3) {
+        g_score += 500;
+    }
+    if (lines_cleared >= 4) {
+        g_score += 800;
+    }
+
+    g_lines += lines_cleared;
+}
+
+fun clearLines() >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if (boardGet(x, y) == 0) {
+                full = false;
+            }
+        }
+
+        if (full) {
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {
+                    boardSet(x, pull, boardGet(x, pull - 1));
+                }
+            }
+            for i32 x = 0; x < BOARD_W; x++ {
+                boardSet(x, 0, 0);
+            }
+            y += 1;
+        }
+    }
+
+    if (cleared > 0) {
+        awardLineClear(cleared);
+    }
+    return cleared;
+}
+
+fun stepLock() >> void {
+    lockCurrentPiece();
+    clearLines();
+    if (isFortyLinesMode() && g_round_state == ROUND_RUNNING && g_lines >= 40) {
+        g_round_state = ROUND_FINISHED;
+        return;
+    }
+    spawnNextPiece();
+}
+
+fun hardDrop() >> void {
+    i32 distance = 0;
+    for (tryMove(0, 1)) {
+        distance += 1;
+    }
+    g_score += distance * 2;
+    stepLock();
+}
+
+fun drawCell(screen_x: i64, screen_y: i64, color: u32) >> void {
+    u32 hi = shadeColor(color, 1.24);
+    u32 lo = shadeColor(color, 0.56);
+    fillRect(screen_x, screen_y, CELL, CELL, color);
+    fillRect(screen_x + 2, screen_y + 2, CELL - 4, 5, alphaColor(hi, 0.62));
+    fillRect(screen_x + 2, screen_y + 9, 4, CELL - 16, alphaColor(hi, 0.34));
+    fillRect(screen_x + CELL - 6, screen_y + 9, 4, CELL - 16, alphaColor(lo, 0.36));
+    fillRect(screen_x + 2, screen_y + CELL - 8, CELL - 4, 6, alphaColor(lo, 0.48));
+    strokeRect(screen_x + 1, screen_y + 1, CELL - 2, CELL - 2, alphaColor(hi, 0.34));
+    strokeRect(screen_x, screen_y, CELL, CELL, alphaColor(lo, 0.70));
+}
+
+fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
+    u32 hi = shadeColor(color, 1.20);
+    u32 lo = shadeColor(color, 0.60);
+    fillRect(screen_x, screen_y, size, size, color);
+    fillRect(screen_x + 1, screen_y + 1, size - 2, 3, alphaColor(hi, 0.62));
+    fillRect(screen_x + 1, screen_y + size - 4, size - 2, 3, alphaColor(lo, 0.56));
+    strokeRect(screen_x, screen_y, size, size, alphaColor(lo, 0.72));
+}
+
+fun drawPieceAt(kind: i32, rotation: i32, base_x: i64, base_y: i64, color: u32) >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i64 x = base_x + (minoX(kind, rotation, idx) as i64);
+        i64 y = base_y + (minoY(kind, rotation, idx) as i64);
+        if (y >= HIDDEN_ROWS) {
+            drawCell((BOARD_LEFT as i64) + x * (CELL as i64), (BOARD_TOP as i64) + (y - (HIDDEN_ROWS as i64)) * (CELL as i64), color);
+        }
+    }
+}
+
+fun drawMiniPiece(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, size: i64) >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i64 px = panel_x + (minoX(kind, 0, idx) as i64) * size;
+        i64 py = panel_y + (minoY(kind, 0, idx) as i64) * size;
+        drawMiniCell(px, py, size, pieceColor(theme, kind));
+    }
+}
+
+fun drawMiniPieceCentered(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, panel_w: i64, panel_h: i64, size: i64) >> void {
+    i32 min_x = 99;
+    i32 max_x = -99;
+    i32 min_y = 99;
+    i32 max_y = -99;
+
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 mx = minoX(kind, 0, idx);
+        i32 my = minoY(kind, 0, idx);
+        if (mx < min_x) {
+            min_x = mx;
+        }
+        if (mx > max_x) {
+            max_x = mx;
+        }
+        if (my < min_y) {
+            min_y = my;
+        }
+        if (my > max_y) {
+            max_y = my;
+        }
+    }
+
+    i32 piece_w = max_x - min_x + 1;
+    i32 piece_h = max_y - min_y + 1;
+
+    i64 origin_x = panel_x + (panel_w - (piece_w as i64) * size) / 2 - (min_x as i64) * size;
+    i64 origin_y = panel_y + (panel_h - (piece_h as i64) * size) / 2 - (min_y as i64) * size;
+
+    drawMiniPiece(theme, kind, origin_x, origin_y, size);
+}
+
+fun drawBoard(theme: Theme) >> void {
+    fillRect((BOARD_LEFT - 8) as i64, (BOARD_TOP - 8) as i64, (BOARD_W * CELL + 16) as i64, (VISIBLE_H * CELL + 16) as i64, theme.board_bg);
+    strokeRect((BOARD_LEFT - 8) as i64, (BOARD_TOP - 8) as i64, (BOARD_W * CELL + 16) as i64, (VISIBLE_H * CELL + 16) as i64, theme.panel_stroke);
+
+    for i32 y = HIDDEN_ROWS; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = BOARD_LEFT + x * (CELL as i32);
+            i32 sy = BOARD_TOP + (y - HIDDEN_ROWS) * (CELL as i32);
+            strokeRect(sx, sy, CELL, CELL, theme.board_grid);
+            if (boardGet(x, y) != 0) {
+                drawCell(sx, sy, pieceColor(theme, boardGet(x, y) - 1));
+            }
+        }
+    }
+
+    if (!g_game_over) {
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, currentGhostY(), ghostColor(pieceColor(theme, g_piece_kind)));
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
+    }
+}
+
+fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
+    if (split_layout) {
+        fillRect(-214, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
+        strokeRect(-214, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, "ZLTRIS", -194, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", -194, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", -194, 230, 14, theme.text_main);
+        fillRect(-178, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
+        strokeRect(-178, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78));
+        if (g_hold_kind >= 0) {
+            drawMiniPieceCentered(theme, g_hold_kind, -178, 256, 112, 112, 16);
+        }
+
+        drawTextColor(font, TextFormat("SCORE\n%i", g_score), -194, 420, 16, theme.text_main);
+        drawTextColor(font, TextFormat("LINES\n%i", g_lines), -194, 492, 16, theme.text_main);
+        if (isFortyLinesMode()) {
+            drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), -194, 564, 14, theme.panel_stroke);
+        }
+
+        fillRect(SIDEBAR_X, 120, 178, 510, theme.panel_bg);
+        strokeRect(SIDEBAR_X, 120, 178, 510, theme.panel_stroke);
+        drawTextColor(font, "NEXT", SIDEBAR_X + 20, 150, 14, theme.text_main);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            fillRect(SIDEBAR_X + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
+            strokeRect(SIDEBAR_X + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
+            drawMiniPieceCentered(theme, g_queue[i], SIDEBAR_X + 35, panel_y, 108, 72, 13);
+        }
+        return;
+    }
+
+    fillRect(SIDEBAR_X, 82, 178, 756, theme.panel_bg);
+    strokeRect(SIDEBAR_X, 82, 178, 756, theme.panel_stroke);
+
+    drawTextColor(font, "ZLTRIS", SIDEBAR_X + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", SIDEBAR_X + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", SIDEBAR_X + 20, 190, 14, theme.text_main);
+    if (isFortyLinesMode()) {
+        drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);
+    }
+    fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if (g_hold_kind >= 0) {
+        drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);
+    }
+
+    drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        fillRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
+        strokeRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.panel_stroke, 0.55));
+        drawMiniPieceCentered(theme, g_queue[i], SIDEBAR_X + 20, panel_y, 88, 70, 12);
+    }
+
+    drawTextColor(font, TextFormat("SCORE\n%i", g_score), SIDEBAR_X + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
+}
+
+fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
+    fillRect(28, 76, 504, 674, alphaColor(theme.bg_outer, 0.95));
+    strokeRect(28, 76, 504, 674, theme.panel_stroke);
+
+    drawTextColor(font, "COLOR DEBUG (F3)", 52, 104, 19, theme.text_main);
+    drawTextColor(font, TextFormat("theme: %s idx:%i", themeName(g_theme_index), g_theme_index), 52, 136, 14, theme.text_muted);
+
+    for i32 i = 0; i < 7; i++ {
+        u32 c = pieceColor(theme, i);
+        i64 y = 176 + (i as i64) * 68;
+        fillRect(52, y, 42, 42, c);
+        strokeRect(52, y, 42, 42, alphaColor(c, 0.45));
+        drawTextColor(
+            font,
+            TextFormat("kind %i 0x%08X rgb(%i,%i,%i)", i, c, colorR(c), colorG(c), colorB(c)),
+            108,
+            y + 13,
+            12,
+            theme.text_main
+        );
+    }
+
+    drawTextColor(
+        font,
+        TextFormat("current kind %i  color 0x%08X", g_piece_kind, pieceColor(theme, g_piece_kind)),
+        52,
+        654,
+        14,
+        theme.panel_stroke
+    );
+    ??drawTextColor(font, "If swatch is purple but piece is cyan, bug is in draw path.", 52, 684, 12, theme.text_muted);
+    ??drawTextColor(font, "If swatch itself is cyan, bug is in theme/color path.", 52, 706, 12, theme.text_muted);
+}
+
+fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
+    if (!isFortyLinesMode()) {
+        return;
+    }
+
+    if (g_round_state == ROUND_COUNTDOWN) {
+        ptr<u8> text = "3";
+        i64 size = 86;
+        i64 box_x = BOARD_LEFT + 62;
+        i64 box_y = BOARD_TOP + 224;
+        i64 box_w = 196;
+        i64 box_h = 196;
+        f32 seg = g_countdown_timer - 3.0;
+
+        if (g_countdown_timer <= 3.0 && g_countdown_timer > 2.0) {
+            text = "2";
+            seg = g_countdown_timer - 2.0;
+        } else if (g_countdown_timer <= 2.0 && g_countdown_timer > 1.0) {
+            text = "1";
+            seg = g_countdown_timer - 1.0;
+        } else if (g_countdown_timer <= 1.0) {
+            text = "BUILD";
+            size = 46;
+            box_x = BOARD_LEFT + 24;
+            box_y = BOARD_TOP + 246;
+            box_w = 272;
+            box_h = 152;
+            seg = g_countdown_timer;
+        }
+
+        if (seg < 0.0) {
+            seg = 0.0;
+        }
+        if (seg > 1.0) {
+            seg = 1.0;
+        }
+        f32 fade = 0.18 + seg * 0.82;
+
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.86));
+        strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.90));
+        drawTextCenteredInRect(font, text, box_x, box_y, box_w, box_h, size, alphaColor(theme.text_main, fade));
+        return;
+    }
+
+    if (g_round_state == ROUND_FINISHED) {
+        fillRect(BOARD_LEFT + 18, BOARD_TOP + 224, 284, 178, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(BOARD_LEFT + 18, BOARD_TOP + 224, 284, 178, theme.panel_stroke);
+        drawTextColor(font, "40 DONE", BOARD_LEFT + 76, BOARD_TOP + 248, 24, theme.text_main);
+        drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), BOARD_LEFT + 62, BOARD_TOP + 294, 14, theme.panel_stroke);
+        drawTextColor(font, "R retry  ESC menu", BOARD_LEFT + 62, BOARD_TOP + 334, 12, theme.text_muted);
+    }
+}
+
+fun drawApp(font: Font) >> void {
+    setScaleAlignX(scaleAlignCenter());
+    if (g_screen == SCREEN_GAME && canUseDoubleRowLayout()) {
+        setScaleExtraX(uiS(131));
+    } else {
+        setScaleExtraX(0);
+    }
+
+    Theme theme = currentTheme();
+    BeginDrawing();
+    clearWithColor(theme.bg_outer);
+
+    if (g_screen == SCREEN_MENU) {
+        drawMenu(font, theme);
+        if (g_debug_colors) {
+            drawColorDebugOverlay(font, theme);
+        }
+        EndDrawing();
+        return;
+    }
+
+    if (g_screen == SCREEN_SETTINGS) {
+        drawSettings(font, theme, g_theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_double_row_ui, g_instant_restart);
+        if (g_debug_colors) {
+            drawColorDebugOverlay(font, theme);
+        }
+        EndDrawing();
+        return;
+    }
+
+    drawGameFrame(font);
+    EndDrawing();
+}
+
+fun updateApp() >> void {
+    if (IsKeyPressed(KEY_F3)) {
+        g_debug_colors = !g_debug_colors;
+        Theme theme = currentTheme();
+        if (g_debug_colors) {
+            printf("[zltris] F3 debug ON\n");
+            printColorDebug(theme);
+        } else {
+            printf("[zltris] F3 debug OFF\n");
+            printColorDebug(theme);
+        }
+    }
+
+    if (g_screen == SCREEN_MENU) {
+        i32 action = menuUpdate();
+        if (action == menuActionStartFreePlay()) {
+            g_screen = SCREEN_GAME;
+            startGameMode(MODE_FREE_PLAY);
+        } else if (action == menuActionStart40Lines()) {
+            g_screen = SCREEN_GAME;
+            startGameMode(MODE_40_LINES);
+        } else if (action == menuActionOpenSettings()) {
+            g_settings_return_screen = SCREEN_MENU;
+            settingsInit();
+            g_screen = SCREEN_SETTINGS;
+        }
+        return;
+    }
+
+    if (g_screen == SCREEN_SETTINGS) {
+        i32 settings_action = settingsUpdate(&g_theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_double_row_ui, &g_instant_restart);
+        if (settings_action == settingsActionBack()) {
+            g_screen = g_settings_return_screen;
+        }
+        return;
+    }
+
+    updateGameScreen();
+}
+
+fun drawGameFrame(font: Font) >> void {
+    Theme theme = currentTheme();
+    bool split_layout = canUseDoubleRowLayout();
+    f32 hint_alpha = 1.0;
+    if (canShowHoldRestartEffect()) {
+        hint_alpha = restartHintAlpha();
+    }
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBoard(theme);
+    drawSidebar(font, theme, split_layout);
+    if (canShowHoldRestartEffect()) {
+        drawRestartCharge(font, theme);
+    }
+
+    drawTextColor(font, "LEFT/RIGHT move", 48, 24, 12, theme.text_muted);
+    drawTextColor(font, "TAB settings  F3 color debug", 48, 42, 12, theme.text_muted);
+    drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
+    drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
+    
+    if (g_game_over) {
+        fillRect(BOARD_LEFT + 24, BOARD_TOP + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(BOARD_LEFT + 24, BOARD_TOP + 224, 272, 140, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", BOARD_LEFT + 50, BOARD_TOP + 256, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", BOARD_LEFT + 40, BOARD_TOP + 304, 14, theme.text_muted);
+    }
+
+    drawFortyLinesOverlay(font, theme);
+
+    if (g_debug_colors) {
+        drawColorDebugOverlay(font, theme);
+    }
+}
+
+fun updateHorizontalInput(dt: f32) >> void {
+    if (IsKeyPressed(KEY_LEFT)) {
+        g_last_horizontal_press = -1;
+    }
+    if (IsKeyPressed(KEY_RIGHT)) {
+        g_last_horizontal_press = 1;
+    }
+
+    bool left_down = IsKeyDown(KEY_LEFT);
+    bool right_down = IsKeyDown(KEY_RIGHT);
+
+    i32 desired_dir = 0;
+    if (left_down && !right_down) {
+        desired_dir = -1;
+    } else if (right_down && !left_down) {
+        desired_dir = 1;
+    } else if (left_down && right_down) {
+        desired_dir = g_last_horizontal_press;
+    }
+
+    if (desired_dir == 0) {
+        g_shift_dir = 0;
+        g_shift_hold_timer = 0.0;
+        g_shift_repeat_timer = 0.0;
+        return;
+    }
+
+    if (desired_dir != g_shift_dir) {
+        g_shift_dir = desired_dir;
+        g_shift_hold_timer = 0.0;
+        g_shift_repeat_timer = 0.0;
+        tryMove(desired_dir, 0);
+        return;
+    }
+
+    if (g_dcd_timer > 0.0) {
+        g_dcd_timer -= dt;
+        if (g_dcd_timer < 0.0) {
+            g_dcd_timer = 0.0;
+        }
+        return;
+    }
+
+    f32 das_seconds = handlingDasSeconds();
+    f32 arr_seconds = handlingArrSeconds();
+
+    f32 prev_hold = g_shift_hold_timer;
+    g_shift_hold_timer += dt;
+
+    if (prev_hold < das_seconds && g_shift_hold_timer >= das_seconds) {
+        if (arr_seconds <= 0.0001) {
+            for (tryMove(desired_dir, 0)) {}
+            return;
+        }
+        tryMove(desired_dir, 0);
+        g_shift_repeat_timer = 0.0;
+    }
+
+    if (g_shift_hold_timer < das_seconds) {
+        return;
+    }
+
+    if (arr_seconds <= 0.0001) {
+        for (tryMove(desired_dir, 0)) {}
+        return;
+    }
+
+    g_shift_repeat_timer += dt;
+    for (g_shift_repeat_timer >= arr_seconds) {
+        if (!tryMove(desired_dir, 0)) {
+            g_shift_repeat_timer = 0.0;
+            break;
+        }
+        g_shift_repeat_timer -= arr_seconds;
+    }
+}
+
+fun updateMovementInput(dt: f32) >> void {
+    updateHorizontalInput(dt);
+
+    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X)) {
+        tryRotate(1);
+    }
+    if (IsKeyPressed(KEY_Z)) {
+        tryRotate(-1);
+    }
+    if (IsKeyPressed(KEY_C)) {
+        holdCurrent();
+    }
+    if (IsKeyPressed(KEY_SPACE)) {
+        hardDrop();
+    }
+}
+
+fun updateSoftDrop(dt: f32) >> void {
+    if (!IsKeyDown(KEY_DOWN)) {
+        g_soft_timer = 0.0;
+        return;
+    }
+
+    g_soft_timer += dt;
+    f32 soft_interval = gravityInterval() / g_sdf_multiplier;
+    if (soft_interval < 0.005) {
+        soft_interval = 0.005;
+    }
+    for (g_soft_timer >= soft_interval) {
+        if (tryMove(0, 1)) {
+            g_score += 1;
+            g_soft_timer -= soft_interval;
+        } else {
+            break;
+        }
+    }
+}
+
+fun updateGravity(dt: f32) >> void {
+    g_gravity_timer += dt;
+    f32 interval = gravityInterval();
+    for (g_gravity_timer >= interval) {
+        if (tryMove(0, 1)) {
+            g_gravity_timer -= interval;
+        } else {
+            break;
+        }
+    }
+}
+
+fun updateLock(dt: f32) >> void {
+    if (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y + 1)) {
+        g_lock_timer = 0.0;
+        return;
+    }
+
+    g_lock_timer += dt;
+    if (g_lock_timer >= 0.45) {
+        stepLock();
+    }
+}
+
+fun updateGameScreen() >> void {
+    f32 dt = GetFrameTime();
+
+    if (g_instant_restart && IsKeyPressed(KEY_R)) {
+        startGameMode(g_game_mode);
+        return;
+    }
+
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        g_restart_charge = 0.0;
+        g_restart_hold_latched = false;
+        g_screen = SCREEN_MENU;
+        menuInit();
+        return;
+    }
+
+    if (IsKeyPressed(KEY_TAB)) {
+        g_restart_charge = 0.0;
+        g_restart_hold_latched = false;
+        g_settings_return_screen = SCREEN_GAME;
+        settingsInit();
+        g_screen = SCREEN_SETTINGS;
+        return;
+    }
+
+    if (!canShowHoldRestartEffect()) {
+        g_restart_charge = 0.0;
+        g_restart_hold_latched = false;
+    }
+
+    if (canShowHoldRestartEffect() && updateRestartCharge(dt)) {
+        return;
+    }
+
+    if (isFortyLinesMode()) {
+        if (g_round_state == ROUND_COUNTDOWN) {
+            g_countdown_timer -= dt;
+            if (g_countdown_timer <= 0.0) {
+                g_countdown_timer = 0.0;
+                g_round_state = ROUND_RUNNING;
+                g_mode_timer = 0.0;
+            }
+            return;
+        }
+
+        if (g_round_state == ROUND_FINISHED) {
+            if (IsKeyPressed(KEY_R)) {
+                startGameMode(g_game_mode);
+            }
+            return;
+        }
+
+        g_mode_timer += dt;
+    }
+
+    if (g_game_over) {
+        if (IsKeyPressed(KEY_R)) {
+            startGameMode(g_game_mode);
+        }
+        return;
+    }
+
+    updateMovementInput(dt);
+    if (g_game_over) {
+        return;
+    }
+
+    updateSoftDrop(dt);
+    updateGravity(dt);
+    if (!g_game_over) {
+        updateLock(dt);
+    }
+}
+
+fun shouldQuitApp() >> bool {
+    bool ctrl_down = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    if (ctrl_down && IsKeyPressed(KEY_Q)) {
+        return true;
+    }
+    return false;
+}
+
+fun main() >> i32 {
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(WINDOW_W, WINDOW_H, "zltris");
+    SetExitKey(KEY_NULL);
+    SetWindowMinSize(420, 620);
+    SetTargetFPS(60);
+    setScaleBase(UI_BASE_W, UI_BASE_H);
+
+    Font ui_font = LoadFontEx("assets/fonts/PressStart2P.ttf", 48, 0 as ptr<i32>, 0);
+    bool custom_font_loaded = IsFontValid(ui_font);
+    if (custom_font_loaded) {
+        SetTextureFilter(ui_font.texture, TEXTURE_FILTER_POINT);
+        printf("[zltris] loaded font: assets/fonts/PressStart2P.ttf\n");
+    } else {
+        ui_font = GetFontDefault();
+        SetTextureFilter(ui_font.texture, TEXTURE_FILTER_POINT);
+        printf("[zltris] failed to load custom font, using default\n");
+    }
+
+    g_theme_index = 0;
+    startGameMode(MODE_FREE_PLAY);
+    g_screen = SCREEN_MENU;
+    g_settings_return_screen = SCREEN_MENU;
+    menuInit();
+    settingsInit();
+
+    for (true) {
+        if (WindowShouldClose() || shouldQuitApp()) {
+            break;
+        }
+        updateApp();
+        drawApp(ui_font);
+    }
+
+    if (custom_font_loaded) {
+        UnloadFont(ui_font);
+    }
+    CloseWindow();
+    return 0;
+}

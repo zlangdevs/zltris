@@ -1,0 +1,327 @@
+module zltris.settings;
+use raylib
+use zltris.scale
+use zltris.theme
+
+#define SETTINGS_ITEM_THEME 0
+#define SETTINGS_ITEM_ARR 1
+#define SETTINGS_ITEM_DAS 2
+#define SETTINGS_ITEM_DCD 3
+#define SETTINGS_ITEM_SDF 4
+#define SETTINGS_ITEM_DOUBLE_ROW 5
+#define SETTINGS_ITEM_INSTANT_RESTART 6
+#define SETTINGS_ITEM_BACK 7
+#define SETTINGS_ITEM_COUNT 8
+
+#define SETTINGS_ACTION_NONE 0
+#define SETTINGS_ACTION_BACK 1
+
+i32 g_settings_index = 0;
+
+fun settingsInit() >> void {
+    g_settings_index = 0;
+}
+
+fun settingsActionNone() >> i32 { return SETTINGS_ACTION_NONE; }
+fun settingsActionBack() >> i32 { return SETTINGS_ACTION_BACK; }
+
+fun toColor(color_rgba: u32) >> Color {
+    return Color{
+        r = (color_rgba & 255) as u8,
+        g = ((color_rgba >> 8) & 255) as u8,
+        b = ((color_rgba >> 16) & 255) as u8,
+        a = ((color_rgba >> 24) & 255) as u8,
+    };
+}
+
+fun alphaColor(base: u32, alpha: f32) >> u32 {
+    i32 a = ((base >> 24) & 255) as i32;
+    i32 scaled = ((a as f32) * alpha) as i32;
+    if (scaled < 0) {
+        scaled = 0;
+    }
+    if (scaled > 255) {
+        scaled = 255;
+    }
+    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
+}
+
+fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
+    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
+}
+
+fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
+    i32 rx = uiX(x);
+    i32 ry = uiY(y);
+    i32 rw = uiS(w);
+    i32 rh = uiS(h);
+    if (px < rx as f32) {
+        return false;
+    }
+    if (py < ry as f32) {
+        return false;
+    }
+    if (px > (rx + rw) as f32) {
+        return false;
+    }
+    if (py > (ry + rh) as f32) {
+        return false;
+    }
+    return true;
+}
+
+fun clampf(v: f32, min_v: f32, max_v: f32) >> f32 {
+    if (v < min_v) {
+        return min_v;
+    }
+    if (v > max_v) {
+        return max_v;
+    }
+    return v;
+}
+
+fun itemY(index: i32) >> i64 {
+    return 246 + (index as i64) * 78;
+}
+
+fun rowSelected(index: i32) >> bool {
+    return g_settings_index == index;
+}
+
+fun sliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
+    return clampf((value - min_v) / (max_v - min_v), 0.0, 1.0);
+}
+
+fun sliderValueFromMouse(px: f32, x: i64, w: i64, min_v: f32, max_v: f32) >> f32 {
+    f32 left = uiX(x) as f32;
+    f32 width = uiS(w) as f32;
+    f32 t = (px - left) / width;
+    t = clampf(t, 0.0, 1.0);
+    return min_v + (max_v - min_v) * t;
+}
+
+fun measureTextWidthBase(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    Vector2 m = MeasureTextExSize(font, text, uiS(size) as f32, 0.0);
+    return (m.x / uiScale()) as i64;
+}
+
+fun drawThemeRow(font: Font, theme: Theme, theme_index: i32) >> void {
+    i64 y = itemY(SETTINGS_ITEM_THEME);
+    i64 row_x = 118;
+    i64 row_w = 412;
+    i64 right_padding = 18;
+    i64 text_gap = 12;
+    i64 arrow_gap = 14;
+
+    ptr<u8> left_arrow = "<";
+    ptr<u8> right_arrow = ">";
+    ptr<u8> name = themeName(theme_index);
+
+    i64 right_arrow_w = measureTextWidthBase(font, right_arrow, 15);
+    i64 left_arrow_w = measureTextWidthBase(font, left_arrow, 15);
+    i64 name_w = measureTextWidthBase(font, name, 15);
+
+    i64 right_edge = row_x + row_w - right_padding;
+    i64 right_arrow_x = right_edge - right_arrow_w;
+    i64 name_x = right_arrow_x - text_gap - name_w;
+    i64 left_arrow_x = name_x - arrow_gap - left_arrow_w;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.45);
+    if (rowSelected(SETTINGS_ITEM_THEME)) {
+        stroke = theme.panel_stroke;
+    }
+    fillRect(row_x, y, row_w, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(row_x, y, row_w, 62, stroke);
+    drawTextColor(font, "Theme", 136, y + 20, 15, theme.text_main);
+    drawTextColor(font, left_arrow, left_arrow_x, y + 20, 15, theme.text_main);
+    drawTextColor(font, name, name_x, y + 20, 15, theme.panel_stroke);
+    drawTextColor(font, right_arrow, right_arrow_x, y + 20, 15, theme.text_main);
+}
+
+fun drawSliderRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
+    i64 y = itemY(index);
+    u32 stroke = alphaColor(theme.text_muted, 0.45);
+    if (rowSelected(index)) {
+        stroke = theme.panel_stroke;
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+
+    drawTextColor(font, label, 136, y + 14, 15, theme.text_main);
+    drawTextColor(font, value_text, 430, y + 14, 14, theme.panel_stroke);
+
+    i64 sx = 136;
+    i64 sy = y + 40;
+    i64 sw = 372;
+    i64 sh = 10;
+    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, 0.95));
+    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, 0.35));
+    i64 fill_w = ((sw as f32) * sliderPercent(value, min_v, max_v)) as i64;
+    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, 0.85));
+    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, theme.text_main);
+}
+
+fun drawBackRow(font: Font, theme: Theme) >> void {
+    i64 y = itemY(SETTINGS_ITEM_BACK);
+    u32 stroke = alphaColor(theme.text_muted, 0.45);
+    if (rowSelected(SETTINGS_ITEM_BACK)) {
+        stroke = theme.panel_stroke;
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, "Back", 136, y + 20, 15, theme.text_main);
+    drawTextColor(font, "ENTER", 436, y + 20, 12, theme.text_muted);
+}
+
+fun drawToggleRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, enabled: bool) >> void {
+    i64 y = itemY(index);
+    u32 stroke = alphaColor(theme.text_muted, 0.45);
+    if (rowSelected(index)) {
+        stroke = theme.panel_stroke;
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
+    ptr<u8> mark = "[ ]";
+    if (enabled) {
+        mark = "[X]";
+    }
+    drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
+}
+
+fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32, dcd: f32, sdf: f32, double_row_ui: bool, instant_restart: bool) >> void {
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+
+    fillRect(84, 64, 480, 836, alphaColor(theme.bg_outer, 0.90));
+    strokeRect(84, 64, 480, 836, alphaColor(theme.panel_stroke, 0.90));
+
+    drawTextColor(font, "SETTINGS", 130, 118, 30, theme.text_main);
+    drawTextColor(font, "Arrow keys or mouse", 130, 162, 14, theme.text_muted);
+    drawTextColor(font, "Left/Right changes value", 130, 182, 14, theme.text_muted);
+
+    drawThemeRow(font, theme, theme_index);
+    drawSliderRow(font, theme, SETTINGS_ITEM_ARR, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);
+    drawSliderRow(font, theme, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
+    drawSliderRow(font, theme, SETTINGS_ITEM_DCD, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);
+    drawSliderRow(font, theme, SETTINGS_ITEM_SDF, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);
+    drawToggleRow(font, theme, SETTINGS_ITEM_DOUBLE_ROW, "Double-row UI", double_row_ui);
+    drawToggleRow(font, theme, SETTINGS_ITEM_INSTANT_RESTART, "Instant restart", instant_restart);
+    drawBackRow(font, theme);
+}
+
+fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+    if (index == SETTINGS_ITEM_THEME) {
+        theme_index[0] = switchTheme(theme_index[0], dir);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_ARR) {
+        arr[0] = clampf(arr[0] + (dir as f32) * 0.1, 0.0, 8.0);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_DAS) {
+        das[0] = clampf(das[0] + (dir as f32) * 0.1, 0.0, 20.0);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_DCD) {
+        dcd[0] = clampf(dcd[0] + (dir as f32) * 0.1, 0.0, 10.0);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_SDF) {
+        sdf[0] = clampf(sdf[0] + (dir as f32) * 0.5, 1.0, 40.0);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_DOUBLE_ROW) {
+        double_row_ui[0] = !double_row_ui[0];
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_INSTANT_RESTART) {
+        instant_restart[0] = !instant_restart[0];
+        return SETTINGS_ACTION_NONE;
+    }
+    return SETTINGS_ACTION_BACK;
+}
+
+fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+    if (IsKeyPressed(KEY_ESCAPE)) {
+        return SETTINGS_ACTION_BACK;
+    }
+
+    if (IsKeyPressed(KEY_UP)) {
+        g_settings_index -= 1;
+        if (g_settings_index < 0) {
+            g_settings_index = SETTINGS_ITEM_COUNT - 1;
+        }
+    }
+    if (IsKeyPressed(KEY_DOWN)) {
+        g_settings_index += 1;
+        if (g_settings_index >= SETTINGS_ITEM_COUNT) {
+            g_settings_index = 0;
+        }
+    }
+    if (IsKeyPressed(KEY_LEFT)) {
+        return settingsNudgeValue(g_settings_index, -1, theme_index, arr, das, dcd, sdf, double_row_ui, instant_restart);
+    }
+    if (IsKeyPressed(KEY_RIGHT)) {
+        return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, double_row_ui, instant_restart);
+    }
+    if (IsKeyPressed(KEY_ENTER)) {
+        if (g_settings_index == SETTINGS_ITEM_BACK) {
+            return SETTINGS_ACTION_BACK;
+        }
+        if (g_settings_index == SETTINGS_ITEM_DOUBLE_ROW) {
+            double_row_ui[0] = !double_row_ui[0];
+        }
+        if (g_settings_index == SETTINGS_ITEM_INSTANT_RESTART) {
+            instant_restart[0] = !instant_restart[0];
+        }
+    }
+
+    Vector2 mouse = GetMousePosition();
+    for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
+        if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(i), 412, 62)) {
+            g_settings_index = i;
+        }
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_THEME), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (mouse.x < uiX(336) as f32) {
+            theme_index[0] = switchTheme(theme_index[0], -1);
+        } else {
+            theme_index[0] = switchTheme(theme_index[0], 1);
+        }
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_ARR) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_DAS) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_DCD) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_SDF) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_DOUBLE_ROW), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        double_row_ui[0] = !double_row_ui[0];
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_INSTANT_RESTART), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        instant_restart[0] = !instant_restart[0];
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_BACK), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        return SETTINGS_ACTION_BACK;
+    }
+
+    return SETTINGS_ACTION_NONE;
+}
