@@ -43,6 +43,12 @@ use zltris.theme
 #define ROUND_COUNTDOWN 1
 #define ROUND_FINISHED 2
 
+#define BG_STAR_COUNT 150
+
+#define STAR_MODE_NONE 0
+#define STAR_MODE_DROPS 1
+#define STAR_MODE_MUSIC 2
+
 arr<i32, BOARD_CELLS> g_board = {0};
 arr<i32, QUEUE_CAP> g_queue = {0};
 arr<i32, BAG_SIZE> g_bag = {0};
@@ -81,12 +87,27 @@ i32 g_screen = SCREEN_MENU;
 i32 g_settings_return_screen = SCREEN_MENU;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
+i32 g_bg_stars_amount = 50;
+i32 g_bg_star_react_mode = STAR_MODE_DROPS;
+f32 g_star_peak_target_dps = 1.5;
+f32 g_star_intensity = 0.4;
 i32 g_game_mode = MODE_FREE_PLAY;
 i32 g_round_state = ROUND_RUNNING;
 f32 g_mode_timer = 0.0;
 f32 g_countdown_timer = 0.0;
 f32 g_restart_charge = 0.0;
 bool g_restart_hold_latched = false;
+f32 g_star_soft_glow = 0.0;
+f32 g_star_hard_burst = 0.0;
+f32 g_star_hard_target = 0.0;
+f32 g_star_pps_meter = 0.0;
+
+arr<i32, BG_STAR_COUNT> g_star_x = {0};
+arr<i32, BG_STAR_COUNT> g_star_y = {0};
+arr<i32, BG_STAR_COUNT> g_star_size = {0};
+arr<i32, BG_STAR_COUNT> g_star_style = {0};
+arr<f32, BG_STAR_COUNT> g_star_phase = {0.0};
+arr<f32, BG_STAR_COUNT> g_star_speed = {0.0};
 
 fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
     return (r as u32) |
@@ -130,6 +151,224 @@ fun canUseDoubleRowLayout() >> bool {
     return free_px >= uiS(210);
 }
 
+fun fractf(v: f32) >> f32 {
+    i32 whole = v as i32;
+    f32 f = v - (whole as f32);
+    if (f < 0.0) {
+        f += 1.0;
+    }
+    return f;
+}
+
+fun clamp01(v: f32) >> f32 {
+    if (v < 0.0) {
+        return 0.0;
+    }
+    if (v > 1.0) {
+        return 1.0;
+    }
+    return v;
+}
+
+fun starIntensityNorm() >> f32 {
+    f32 n = clamp01((g_star_intensity - 0.1) / 0.9);
+    return n * (0.35 + 0.65 * n);
+}
+
+fun starSpreadMul() >> f32 {
+    if (g_star_intensity >= 0.4) {
+        return 1.0 + ((g_star_intensity - 0.4) / 0.6) * 0.30;
+    }
+    return 1.0 - ((0.4 - g_star_intensity) / 0.3) * 0.15;
+}
+
+fun visibleBaseLeft() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((0 - ox) as f32) / scale) as i64;
+}
+
+fun visibleBaseRight() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((GetScreenWidth() - ox) as f32) / scale) as i64;
+}
+
+fun initBackgroundStars() >> void {
+    for i32 i = 0; i < BG_STAR_COUNT; i++ {
+        i32 mix_a = (i * 73 + (i * i * 29) + 157);
+        i32 mix_b = (i * 181 + (i * i * 47) + 89);
+        i32 mix_c = (i * 97 + (i * i * 13) + 271);
+
+        g_star_x[i] = 24 + (mix_a % (UI_BASE_W - 48));
+        g_star_y[i] = mix_b % (UI_BASE_H + 220);
+        g_star_size[i] = 3 + (mix_c % 7);
+        g_star_style[i] = (mix_b / 3) % 4;
+        g_star_phase[i] = (mix_a % 1000) as f32 / 1000.0;
+        g_star_speed[i] = 0.035 + ((mix_c % 1000) as f32) / 12000.0;
+    }
+}
+
+fun updateBackgroundStarReaction(dt: f32) >> void {
+    if (g_bg_star_react_mode != STAR_MODE_DROPS) {
+        g_star_soft_glow = 0.0;
+        g_star_hard_burst = 0.0;
+        g_star_hard_target = 0.0;
+        g_star_pps_meter = 0.0;
+        return;
+    }
+
+    f32 norm = starIntensityNorm();
+    f32 pulse_weight = 0.05 + norm * norm * 0.95;
+
+    if (IsKeyDown(KEY_DOWN)) {
+        g_star_soft_glow += dt * (1.10 + norm * 1.90);
+        f32 soft_cap = 0.46 + norm * 0.34;
+        if (g_star_soft_glow > soft_cap) {
+            g_star_soft_glow = soft_cap;
+        }
+    } else {
+        g_star_soft_glow -= dt * (1.40 - norm * 0.20);
+        if (g_star_soft_glow < 0.0) {
+            g_star_soft_glow = 0.0;
+        }
+    }
+
+    g_star_pps_meter -= dt * g_star_peak_target_dps;
+    if (g_star_pps_meter < 0.0) {
+        g_star_pps_meter = 0.0;
+    }
+
+    g_star_hard_target -= dt * (1.6 + norm * 1.2);
+    if (g_star_hard_target < 0.0) {
+        g_star_hard_target = 0.0;
+    }
+
+    f32 rise = clamp01(dt * (3.0 + norm * 20.0));
+    f32 fall = clamp01(dt * (2.7 + norm * 7.5));
+    if (g_star_hard_burst < g_star_hard_target) {
+        g_star_hard_burst += (g_star_hard_target - g_star_hard_burst) * rise;
+    } else {
+        g_star_hard_burst += (g_star_hard_target - g_star_hard_burst) * fall;
+    }
+
+    g_star_hard_burst *= (0.995 + pulse_weight * 0.005);
+}
+
+fun onPiecePlaced() >> void {
+    if (g_bg_star_react_mode != STAR_MODE_DROPS) {
+        return;
+    }
+    f32 norm = starIntensityNorm();
+    g_star_pps_meter += 1.0;
+    if (g_star_pps_meter > 3.0) {
+        g_star_pps_meter = 3.0;
+    }
+    g_star_hard_target += 0.01 + norm * 0.12;
+    if (g_star_hard_target > 1.0) {
+        g_star_hard_target = 1.0;
+    }
+}
+
+fun drawStarArms(cx: i64, cy: i64, size: i64, style: i32, color: u32) >> void {
+    if (style == 0) {
+        DrawLine(uiX(cx - size), uiY(cy), uiX(cx + size), uiY(cy), toColor(color));
+        DrawLine(uiX(cx), uiY(cy - size), uiX(cx), uiY(cy + size), toColor(color));
+        return;
+    }
+    if (style == 1) {
+        i64 d = (size * 7) / 10;
+        DrawLine(uiX(cx - d), uiY(cy - d), uiX(cx + d), uiY(cy + d), toColor(color));
+        DrawLine(uiX(cx - d), uiY(cy + d), uiX(cx + d), uiY(cy - d), toColor(color));
+        return;
+    }
+    if (style == 2) {
+        i64 dx = size;
+        i64 dy = size / 3;
+        DrawLine(uiX(cx - dx), uiY(cy - dy), uiX(cx + dx), uiY(cy + dy), toColor(color));
+        DrawLine(uiX(cx - dy), uiY(cy + dx), uiX(cx + dy), uiY(cy - dx), toColor(color));
+        return;
+    }
+    i64 dx = size / 3;
+    i64 dy = size;
+    DrawLine(uiX(cx - dx), uiY(cy - dy), uiX(cx + dx), uiY(cy + dy), toColor(color));
+    DrawLine(uiX(cx - dy), uiY(cy + dx), uiX(cx + dy), uiY(cy - dx), toColor(color));
+}
+
+fun drawBackgroundStars(theme: Theme) >> void {
+    if (g_bg_stars_amount <= 0) {
+        return;
+    }
+
+    f32 t = GetTime() as f32;
+    i64 span_y = UI_BASE_H + 160;
+    i64 left = visibleBaseLeft();
+    i64 right = visibleBaseRight();
+    i64 span_x = right - left;
+    if (span_x < 1) {
+        span_x = 1;
+    }
+
+    i32 count = g_bg_stars_amount;
+    if (count > BG_STAR_COUNT) {
+        count = BG_STAR_COUNT;
+    }
+
+    f32 react_boost = 0.0;
+    f32 norm = starIntensityNorm();
+    f32 spread_mul = starSpreadMul();
+    if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+        f32 pps_norm = clamp01(g_star_pps_meter);
+        f32 pulse_weight = 0.05 + norm * norm * 0.95;
+        f32 base_boost = 0.08 + pps_norm * 0.82 + g_star_soft_glow * 0.18;
+        f32 pulse_boost = g_star_hard_burst * (0.25 + norm * 1.35) * pulse_weight;
+        react_boost = base_boost + pulse_boost;
+        if (react_boost > 2.0) {
+            react_boost = 2.0;
+        }
+    }
+
+    for i32 i = 0; i < count; i++ {
+        f32 speed = g_star_speed[i] * 0.70;
+        f32 loop = fractf(g_star_phase[i] + t * speed);
+        i64 y = -80 + ((((loop * (span_y as f32)) as i64) + (g_star_y[i] as i64)) % span_y);
+
+        i64 base_x = left + ((span_x as f32) * ((g_star_x[i] as f32) / (UI_BASE_W as f32))) as i64;
+
+        f32 drift_loop = fractf(g_star_phase[i] * 1.7 + t * (0.08 + speed * 0.5));
+        f32 drift = drift_loop;
+        if (drift_loop > 0.5) {
+            drift = 1.0 - drift_loop;
+        }
+        i64 x = base_x + (((drift * 2.0) - 0.5) * 18.0) as i64;
+
+        i64 s = g_star_size[i] as i64;
+        f32 tw = fractf(t * (0.7 + g_star_speed[i] * 2.0) + g_star_phase[i]);
+        if (tw > 0.5) {
+            tw = 1.0 - tw;
+        }
+        f32 alpha = 0.10 + tw * 0.34;
+        if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+            alpha += react_boost * (0.55 + norm * 0.55);
+            if (alpha > 1.00) {
+                alpha = 1.00;
+            }
+        }
+
+        i64 glow_radius = ((s * 5) as f32 * spread_mul) as i64;
+        if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+            glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;
+        }
+
+        u32 outer = alphaColor(theme.panel_stroke, alpha * 0.34);
+        u32 inner = alphaColor(theme.panel_stroke, alpha * 0.72);
+        DrawCircleGradient(uiX(x), uiY(y), uiS(glow_radius) as f32, toColor(outer), toColor(alphaColor(theme.bg_outer, 0.0)));
+        DrawCircleGradient(uiX(x), uiY(y), uiS((glow_radius * 2) / 3) as f32, toColor(inner), toColor(alphaColor(theme.bg_outer, 0.0)));
+        drawStarArms(x, y, s, g_star_style[i], alphaColor(theme.panel_stroke, alpha));
+        fillRect(x - 1, y - 1, 3, 3, alphaColor(theme.text_main, alpha * 0.84 + react_boost * (0.24 + norm * 0.10)));
+    }
+}
+
 fun isFortyLinesMode() >> bool {
     return g_game_mode == MODE_40_LINES;
 }
@@ -140,6 +379,10 @@ fun startGameMode(mode: i32) >> void {
     g_mode_timer = 0.0;
     g_restart_charge = 0.0;
     g_restart_hold_latched = false;
+    g_star_soft_glow = 0.0;
+    g_star_hard_burst = 0.0;
+    g_star_hard_target = 0.0;
+    g_star_pps_meter = 0.0;
     if (isFortyLinesMode()) {
         g_round_state = ROUND_COUNTDOWN;
         g_countdown_timer = 4.0;
@@ -1281,6 +1524,7 @@ fun clearLines() >> i32 {
 
 fun stepLock() >> void {
     lockCurrentPiece();
+    onPiecePlaced();
     clearLines();
     if (isFortyLinesMode() && g_round_state == ROUND_RUNNING && g_lines >= 40) {
         g_round_state = ROUND_FINISHED;
@@ -1295,6 +1539,13 @@ fun hardDrop() >> void {
         distance += 1;
     }
     g_score += distance * 2;
+    if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+        f32 norm = starIntensityNorm();
+        g_star_hard_target += 0.06 + norm * 0.64;
+        if (g_star_hard_target > 1.0) {
+            g_star_hard_target = 1.0;
+        }
+    }
     stepLock();
 }
 
@@ -1560,7 +1811,7 @@ fun drawApp(font: Font) >> void {
     }
 
     if (g_screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_double_row_ui, g_instant_restart);
+        drawSettings(font, theme, g_theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
         if (g_debug_colors) {
             drawColorDebugOverlay(font, theme);
         }
@@ -1602,7 +1853,7 @@ fun updateApp() >> void {
     }
 
     if (g_screen == SCREEN_SETTINGS) {
-        i32 settings_action = settingsUpdate(&g_theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_double_row_ui, &g_instant_restart);
+        i32 settings_action = settingsUpdate(&g_theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
         if (settings_action == settingsActionBack()) {
             g_screen = g_settings_return_screen;
         }
@@ -1620,6 +1871,7 @@ fun drawGameFrame(font: Font) >> void {
         hint_alpha = restartHintAlpha();
     }
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBackgroundStars(theme);
     drawBoard(theme);
     drawSidebar(font, theme, split_layout);
     if (canShowHoldRestartEffect()) {
@@ -1786,6 +2038,7 @@ fun updateLock(dt: f32) >> void {
 
 fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
+    updateBackgroundStarReaction(dt);
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
         startGameMode(g_game_mode);
@@ -1887,6 +2140,7 @@ fun main() >> i32 {
 
     g_theme_index = 0;
     startGameMode(MODE_FREE_PLAY);
+    initBackgroundStars();
     g_screen = SCREEN_MENU;
     g_settings_return_screen = SCREEN_MENU;
     menuInit();

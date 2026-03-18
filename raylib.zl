@@ -794,6 +794,12 @@ wrap @BeginBlendMode(p0: i32) >> void;
 wrap @EndBlendMode() >> void;
 wrap @BeginScissorMode(p0: i32, p1: i32, p2: i32, p3: i32) >> void;
 wrap @EndScissorMode() >> void;
+fun BeginScissorMode(p0: i32, p1: i32, p2: i32, p3: i32) >> void {
+    @BeginScissorMode(p0, p1, p2, p3);
+}
+fun EndScissorMode() >> void {
+    @EndScissorMode();
+}
 wrap @BeginVrStereoMode(p0: VrStereoConfig) >> void;
 wrap @EndVrStereoMode() >> void;
 wrap @LoadVrStereoConfig(p0: VrDeviceInfo) >> VrStereoConfig;

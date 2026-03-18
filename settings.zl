@@ -10,16 +10,27 @@ use zltris.theme
 #define SETTINGS_ITEM_SDF 4
 #define SETTINGS_ITEM_DOUBLE_ROW 5
 #define SETTINGS_ITEM_INSTANT_RESTART 6
-#define SETTINGS_ITEM_BACK 7
-#define SETTINGS_ITEM_COUNT 8
+#define SETTINGS_ITEM_BG_STARS_AMOUNT 7
+#define SETTINGS_ITEM_BG_STARS_MODE 8
+#define SETTINGS_ITEM_STAR_PEAK_TARGET 9
+#define SETTINGS_ITEM_STAR_INTENSITY 10
+#define SETTINGS_ITEM_BACK 11
+#define SETTINGS_ITEM_COUNT 12
+#define SETTINGS_VISIBLE_ROWS 8
+
+#define STAR_MODE_NONE 0
+#define STAR_MODE_DROPS 1
+#define STAR_MODE_MUSIC 2
 
 #define SETTINGS_ACTION_NONE 0
 #define SETTINGS_ACTION_BACK 1
 
 i32 g_settings_index = 0;
+f32 g_settings_scroll = 0.0;
 
 fun settingsInit() >> void {
     g_settings_index = 0;
+    g_settings_scroll = 0.0;
 }
 
 fun settingsActionNone() >> i32 { return SETTINGS_ACTION_NONE; }
@@ -92,6 +103,55 @@ fun itemY(index: i32) >> i64 {
     return 246 + (index as i64) * 78;
 }
 
+fun visibleOrderForItem(index: i32, bg_stars_mode: i32) >> i32 {
+    if (bg_stars_mode != STAR_MODE_DROPS) {
+        if (index == SETTINGS_ITEM_STAR_PEAK_TARGET || index == SETTINGS_ITEM_STAR_INTENSITY) {
+            return -1;
+        }
+        if (index > SETTINGS_ITEM_STAR_INTENSITY) {
+            return index - 2;
+        }
+    }
+    return index;
+}
+
+fun visibleItemCount(bg_stars_mode: i32) >> i32 {
+    if (bg_stars_mode == STAR_MODE_DROPS) {
+        return SETTINGS_ITEM_COUNT;
+    }
+    return SETTINGS_ITEM_COUNT - 2;
+}
+
+fun itemFromVisibleOrder(order: i32, bg_stars_mode: i32) >> i32 {
+    if (bg_stars_mode != STAR_MODE_DROPS && order >= SETTINGS_ITEM_STAR_PEAK_TARGET) {
+        return order + 2;
+    }
+    return order;
+}
+
+fun itemYDraw(index: i32, bg_stars_mode: i32) >> i64 {
+    i32 order = visibleOrderForItem(index, bg_stars_mode);
+    if (order < 0) {
+        return -10000;
+    }
+    return 246 + (order as i64) * 78 - (g_settings_scroll * 78.0) as i64;
+}
+
+fun drawSelectionGlow(theme: Theme, y: i64) >> void {
+    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, 0.16));
+    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, 0.86));
+}
+
+fun bgStarsModeLabel(mode: i32) >> ptr<u8> {
+    if (mode == STAR_MODE_DROPS) {
+        return "Drops";
+    }
+    if (mode == STAR_MODE_MUSIC) {
+        return "Music";
+    }
+    return "None";
+}
+
 fun rowSelected(index: i32) >> bool {
     return g_settings_index == index;
 }
@@ -113,8 +173,8 @@ fun measureTextWidthBase(font: Font, text: ptr<u8>, size: i64) >> i64 {
     return (m.x / uiScale()) as i64;
 }
 
-fun drawThemeRow(font: Font, theme: Theme, theme_index: i32) >> void {
-    i64 y = itemY(SETTINGS_ITEM_THEME);
+fun drawSelectorRow(font: Font, theme: Theme, bg_stars_mode: i32, index: i32, label: ptr<u8>, value: ptr<u8>) >> void {
+    i64 y = itemYDraw(index, bg_stars_mode);
     i64 row_x = 118;
     i64 row_w = 412;
     i64 right_padding = 18;
@@ -123,33 +183,34 @@ fun drawThemeRow(font: Font, theme: Theme, theme_index: i32) >> void {
 
     ptr<u8> left_arrow = "<";
     ptr<u8> right_arrow = ">";
-    ptr<u8> name = themeName(theme_index);
 
     i64 right_arrow_w = measureTextWidthBase(font, right_arrow, 15);
     i64 left_arrow_w = measureTextWidthBase(font, left_arrow, 15);
-    i64 name_w = measureTextWidthBase(font, name, 15);
+    i64 value_w = measureTextWidthBase(font, value, 15);
 
     i64 right_edge = row_x + row_w - right_padding;
     i64 right_arrow_x = right_edge - right_arrow_w;
-    i64 name_x = right_arrow_x - text_gap - name_w;
-    i64 left_arrow_x = name_x - arrow_gap - left_arrow_w;
+    i64 value_x = right_arrow_x - text_gap - value_w;
+    i64 left_arrow_x = value_x - arrow_gap - left_arrow_w;
 
     u32 stroke = alphaColor(theme.text_muted, 0.45);
-    if (rowSelected(SETTINGS_ITEM_THEME)) {
+    if (rowSelected(index)) {
+        drawSelectionGlow(theme, y);
         stroke = theme.panel_stroke;
     }
     fillRect(row_x, y, row_w, 62, alphaColor(theme.panel_bg, 0.92));
     strokeRect(row_x, y, row_w, 62, stroke);
-    drawTextColor(font, "Theme", 136, y + 20, 15, theme.text_main);
+    drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
     drawTextColor(font, left_arrow, left_arrow_x, y + 20, 15, theme.text_main);
-    drawTextColor(font, name, name_x, y + 20, 15, theme.panel_stroke);
+    drawTextColor(font, value, value_x, y + 20, 15, theme.panel_stroke);
     drawTextColor(font, right_arrow, right_arrow_x, y + 20, 15, theme.text_main);
 }
 
-fun drawSliderRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
-    i64 y = itemY(index);
+fun drawSliderRow(font: Font, theme: Theme, bg_stars_mode: i32, index: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
+    i64 y = itemYDraw(index, bg_stars_mode);
     u32 stroke = alphaColor(theme.text_muted, 0.45);
     if (rowSelected(index)) {
+        drawSelectionGlow(theme, y);
         stroke = theme.panel_stroke;
     }
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
@@ -169,10 +230,11 @@ fun drawSliderRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, value_te
     fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, theme.text_main);
 }
 
-fun drawBackRow(font: Font, theme: Theme) >> void {
-    i64 y = itemY(SETTINGS_ITEM_BACK);
+fun drawBackRow(font: Font, theme: Theme, bg_stars_mode: i32) >> void {
+    i64 y = itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode);
     u32 stroke = alphaColor(theme.text_muted, 0.45);
     if (rowSelected(SETTINGS_ITEM_BACK)) {
+        drawSelectionGlow(theme, y);
         stroke = theme.panel_stroke;
     }
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
@@ -181,10 +243,11 @@ fun drawBackRow(font: Font, theme: Theme) >> void {
     drawTextColor(font, "ENTER", 436, y + 20, 12, theme.text_muted);
 }
 
-fun drawToggleRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, enabled: bool) >> void {
-    i64 y = itemY(index);
+fun drawToggleRow(font: Font, theme: Theme, bg_stars_mode: i32, index: i32, label: ptr<u8>, enabled: bool) >> void {
+    i64 y = itemYDraw(index, bg_stars_mode);
     u32 stroke = alphaColor(theme.text_muted, 0.45);
     if (rowSelected(index)) {
+        drawSelectionGlow(theme, y);
         stroke = theme.panel_stroke;
     }
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
@@ -197,27 +260,49 @@ fun drawToggleRow(font: Font, theme: Theme, index: i32, label: ptr<u8>, enabled:
     drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
 }
 
-fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32, dcd: f32, sdf: f32, double_row_ui: bool, instant_restart: bool) >> void {
+fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32, dcd: f32, sdf: f32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, double_row_ui: bool, instant_restart: bool) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
 
-    fillRect(84, 64, 480, 836, alphaColor(theme.bg_outer, 0.90));
-    strokeRect(84, 64, 480, 836, alphaColor(theme.panel_stroke, 0.90));
+    fillRect(84, 48, 480, 860, alphaColor(theme.bg_outer, 0.90));
+    strokeRect(84, 48, 480, 860, alphaColor(theme.panel_stroke, 0.90));
 
     drawTextColor(font, "SETTINGS", 130, 118, 30, theme.text_main);
     drawTextColor(font, "Arrow keys or mouse", 130, 162, 14, theme.text_muted);
     drawTextColor(font, "Left/Right changes value", 130, 182, 14, theme.text_muted);
 
-    drawThemeRow(font, theme, theme_index);
-    drawSliderRow(font, theme, SETTINGS_ITEM_ARR, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);
-    drawSliderRow(font, theme, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
-    drawSliderRow(font, theme, SETTINGS_ITEM_DCD, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);
-    drawSliderRow(font, theme, SETTINGS_ITEM_SDF, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);
-    drawToggleRow(font, theme, SETTINGS_ITEM_DOUBLE_ROW, "Double-row UI", double_row_ui);
-    drawToggleRow(font, theme, SETTINGS_ITEM_INSTANT_RESTART, "Instant restart", instant_restart);
-    drawBackRow(font, theme);
+    i32 visible_rows = visibleItemCount(bg_stars_mode);
+    if (visible_rows > SETTINGS_VISIBLE_ROWS) {
+        visible_rows = SETTINGS_VISIBLE_ROWS;
+    }
+    i64 list_h_base = 18 + (visible_rows as i64) * 78;
+    i32 list_x = uiX(112);
+    i32 list_y = uiY(232);
+    i32 list_w = uiS(424);
+    i32 list_h = uiS(list_h_base);
+    BeginScissorMode(list_x, list_y, list_w, list_h);
+
+    drawSelectorRow(font, theme, bg_stars_mode, SETTINGS_ITEM_THEME, "Theme", themeName(theme_index));
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_ARR, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DCD, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_SDF, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);
+    drawToggleRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DOUBLE_ROW, "Double-row UI", double_row_ui);
+    drawToggleRow(font, theme, bg_stars_mode, SETTINGS_ITEM_INSTANT_RESTART, "Instant restart", instant_restart);
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_BG_STARS_AMOUNT, "BG stars amount", TextFormat("%i", bg_stars_amount), bg_stars_amount as f32, 0.0, 150.0);
+    drawSelectorRow(font, theme, bg_stars_mode, SETTINGS_ITEM_BG_STARS_MODE, "BG stars react", bgStarsModeLabel(bg_stars_mode));
+    if (bg_stars_mode == STAR_MODE_DROPS) {
+        drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_STAR_PEAK_TARGET, "Star peak target", TextFormat("%.1f dps", star_peak_target_dps), star_peak_target_dps, 0.5, 3.5);
+        drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_STAR_INTENSITY, "Star intensity", TextFormat("%.1f", star_intensity), star_intensity, 0.1, 1.0);
+    }
+    drawBackRow(font, theme, bg_stars_mode);
+
+    EndScissorMode();
+
+    fillRect(112, 232, 424, 18, alphaColor(theme.bg_outer, 0.75));
+    fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75));
 }
 
-fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if (index == SETTINGS_ITEM_THEME) {
         theme_index[0] = switchTheme(theme_index[0], dir);
         return SETTINGS_ACTION_NONE;
@@ -238,6 +323,34 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
         sdf[0] = clampf(sdf[0] + (dir as f32) * 0.5, 1.0, 40.0);
         return SETTINGS_ACTION_NONE;
     }
+    if (index == SETTINGS_ITEM_BG_STARS_AMOUNT) {
+        bg_stars_amount[0] += dir;
+        if (bg_stars_amount[0] < 0) {
+            bg_stars_amount[0] = 0;
+        }
+        if (bg_stars_amount[0] > 150) {
+            bg_stars_amount[0] = 150;
+        }
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_BG_STARS_MODE) {
+        bg_stars_mode[0] += dir;
+        if (bg_stars_mode[0] < STAR_MODE_NONE) {
+            bg_stars_mode[0] = STAR_MODE_MUSIC;
+        }
+        if (bg_stars_mode[0] > STAR_MODE_MUSIC) {
+            bg_stars_mode[0] = STAR_MODE_NONE;
+        }
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_STAR_PEAK_TARGET) {
+        star_peak_target_dps[0] = clampf(star_peak_target_dps[0] + (dir as f32) * 0.1, 0.5, 3.5);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_STAR_INTENSITY) {
+        star_intensity[0] = clampf(star_intensity[0] + (dir as f32) * 0.1, 0.1, 1.0);
+        return SETTINGS_ACTION_NONE;
+    }
     if (index == SETTINGS_ITEM_DOUBLE_ROW) {
         double_row_ui[0] = !double_row_ui[0];
         return SETTINGS_ACTION_NONE;
@@ -249,28 +362,86 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
     return SETTINGS_ACTION_BACK;
 }
 
-fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if (IsKeyPressed(KEY_ESCAPE)) {
         return SETTINGS_ACTION_BACK;
     }
 
+    i32 max_scroll = SETTINGS_ITEM_COUNT - SETTINGS_VISIBLE_ROWS;
+    i32 item_count = visibleItemCount(bg_stars_mode[0]);
+    max_scroll = item_count - SETTINGS_VISIBLE_ROWS;
+    if (max_scroll < 0) {
+        max_scroll = 0;
+    }
+
+    f32 wheel = GetMouseWheelMove();
+    if (wheel > 0.0) {
+        g_settings_scroll -= 1.0;
+    } else if (wheel < 0.0) {
+        g_settings_scroll += 1.0;
+    }
+    if (g_settings_scroll < 0.0) {
+        g_settings_scroll = 0.0;
+    }
+    if (g_settings_scroll > (max_scroll as f32)) {
+        g_settings_scroll = max_scroll as f32;
+    }
+
+    if (g_settings_index < 0) {
+        g_settings_index = SETTINGS_ITEM_COUNT - 1;
+    }
+    if (g_settings_index >= SETTINGS_ITEM_COUNT) {
+        g_settings_index = 0;
+    }
+    if (bg_stars_mode[0] != STAR_MODE_DROPS && (g_settings_index == SETTINGS_ITEM_STAR_PEAK_TARGET || g_settings_index == SETTINGS_ITEM_STAR_INTENSITY)) {
+        g_settings_index = SETTINGS_ITEM_BG_STARS_MODE;
+    }
+
     if (IsKeyPressed(KEY_UP)) {
-        g_settings_index -= 1;
-        if (g_settings_index < 0) {
-            g_settings_index = SETTINGS_ITEM_COUNT - 1;
+        i32 idx = g_settings_index;
+        for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
+            idx -= 1;
+            if (idx < 0) {
+                idx = SETTINGS_ITEM_COUNT - 1;
+            }
+            if (visibleOrderForItem(idx, bg_stars_mode[0]) >= 0) {
+                g_settings_index = idx;
+                break;
+            }
+        }
+        i32 sel_order = visibleOrderForItem(g_settings_index, bg_stars_mode[0]);
+        if ((sel_order as f32) < g_settings_scroll) {
+            g_settings_scroll = sel_order as f32;
         }
     }
     if (IsKeyPressed(KEY_DOWN)) {
-        g_settings_index += 1;
-        if (g_settings_index >= SETTINGS_ITEM_COUNT) {
-            g_settings_index = 0;
+        i32 idx = g_settings_index;
+        for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
+            idx += 1;
+            if (idx >= SETTINGS_ITEM_COUNT) {
+                idx = 0;
+            }
+            if (visibleOrderForItem(idx, bg_stars_mode[0]) >= 0) {
+                g_settings_index = idx;
+                break;
+            }
+        }
+        i32 sel_order = visibleOrderForItem(g_settings_index, bg_stars_mode[0]);
+        if (sel_order >= (g_settings_scroll as i32) + SETTINGS_VISIBLE_ROWS) {
+            g_settings_scroll = (sel_order - (SETTINGS_VISIBLE_ROWS - 1)) as f32;
         }
     }
+    if (g_settings_scroll < 0.0) {
+        g_settings_scroll = 0.0;
+    }
+    if (g_settings_scroll > (max_scroll as f32)) {
+        g_settings_scroll = max_scroll as f32;
+    }
     if (IsKeyPressed(KEY_LEFT)) {
-        return settingsNudgeValue(g_settings_index, -1, theme_index, arr, das, dcd, sdf, double_row_ui, instant_restart);
+        return settingsNudgeValue(g_settings_index, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
     }
     if (IsKeyPressed(KEY_RIGHT)) {
-        return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, double_row_ui, instant_restart);
+        return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
     }
     if (IsKeyPressed(KEY_ENTER)) {
         if (g_settings_index == SETTINGS_ITEM_BACK) {
@@ -282,16 +453,38 @@ fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr
         if (g_settings_index == SETTINGS_ITEM_INSTANT_RESTART) {
             instant_restart[0] = !instant_restart[0];
         }
-    }
-
-    Vector2 mouse = GetMousePosition();
-    for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
-        if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(i), 412, 62)) {
-            g_settings_index = i;
+        if (g_settings_index == SETTINGS_ITEM_BG_STARS_MODE) {
+            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
+        }
+        if (g_settings_index == SETTINGS_ITEM_STAR_PEAK_TARGET) {
+            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
+        }
+        if (g_settings_index == SETTINGS_ITEM_STAR_INTENSITY) {
+            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
         }
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_THEME), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    Vector2 mouse = GetMousePosition();
+    i32 visible_rows = item_count;
+    if (visible_rows > SETTINGS_VISIBLE_ROWS) {
+        visible_rows = SETTINGS_VISIBLE_ROWS;
+    }
+    i64 list_h_base = 18 + (visible_rows as i64) * 78;
+
+    if (pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base)) {
+        f32 row_h = uiS(78) as f32;
+        f32 local = (mouse.y - (uiY(246) as f32)) / row_h;
+        i32 hovered_order = (local + g_settings_scroll) as i32;
+        if (hovered_order < 0) {
+            hovered_order = 0;
+        }
+        if (hovered_order >= item_count) {
+            hovered_order = item_count - 1;
+        }
+        g_settings_index = itemFromVisibleOrder(hovered_order, bg_stars_mode[0]);
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_THEME, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         if (mouse.x < uiX(336) as f32) {
             theme_index[0] = switchTheme(theme_index[0], -1);
         } else {
@@ -299,27 +492,43 @@ fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr
         }
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_ARR) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_DAS) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_DCD) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemY(SETTINGS_ITEM_SDF) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BG_STARS_MODE, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (mouse.x < uiX(336) as f32) {
+            return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
+        }
+        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_DOUBLE_ROW), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DAS, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DCD, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_SDF, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);
+    }
+    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BG_STARS_AMOUNT, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;
+    }
+    if (bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);
+    }
+    if (bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_INTENSITY, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);
+    }
+
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_DOUBLE_ROW, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         double_row_ui[0] = !double_row_ui[0];
     }
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_INSTANT_RESTART), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_INSTANT_RESTART, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         instant_restart[0] = !instant_restart[0];
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemY(SETTINGS_ITEM_BACK), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         return SETTINGS_ACTION_BACK;
     }
 
