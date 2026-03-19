@@ -97,6 +97,7 @@ f32 g_mode_timer = 0.0;
 f32 g_countdown_timer = 0.0;
 f32 g_restart_charge = 0.0;
 bool g_restart_hold_latched = false;
+f32 g_restart_afterglow = 0.0;
 f32 g_star_soft_glow = 0.0;
 f32 g_star_hard_burst = 0.0;
 f32 g_star_hard_target = 0.0;
@@ -387,6 +388,22 @@ fun restartStripeTopScreen() >> i32 {
     return top;
 }
 
+fun restartAfterglowTopScreen() >> i32 {
+    i32 start_top = uiY(852);
+    i32 end_top = GetScreenHeight();
+    if (g_restart_afterglow <= 0.0) {
+        return end_top;
+    }
+    f32 p = 1.0 as f32 - (g_restart_afterglow / (0.24 as f32));
+    if (p < 0.0) {
+        p = 0.0;
+    }
+    if (p > 1.0) {
+        p = 1.0;
+    }
+    return (start_top as f32 + ((end_top - start_top) as f32) * p) as i32;
+}
+
 fun restartHintAlpha() >> f32 {
     if (g_restart_charge <= 0.0) {
         return 1.0;
@@ -406,28 +423,48 @@ fun restartHintAlpha() >> f32 {
 }
 
 fun drawRestartCharge(font: Font, theme: Theme) >> void {
-    if (g_restart_charge <= 0.0) {
+    if (g_restart_charge <= 0.0 && g_restart_afterglow <= 0.0) {
         return;
     }
 
     i32 top = restartStripeTopScreen();
+    f32 alpha_mul = 1.0;
+    if (g_restart_charge <= 0.0) {
+        top = restartAfterglowTopScreen();
+        alpha_mul = g_restart_afterglow / (0.24 as f32);
+        if (alpha_mul < 0.0) {
+            alpha_mul = 0.0;
+        }
+        if (alpha_mul > 1.0) {
+            alpha_mul = 1.0;
+        }
+    }
 
-    f32 top_alpha = 0.26 + g_restart_charge * 0.44;
+    f32 top_alpha = (0.26 + g_restart_charge * 0.44) * alpha_mul;
     if (top_alpha > 0.86) {
         top_alpha = 0.86;
     }
     u32 top_color = alphaColor(theme.panel_stroke, top_alpha);
     u32 bottom_color = alphaColor(shadeColor(theme.bg_outer, 0.46), 0.92);
     DrawRectangleGradientV(0, top, GetScreenWidth(), GetScreenHeight() - top, toColor(top_color), toColor(bottom_color));
-    DrawRectangle(0, top - 2, GetScreenWidth(), 2, toColor(alphaColor(theme.text_main, 0.52)));
+    DrawRectangle(0, top - 2, GetScreenWidth(), 2, toColor(alphaColor(theme.text_main, (0.52 as f32) * alpha_mul)));
 
     ptr<u8> hint = "Hold for restart";
     f32 hint_size = uiS(12) as f32;
     Vector2 m = MeasureTextExSize(font, hint, hint_size, 0.0 as f32);
     f32 tx = ((GetScreenWidth() as f32) - m.x) * 0.5;
     f32 ty = (top as f32) + uiS(8) as f32;
-    f32 hint_alpha = 0.62 as f32 + g_restart_charge * (0.28 as f32);
+    f32 hint_alpha = (0.62 as f32 + g_restart_charge * (0.28 as f32)) * alpha_mul;
     DrawTextExXY(font, hint, tx, ty, hint_size, 0.0 as f32, toColor(alphaColor(theme.text_main, hint_alpha)));
+}
+
+fun updateRestartAfterglow(dt: f32) >> void {
+    if (g_restart_afterglow > 0.0) {
+        g_restart_afterglow -= dt;
+        if (g_restart_afterglow < 0.0) {
+            g_restart_afterglow = 0.0;
+        }
+    }
 }
 
 fun updateRestartCharge(dt: f32) >> bool {
@@ -446,6 +483,8 @@ fun updateRestartCharge(dt: f32) >> bool {
             g_restart_charge = 1.0;
             g_restart_hold_latched = true;
             startGameMode(g_game_mode);
+            g_restart_afterglow = 0.24 as f32;
+            g_restart_hold_latched = true;
             return true;
         }
         return false;
@@ -2027,6 +2066,7 @@ fun updateLock(dt: f32) >> void {
 fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
     updateBackgroundStarReaction(dt);
+    updateRestartAfterglow(dt);
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
         startGameMode(g_game_mode);
