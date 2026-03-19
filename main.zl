@@ -255,21 +255,6 @@ fun updateBackgroundStarReaction(dt: f32) >> void {
     g_star_hard_burst *= (0.995 + pulse_weight * 0.005);
 }
 
-fun onPiecePlaced() >> void {
-    if (g_bg_star_react_mode != STAR_MODE_DROPS) {
-        return;
-    }
-    f32 norm = starIntensityNorm();
-    g_star_pps_meter += 1.0;
-    if (g_star_pps_meter > 3.0) {
-        g_star_pps_meter = 3.0;
-    }
-    g_star_hard_target += 0.01 + norm * 0.12;
-    if (g_star_hard_target > 1.0) {
-        g_star_hard_target = 1.0;
-    }
-}
-
 fun drawStarArms(cx: i64, cy: i64, size: i64, style: i32, color: u32) >> void {
     if (style == 0) {
         DrawLine(uiX(cx - size), uiY(cy), uiX(cx + size), uiY(cy), toColor(color));
@@ -320,7 +305,7 @@ fun drawBackgroundStars(theme: Theme) >> void {
     if (g_bg_star_react_mode == STAR_MODE_DROPS) {
         f32 pps_norm = clamp01(g_star_pps_meter);
         f32 pulse_weight = 0.05 + norm * norm * 0.95;
-        f32 base_boost = 0.08 + pps_norm * 0.82 + g_star_soft_glow * 0.18;
+        f32 base_boost = 0.06 + pps_norm * 0.72 + g_star_soft_glow * 0.50;
         f32 pulse_boost = g_star_hard_burst * (0.25 + norm * 1.35) * pulse_weight;
         react_boost = base_boost + pulse_boost;
         if (react_boost > 2.0) {
@@ -1524,7 +1509,6 @@ fun clearLines() >> i32 {
 
 fun stepLock() >> void {
     lockCurrentPiece();
-    onPiecePlaced();
     clearLines();
     if (isFortyLinesMode() && g_round_state == ROUND_RUNNING && g_lines >= 40) {
         g_round_state = ROUND_FINISHED;
@@ -1541,6 +1525,10 @@ fun hardDrop() >> void {
     g_score += distance * 2;
     if (g_bg_star_react_mode == STAR_MODE_DROPS) {
         f32 norm = starIntensityNorm();
+        g_star_pps_meter += 1.0;
+        if (g_star_pps_meter > 3.0) {
+            g_star_pps_meter = 3.0;
+        }
         g_star_hard_target += 0.06 + norm * 0.64;
         if (g_star_hard_target > 1.0) {
             g_star_hard_target = 1.0;
