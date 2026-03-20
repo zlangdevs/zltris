@@ -94,6 +94,8 @@ f32 g_star_intensity = 0.4;
 i32 g_game_mode = MODE_FREE_PLAY;
 i32 g_round_state = ROUND_RUNNING;
 f32 g_mode_timer = 0.0;
+f32 g_run_timer = 0.0;
+i32 g_pieces_placed = 0;
 f32 g_countdown_timer = 0.0;
 f32 g_restart_charge = 0.0;
 bool g_restart_hold_latched = false;
@@ -603,6 +605,13 @@ fun drawTextCenteredInRect(font: Font, text: ptr<u8>, x: i64, y: i64, w: i64, h:
 
 fun clearWithColor(color_rgba: u32) >> void {
     ClearBackground(toColor(color_rgba));
+}
+
+fun currentPps() >> f32 {
+    if (g_run_timer <= 0.001) {
+        return 0.0;
+    }
+    return (g_pieces_placed as f32) / g_run_timer;
 }
 
 fun ghostColor(base: u32) >> u32 { return alphaColor(base, 0.28); }
@@ -1394,6 +1403,8 @@ fun resetGame() >> void {
     g_bag_pos = BAG_SIZE;
     g_score = 0;
     g_lines = 0;
+    g_run_timer = 0.0;
+    g_pieces_placed = 0;
     g_hold_kind = -1;
     g_hold_used = false;
     g_game_over = false;
@@ -1548,6 +1559,7 @@ fun clearLines() >> i32 {
 
 fun stepLock() >> void {
     lockCurrentPiece();
+    g_pieces_placed += 1;
     clearLines();
     if (isFortyLinesMode() && g_round_state == ROUND_RUNNING && g_lines >= 40) {
         g_round_state = ROUND_FINISHED;
@@ -1683,10 +1695,11 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
             drawMiniPieceCentered(theme, g_hold_kind, -178, 256, 112, 112, 16);
         }
 
-        drawTextColor(font, TextFormat("SCORE\n%i", g_score), -194, 420, 16, theme.text_main);
-        drawTextColor(font, TextFormat("LINES\n%i", g_lines), -194, 492, 16, theme.text_main);
+        drawTextColor(font, TextFormat("SCORE\n%i", g_score), -194, 404, 16, theme.text_main);
+        drawTextColor(font, TextFormat("LINES\n%i", g_lines), -194, 468, 16, theme.text_main);
+        drawTextColor(font, TextFormat("PPS\n%.2f", currentPps()), -194, 532, 16, theme.text_main);
         if (isFortyLinesMode()) {
-            drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), -194, 564, 14, theme.panel_stroke);
+            drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), -194, 586, 14, theme.panel_stroke);
         }
 
         fillRect(SIDEBAR_X, 120, 178, 510, theme.panel_bg);
@@ -2118,6 +2131,12 @@ fun updateGameScreen() >> void {
         }
 
         g_mode_timer += dt;
+    }
+
+    if (!g_game_over) {
+        if (!isFortyLinesMode() || g_round_state == ROUND_RUNNING) {
+            g_run_timer += dt;
+        }
     }
 
     if (g_game_over) {
