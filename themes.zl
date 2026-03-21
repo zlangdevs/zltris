@@ -25,7 +25,7 @@ fun themeRgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
            ((a as u32) << 24);
 }
 
-fun themeCount() >> i32 { return 3; }
+fun themeCount() >> i32 { return 5; }
 
 fun themeName(index: i32) >> ptr<u8> {
     if (index == 1) {
@@ -33,6 +33,12 @@ fun themeName(index: i32) >> ptr<u8> {
     }
     if (index == 2) {
         return "Night Circuit";
+    }
+    if (index == 3) {
+        return "Circuit Bloom";
+    }
+    if (index == 4) {
+        return "Golden Mayhem";
     }
     return "ZLang Neon";
 }
@@ -83,6 +89,46 @@ fun setTheme(index: i32) >> Theme {
             piece_l = themeRgba(190, 117, 255, 255),
             piece_s = themeRgba(143, 81, 237, 255),
             piece_z = themeRgba(225, 133, 255, 255),
+        };
+    }
+
+    if (idx == 3) {
+        return Theme{
+            bg_outer = themeRgba(6, 20, 12, 255),
+            bg_inner = themeRgba(38, 98, 74, 255),
+            panel_bg = themeRgba(12, 38, 24, 255),
+            panel_stroke = themeRgba(142, 198, 124, 255),
+            board_bg = themeRgba(10, 32, 20, 255),
+            board_grid = themeRgba(102, 178, 130, 102),
+            text_main = themeRgba(220, 244, 228, 255),
+            text_muted = themeRgba(142, 210, 170, 255),
+            piece_i = themeRgba(135, 230, 112, 255),
+            piece_o = themeRgba(245, 213, 88, 255),
+            piece_t = themeRgba(111, 204, 99, 255),
+            piece_j = themeRgba(86, 170, 82, 255),
+            piece_l = themeRgba(235, 193, 69, 255),
+            piece_s = themeRgba(152, 224, 91, 255),
+            piece_z = themeRgba(217, 178, 57, 255),
+        };
+    }
+
+    if (idx == 4) {
+        return Theme{
+            bg_outer = themeRgba(7, 3, 1, 255),
+            bg_inner = themeRgba(57, 41, 20, 255),
+            panel_bg = themeRgba(17, 13, 5, 255),
+            panel_stroke = themeRgba(223, 183, 75, 255),
+            board_bg = themeRgba(11, 8, 3, 255),
+            board_grid = themeRgba(196, 141, 54, 112),
+            text_main = themeRgba(251, 252, 243, 255),
+            text_muted = themeRgba(246, 220, 126, 255),
+            piece_i = themeRgba(255, 228, 124, 255),
+            piece_o = themeRgba(255, 244, 190, 255),
+            piece_t = themeRgba(236, 170, 44, 255),
+            piece_j = themeRgba(186, 124, 34, 255),
+            piece_l = themeRgba(255, 196, 66, 255),
+            piece_s = themeRgba(214, 149, 46, 255),
+            piece_z = themeRgba(248, 182, 54, 255),
         };
     }
 
