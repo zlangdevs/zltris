@@ -1,6 +1,7 @@
 module zltris.theme;
 
 struct Theme {
+    name ptr<u8>,
     bg_outer u32,
     bg_inner u32,
     panel_bg u32,
@@ -25,139 +26,121 @@ fun themeRgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
            ((a as u32) << 24);
 }
 
-fun themeCount() >> i32 { return 5; }
+arr<Theme, 5> g_themes = {
+    Theme{
+        name = "ZLang Neon",
+        bg_outer = 0xFF180105,
+        bg_inner = 0xFF52051F,
+        panel_bg = 0xFF230006,
+        panel_stroke = 0xFFE23075,
+        board_bg = 0xFF52051F,
+        board_grid = 0x72E23075,
+        text_main = 0xFFFFDEEC,
+        text_muted = 0xFFFF8EB4,
+        piece_i = 0xFFF45E9E,
+        piece_o = 0xFFF278BE,
+        piece_t = 0xFFE23075,
+        piece_j = 0xFFCC3462,
+        piece_l = 0xFFEC4C89,
+        piece_s = 0xFFEB4B6F,
+        piece_z = 0xFFFF74AD,
+    },
+    Theme{
+        name = "Synth Pulse",
+        bg_outer = 0xFF22030E,
+        bg_inner = 0xFF780C37,
+        panel_bg = 0xFF3A0616,
+        panel_stroke = 0xFFD648FF,
+        board_bg = 0xFF48081E,
+        board_grid = 0x68D648FF,
+        text_main = 0xFFFAE7FF,
+        text_muted = 0xFFEB9AFF,
+        piece_i = 0xFFEE76FF,
+        piece_o = 0xFFEEB0FF,
+        piece_t = 0xFFFF58D4,
+        piece_j = 0xFFF54AB2,
+        piece_l = 0xFFD769FF,
+        piece_s = 0xFFC454FA,
+        piece_z = 0xFF9A36FF,
+    },
+    Theme{
+        name = "Night Circuit",
+        bg_outer = 0xFF26040C,
+        bg_inner = 0xFF6C0A2B,
+        panel_bg = 0xFF3F0712,
+        panel_stroke = 0xFFFF5A9C,
+        board_bg = 0xFF4C081C,
+        board_grid = 0x68FF5A9C,
+        text_main = 0xFFFFE2F3,
+        text_muted = 0xFFFF97C4,
+        piece_i = 0xFFFF78B0,
+        piece_o = 0xFFFF97D3,
+        piece_t = 0xFFFF5A9C,
+        piece_j = 0xFFE6477D,
+        piece_l = 0xFFFF75BE,
+        piece_s = 0xFFED518F,
+        piece_z = 0xFFFF85E1,
+    },
+    Theme{
+        name = "Circuit Bloom",
+        bg_outer = 0xFF0C1406,
+        bg_inner = 0xFF4A6226,
+        panel_bg = 0xFF18260C,
+        panel_stroke = 0xFF7CC68E,
+        board_bg = 0xFF14200A,
+        board_grid = 0x6682B266,
+        text_main = 0xFFE4F4DC,
+        text_muted = 0xFFAAD28E,
+        piece_i = 0xFF70E687,
+        piece_o = 0xFF58D5F5,
+        piece_t = 0xFF63CC6F,
+        piece_j = 0xFF52AA56,
+        piece_l = 0xFF45C1EB,
+        piece_s = 0xFF5BE098,
+        piece_z = 0xFF39B2D9,
+    },
+    Theme{
+        name = "Golden Mayhem",
+        bg_outer = 0xFF010307,
+        bg_inner = 0xFF142939,
+        panel_bg = 0xFF050D11,
+        panel_stroke = 0xFF4BB7DF,
+        board_bg = 0xFF03080B,
+        board_grid = 0x70368DC4,
+        text_main = 0xFFF3FCFB,
+        text_muted = 0xFF7EDCF6,
+        piece_i = 0xFF7CE4FF,
+        piece_o = 0xFFBEF4FF,
+        piece_t = 0xFF2CAAEC,
+        piece_j = 0xFF227CBA,
+        piece_l = 0xFF42C4FF,
+        piece_s = 0xFF2E95D6,
+        piece_z = 0xFF36B6F8,
+    },
+};
+
+fun themeCount() >> i32 {return 5;}
+
+fun clampThemeIndex(index: i32) >> i32 {
+    i32 idx = index;
+    if idx < 0 {idx = 0;}
+    if idx >= themeCount() {idx = themeCount() - 1;}
+    return idx;
+}
 
 fun themeName(index: i32) >> ptr<u8> {
-    if (index == 1) {
-        return "Synth Pulse";
-    }
-    if (index == 2) {
-        return "Night Circuit";
-    }
-    if (index == 3) {
-        return "Circuit Bloom";
-    }
-    if (index == 4) {
-        return "Golden Mayhem";
-    }
-    return "ZLang Neon";
+    i32 idx = clampThemeIndex(index);
+    return g_themes[idx].name;
 }
 
 fun setTheme(index: i32) >> Theme {
-    i32 idx = index;
-    if (idx < 0) {
-        idx = 0;
-    }
-    if (idx >= themeCount()) {
-        idx = themeCount() - 1;
-    }
-
-    if (idx == 1) {
-        return Theme{
-            bg_outer = themeRgba(14, 3, 34, 255),
-            bg_inner = themeRgba(55, 12, 120, 255),
-            panel_bg = themeRgba(22, 6, 58, 255),
-            panel_stroke = themeRgba(255, 72, 214, 255),
-            board_bg = themeRgba(30, 8, 72, 255),
-            board_grid = themeRgba(255, 72, 214, 104),
-            text_main = themeRgba(255, 231, 250, 255),
-            text_muted = themeRgba(255, 154, 235, 255),
-            piece_i = themeRgba(255, 118, 238, 255),
-            piece_o = themeRgba(255, 176, 238, 255),
-            piece_t = themeRgba(212, 88, 255, 255),
-            piece_j = themeRgba(178, 74, 245, 255),
-            piece_l = themeRgba(255, 105, 215, 255),
-            piece_s = themeRgba(250, 84, 196, 255),
-            piece_z = themeRgba(255, 54, 154, 255),
-        };
-    }
-
-    if (idx == 2) {
-        return Theme{
-            bg_outer = themeRgba(12, 4, 38, 255),
-            bg_inner = themeRgba(43, 10, 108, 255),
-            panel_bg = themeRgba(18, 7, 63, 255),
-            panel_stroke = themeRgba(156, 90, 255, 255),
-            board_bg = themeRgba(28, 8, 76, 255),
-            board_grid = themeRgba(156, 90, 255, 104),
-            text_main = themeRgba(243, 226, 255, 255),
-            text_muted = themeRgba(196, 151, 255, 255),
-            piece_i = themeRgba(176, 120, 255, 255),
-            piece_o = themeRgba(211, 151, 255, 255),
-            piece_t = themeRgba(156, 90, 255, 255),
-            piece_j = themeRgba(125, 71, 230, 255),
-            piece_l = themeRgba(190, 117, 255, 255),
-            piece_s = themeRgba(143, 81, 237, 255),
-            piece_z = themeRgba(225, 133, 255, 255),
-        };
-    }
-
-    if (idx == 3) {
-        return Theme{
-            bg_outer = themeRgba(6, 20, 12, 255),
-            bg_inner = themeRgba(38, 98, 74, 255),
-            panel_bg = themeRgba(12, 38, 24, 255),
-            panel_stroke = themeRgba(142, 198, 124, 255),
-            board_bg = themeRgba(10, 32, 20, 255),
-            board_grid = themeRgba(102, 178, 130, 102),
-            text_main = themeRgba(220, 244, 228, 255),
-            text_muted = themeRgba(142, 210, 170, 255),
-            piece_i = themeRgba(135, 230, 112, 255),
-            piece_o = themeRgba(245, 213, 88, 255),
-            piece_t = themeRgba(111, 204, 99, 255),
-            piece_j = themeRgba(86, 170, 82, 255),
-            piece_l = themeRgba(235, 193, 69, 255),
-            piece_s = themeRgba(152, 224, 91, 255),
-            piece_z = themeRgba(217, 178, 57, 255),
-        };
-    }
-
-    if (idx == 4) {
-        return Theme{
-            bg_outer = themeRgba(7, 3, 1, 255),
-            bg_inner = themeRgba(57, 41, 20, 255),
-            panel_bg = themeRgba(17, 13, 5, 255),
-            panel_stroke = themeRgba(223, 183, 75, 255),
-            board_bg = themeRgba(11, 8, 3, 255),
-            board_grid = themeRgba(196, 141, 54, 112),
-            text_main = themeRgba(251, 252, 243, 255),
-            text_muted = themeRgba(246, 220, 126, 255),
-            piece_i = themeRgba(255, 228, 124, 255),
-            piece_o = themeRgba(255, 244, 190, 255),
-            piece_t = themeRgba(236, 170, 44, 255),
-            piece_j = themeRgba(186, 124, 34, 255),
-            piece_l = themeRgba(255, 196, 66, 255),
-            piece_s = themeRgba(214, 149, 46, 255),
-            piece_z = themeRgba(248, 182, 54, 255),
-        };
-    }
-
-    return Theme{
-        bg_outer = themeRgba(5, 1, 24, 255),
-        bg_inner = themeRgba(31, 5, 82, 255),
-        panel_bg = themeRgba(6, 0, 35, 255),
-        panel_stroke = themeRgba(117, 48, 226, 255),
-        board_bg = themeRgba(31, 5, 82, 255),
-        board_grid = themeRgba(117, 48, 226, 114),
-        text_main = themeRgba(236, 222, 255, 255),
-        text_muted = themeRgba(180, 142, 255, 255),
-        piece_i = themeRgba(158, 94, 244, 255),
-        piece_o = themeRgba(190, 120, 242, 255),
-        piece_t = themeRgba(117, 48, 226, 255),
-        piece_j = themeRgba(98, 52, 204, 255),
-        piece_l = themeRgba(137, 76, 236, 255),
-        piece_s = themeRgba(111, 75, 235, 255),
-        piece_z = themeRgba(173, 116, 255, 255),
-    };
+    i32 idx = clampThemeIndex(index);
+    return g_themes[idx];
 }
 
 fun switchTheme(current_index: i32, direction: i32) >> i32 {
     i32 idx = current_index + direction;
-    if (idx < 0) {
-        return themeCount() - 1;
-    }
-    if (idx >= themeCount()) {
-        return 0;
-    }
+    if idx < 0 {return themeCount() - 1;}
+    if idx >= themeCount() {return 0;}
     return idx;
 }

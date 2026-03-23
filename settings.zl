@@ -25,15 +25,25 @@ use zltris.theme
 #define SETTINGS_ACTION_NONE 0
 #define SETTINGS_ACTION_BACK 1
 
-i32 g_settings_index = 0;
-f32 g_settings_scroll = 0.0;
+struct SettingsState {
+    index i32,
+    scroll f32,
+}
+
+fun init(self: SettingsState) >> SettingsState {
+    SettingsState next = self;
+    next.index = 0;
+    next.scroll = 0.0;
+    return next;
+}
+
+SettingsState g_settings = {0};
 
 #define SETTINGS_BG_GRID 18
 #define SETTINGS_BG_PHASES 16
 
 fun settingsInit() >> void {
-    g_settings_index = 0;
-    g_settings_scroll = 0.0;
+    g_settings = g_settings.init();
 }
 
 fun settingsActionNone() >> i32 { return SETTINGS_ACTION_NONE; }
@@ -51,12 +61,8 @@ fun toColor(color_rgba: u32) >> Color {
 fun alphaColor(base: u32, alpha: f32) >> u32 {
     i32 a = ((base >> 24) & 255) as i32;
     i32 scaled = ((a as f32) * alpha) as i32;
-    if (scaled < 0) {
-        scaled = 0;
-    }
-    if (scaled > 255) {
-        scaled = 255;
-    }
+    if scaled < 0 {scaled = 0;}
+    if scaled > 255 {scaled = 255;}
     return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
 }
 
@@ -85,153 +91,101 @@ fun bgVisibleRight() >> i64 {
 }
 
 fun absf(v: f32) >> f32 {
-    if (v < (0.0 as f32)) {
-        return -v;
-    }
+    if v < (0.0 as f32) {return -v;}
     return v;
 }
 
 fun absi(v: i32) >> i32 {
-    if (v < 0) {
-        return -v;
-    }
+    if v < 0 {return -v;}
     return v;
 }
 
 fun maxi(a: i32, b: i32) >> i32 {
-    if (a > b) {
-        return a;
-    }
+    if a > b {return a;}
     return b;
 }
 
 fun maxf(a: f32, b: f32) >> f32 {
-    if (a > b) {
-        return a;
-    }
+    if a > b {return a;}
     return b;
 }
 
 fun clamp01(v: f32) >> f32 {
-    if (v < (0.0 as f32)) {
-        return 0.0 as f32;
-    }
-    if (v > (1.0 as f32)) {
-        return 1.0 as f32;
-    }
+    if v < (0.0 as f32) {return 0.0 as f32;}
+    if v > (1.0 as f32) {return 1.0 as f32;}
     return v;
 }
 
 fun fractf(v: f32) >> f32 {
     i32 whole = v as i32;
     f32 f = v - (whole as f32);
-    if (f < (0.0 as f32)) {
-        f += 1.0 as f32;
-    }
+    if f < (0.0 as f32) {f += 1.0 as f32;}
     return f;
 }
 
 fun posMod(v: i32, m: i32) >> i32 {
-    if (m <= 0) {
-        return 0;
-    }
+    if m <= 0 {return 0;}
     i32 r = v % m;
-    if (r < 0) {
-        r += m;
-    }
+    if r < 0 {r += m;}
     return r;
 }
 
 fun hash32(v: i32) >> i32 {
     i32 x = v * 1664525 + 1013904223;
     x = x ^ (x >> 16);
-    if (x < 0) {
-        x = -x;
-    }
+    if x < 0 {x = -x;}
     return x;
 }
 
 fun triWave01(v: f32) >> f32 {
     f32 t = fractf(v);
-    if (t < (0.5 as f32)) {
-        return t * (2.0 as f32);
-    }
+    if t < (0.5 as f32) {return t * (2.0 as f32);}
     return ((1.0 as f32) - t) * (2.0 as f32);
 }
 
 fun pulseBand(distance: f32, width: f32) >> f32 {
-    if (width <= (0.0 as f32)) {
-        return 0.0 as f32;
-    }
+    if width <= (0.0 as f32) {return 0.0 as f32;}
     return clamp01((1.0 as f32) - distance / width);
 }
 
 fun zltrisGlyphFilled(letter: i32, col: i32, row: i32) >> bool {
-    if (col < 0 || col >= 5 || row < 0 || row >= 7) {
-        return false;
-    }
+    if col < 0 || col >= 5 || row < 0 || row >= 7 {return false;}
 
     if (letter == 0) {
-        if (row == 0 || row == 6) {
-            return true;
-        }
-        if (row == 1) { return col == 3; }
-        if (row == 2) { return col == 2; }
-        if (row == 3) { return col == 2; }
-        if (row == 4) { return col == 1; }
+        if row == 0 || row == 6 {return true;}
+        if row == 1 {return col == 3;}
+        if row == 2 {return col == 2;}
+        if row == 3 {return col == 2;}
+        if row == 4 {return col == 1;}
         return col == 0;
     }
 
-    if (letter == 1) {
-        return col == 0 || row == 6;
-    }
+    if letter == 1 {return col == 0 || row == 6;}
 
-    if (letter == 2) {
-        return row == 0 || col == 2;
-    }
+    if letter == 2 {return row == 0 || col == 2;}
 
     if (letter == 3) {
-        if (col == 0) {
-            return true;
-        }
-        if (row == 0 || row == 3) {
-            return col <= 3;
-        }
-        if (col == 3 && row < 3) {
-            return true;
-        }
-        if (row >= 3 && col == row - 2) {
-            return true;
-        }
+        if col == 0 {return true;}
+        if row == 0 || row == 3 {return col <= 3;}
+        if col == 3 && row < 3 {return true;}
+        if row >= 3 && col == row - 2 {return true;}
         return false;
     }
 
-    if (letter == 4) {
-        return row == 0 || row == 6 || col == 2;
-    }
+    if letter == 4 {return row == 0 || row == 6 || col == 2;}
 
-    if (row == 0 || row == 3 || row == 6) {
-        return true;
-    }
-    if (row < 3) {
-        return col == 0;
-    }
+    if row == 0 || row == 3 || row == 6 {return true;}
+    if row < 3 {return col == 0;}
     return col == 4;
 }
 
 fun chevronGlyphFilled(right_dir: bool, col: i32, row: i32) >> bool {
-    if (col < 0 || col >= 5 || row < 0 || row >= 7) {
-        return false;
-    }
+    if col < 0 || col >= 5 || row < 0 || row >= 7 {return false;}
 
     i32 band = row;
-    if (band > 3) {
-        band = 6 - row;
-    }
+    if band > 3 {band = 6 - row;}
 
-    if (right_dir) {
-        return col == band || col == (band + 1);
-    }
+    if right_dir {return col == band || col == (band + 1);}
     return col == (4 - band) || col == (3 - band);
 }
 
@@ -245,12 +199,8 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
     f32 t = GetTime() as f32;
     f32 span_x = (right - left) as f32;
     f32 span_y = (bottom - top) as f32;
-    if (span_x < (1.0 as f32)) {
-        span_x = 1.0 as f32;
-    }
-    if (span_y < (1.0 as f32)) {
-        span_y = 1.0 as f32;
-    }
+    if span_x < (1.0 as f32) {span_x = 1.0 as f32;}
+    if span_y < (1.0 as f32) {span_y = 1.0 as f32;}
 
     f32 cx = ((left + right) as f32) * (0.5 as f32);
     f32 cy = ((top + bottom) as f32) * (0.5 as f32);
@@ -269,9 +219,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
     i32 pos_in_block = posMod(cycle_idx, SETTINGS_BG_PHASES);
     i32 step_pick = posMod(hash32(block_idx + 311), 4);
     i32 phase_step = 1;
-    if (step_pick == 1) {
-        phase_step = 5;
-    } else if (step_pick == 2) {
+    if (step_pick == 1) {phase_step = 5;} else if (step_pick == 2) {
         phase_step = 9;
     } else if (step_pick == 3) {
         phase_step = 13;
@@ -281,9 +229,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
     i32 color_pick = posMod(hash32(cycle_idx + 97), 7);
     i32 corner_pick = posMod(hash32(cycle_idx + 555), 4);
     i32 block_size = 2;
-    if (posMod(hash32(cycle_idx + 777), 2) == 1) {
-        block_size = 3;
-    }
+    if posMod(hash32(cycle_idx + 777), 2) == 1 {block_size = 3;}
     i32 corner_pick2 = posMod(hash32(cycle_idx + 1333), 4);
     i32 lane_span = 3 + posMod(hash32(cycle_idx + 1666), 4);
 
@@ -298,9 +244,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
     f32 start_x = (left as f32) - text_w_base - (1.0 as f32) * (step as f32);
     f32 end_x = (right as f32) + (1.0 as f32) * (step as f32);
     f32 travel_p = p;
-    if (travel_p > (1.0 as f32)) {
-        travel_p = 1.0 as f32;
-    }
+    if travel_p > (1.0 as f32) {travel_p = 1.0 as f32;}
     f32 text_x = start_x + (end_x - start_x) * travel_p;
     f32 text_y = cy - text_h_base * (0.5 as f32);
 
@@ -359,9 +303,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
             }
 
             if (!in_pause) {
-                if (phase == 0) {
-                    e = pulseBand(absf(gx - lr_pos), 54.0 as f32);
-                } else if (phase == 1) {
+                if (phase == 0) {e = pulseBand(absf(gx - lr_pos), 54.0 as f32);} else if (phase == 1) {
                     e = pulseBand(absf(gx - rl_pos), 54.0 as f32);
                 } else if (phase == 2) {
                     e = pulseBand(absf(gy - tb_pos), 48.0 as f32);
@@ -419,9 +361,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         i32 gy_i = ((y - top) / step) as i32;
                         i32 ix = gx_i;
                         i32 iy = gy_i;
-                        if (corner_pick == 1) {
-                            ix = grid_w - gx_i;
-                        } else if (corner_pick == 2) {
+                        if (corner_pick == 1) {ix = grid_w - gx_i;} else if (corner_pick == 2) {
                             iy = grid_h - gy_i;
                         } else if (corner_pick == 3) {
                             ix = grid_w - gx_i;
@@ -435,17 +375,11 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         f32 total_d = (grid_w + grid_h) as f32;
                         f32 d = (ix + iy) as f32;
                         f32 fill_front = p * (2.0 as f32) * total_d;
-                        if (fill_front > total_d) {
-                            fill_front = total_d;
-                        }
+                        if fill_front > total_d {fill_front = total_d;}
                         f32 clear_front = (0.0 as f32);
-                        if (p > (0.5 as f32)) {
-                            clear_front = (p - (0.5 as f32)) * (2.0 as f32) * total_d;
-                        }
+                        if p > (0.5 as f32) {clear_front = (p - (0.5 as f32)) * (2.0 as f32) * total_d;}
 
-                        if (checker && d <= fill_front && d >= clear_front) {
-                            e = (0.42 as f32) + pulseBand(absf(d - fill_front), 16.0 as f32) * (0.58 as f32);
-                        }
+                        if checker && d <= fill_front && d >= clear_front {e = (0.42 as f32) + pulseBand(absf(d - fill_front), 16.0 as f32) * (0.58 as f32);}
 
                         impulse_color = theme.text_main;
                         accent_color = theme.piece_o;
@@ -459,9 +393,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         f32 ring_band = pulseBand(absf((ring as f32) - ring_wave), 2.2 as f32);
 
                         i32 lane = posMod(gx_i + gy_i + cycle_idx, 3);
-                        if (lane == 0) {
-                            e = ring_band;
-                        } else if (lane == 1) {
+                        if (lane == 0) {e = ring_band;} else if (lane == 1) {
                             e = ring_band * (0.74 as f32);
                         } else {
                             e = ring_band * (0.46 as f32);
@@ -514,9 +446,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         i32 gy_i = ((y - top) / step) as i32;
                         i32 ix = gx_i;
                         i32 iy = gy_i;
-                        if (corner_pick2 == 1) {
-                            ix = grid_w - gx_i;
-                        } else if (corner_pick2 == 2) {
+                        if (corner_pick2 == 1) {ix = grid_w - gx_i;} else if (corner_pick2 == 2) {
                             iy = grid_h - gy_i;
                         } else if (corner_pick2 == 3) {
                             ix = grid_w - gx_i;
@@ -526,9 +456,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         f32 ring_front = p * (maxi(grid_w, grid_h) as f32);
                         f32 ring_e = pulseBand(absf((ring as f32) - ring_front), 1.8 as f32);
                         i32 hash_gate = posMod(hash32(ix * 73 + iy * 131 + cycle_idx * 17), 5);
-                        if (hash_gate == 0 || hash_gate == 2) {
-                            e = ring_e;
-                        } else {
+                        if (hash_gate == 0 || hash_gate == 2) {e = ring_e;} else {
                             e = ring_e * (0.42 as f32);
                         }
                         impulse_color = theme.piece_s;
@@ -541,9 +469,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                         bool cluster = (r3 == 0 && c3 == 0) || (r3 == 1 && c3 == 1) || (r3 == 2 && c3 == 2);
                         f32 travel = p * (span_x + span_y + 260.0 as f32);
                         f32 sweep = pulseBand(absf((gx + gy) - ((left + top) as f32 + travel)), 70.0 as f32);
-                        if (cluster) {
-                            e = sweep;
-                        } else {
+                        if (cluster) {e = sweep;} else {
                             e = sweep * (0.36 as f32);
                         }
                         impulse_color = theme.piece_o;
@@ -560,9 +486,7 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
                             i32 letter = ix / char_span;
                             i32 col = ix % char_span;
                             if (letter >= 0 && letter < text_chars && col < glyph_w) {
-                                if (zltrisGlyphFilled(letter, col, iy)) {
-                                    e = 1.0 as f32;
-                                }
+                                if zltrisGlyphFilled(letter, col, iy) {e = 1.0 as f32;}
                             }
                         }
 
@@ -611,28 +535,16 @@ fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
     i32 ry = uiY(y);
     i32 rw = uiS(w);
     i32 rh = uiS(h);
-    if (px < rx as f32) {
-        return false;
-    }
-    if (py < ry as f32) {
-        return false;
-    }
-    if (px > (rx + rw) as f32) {
-        return false;
-    }
-    if (py > (ry + rh) as f32) {
-        return false;
-    }
+    if px < rx as f32 {return false;}
+    if py < ry as f32 {return false;}
+    if px > (rx + rw) as f32 {return false;}
+    if py > (ry + rh) as f32 {return false;}
     return true;
 }
 
 fun clampf(v: f32, min_v: f32, max_v: f32) >> f32 {
-    if (v < min_v) {
-        return min_v;
-    }
-    if (v > max_v) {
-        return max_v;
-    }
+    if v < min_v {return min_v;}
+    if v > max_v {return max_v;}
     return v;
 }
 
@@ -642,36 +554,26 @@ fun itemY(index: i32) >> i64 {
 
 fun visibleOrderForItem(index: i32, bg_stars_mode: i32) >> i32 {
     if (bg_stars_mode != STAR_MODE_DROPS) {
-        if (index == SETTINGS_ITEM_STAR_PEAK_TARGET || index == SETTINGS_ITEM_STAR_INTENSITY) {
-            return -1;
-        }
-        if (index > SETTINGS_ITEM_STAR_INTENSITY) {
-            return index - 2;
-        }
+        if index == SETTINGS_ITEM_STAR_PEAK_TARGET || index == SETTINGS_ITEM_STAR_INTENSITY {return -1;}
+        if index > SETTINGS_ITEM_STAR_INTENSITY {return index - 2;}
     }
     return index;
 }
 
 fun visibleItemCount(bg_stars_mode: i32) >> i32 {
-    if (bg_stars_mode == STAR_MODE_DROPS) {
-        return SETTINGS_ITEM_COUNT;
-    }
+    if bg_stars_mode == STAR_MODE_DROPS {return SETTINGS_ITEM_COUNT;}
     return SETTINGS_ITEM_COUNT - 2;
 }
 
 fun itemFromVisibleOrder(order: i32, bg_stars_mode: i32) >> i32 {
-    if (bg_stars_mode != STAR_MODE_DROPS && order >= SETTINGS_ITEM_STAR_PEAK_TARGET) {
-        return order + 2;
-    }
+    if bg_stars_mode != STAR_MODE_DROPS && order >= SETTINGS_ITEM_STAR_PEAK_TARGET {return order + 2;}
     return order;
 }
 
 fun itemYDraw(index: i32, bg_stars_mode: i32) >> i64 {
     i32 order = visibleOrderForItem(index, bg_stars_mode);
-    if (order < 0) {
-        return -10000;
-    }
-    return 246 + (order as i64) * 78 - (g_settings_scroll * 78.0) as i64;
+    if order < 0 {return -10000;}
+    return 246 + (order as i64) * 78 - (g_settings.scroll * 78.0) as i64;
 }
 
 fun drawSelectionGlow(theme: Theme, y: i64) >> void {
@@ -680,17 +582,13 @@ fun drawSelectionGlow(theme: Theme, y: i64) >> void {
 }
 
 fun bgStarsModeLabel(mode: i32) >> ptr<u8> {
-    if (mode == STAR_MODE_DROPS) {
-        return "Drops";
-    }
-    if (mode == STAR_MODE_MUSIC) {
-        return "Music";
-    }
+    if mode == STAR_MODE_DROPS {return "Drops";}
+    if mode == STAR_MODE_MUSIC {return "Music";}
     return "None";
 }
 
 fun rowSelected(index: i32) >> bool {
-    return g_settings_index == index;
+    return g_settings.index == index;
 }
 
 fun sliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
@@ -791,9 +689,7 @@ fun drawToggleRow(font: Font, theme: Theme, bg_stars_mode: i32, index: i32, labe
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
     ptr<u8> mark = "[ ]";
-    if (enabled) {
-        mark = "[X]";
-    }
+    if enabled {mark = "[X]";}
     drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
 }
 
@@ -809,9 +705,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32,
     drawTextColor(font, "Left/Right changes value", 130, 182, 14, theme.text_muted);
 
     i32 visible_rows = visibleItemCount(bg_stars_mode);
-    if (visible_rows > SETTINGS_VISIBLE_ROWS) {
-        visible_rows = SETTINGS_VISIBLE_ROWS;
-    }
+    if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
     i32 list_x = uiX(112);
     i32 list_y = uiY(232);
@@ -863,22 +757,14 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
     }
     if (index == SETTINGS_ITEM_BG_STARS_AMOUNT) {
         bg_stars_amount[0] += dir;
-        if (bg_stars_amount[0] < 0) {
-            bg_stars_amount[0] = 0;
-        }
-        if (bg_stars_amount[0] > 150) {
-            bg_stars_amount[0] = 150;
-        }
+        if bg_stars_amount[0] < 0 {bg_stars_amount[0] = 0;}
+        if bg_stars_amount[0] > 150 {bg_stars_amount[0] = 150;}
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_BG_STARS_MODE) {
         bg_stars_mode[0] += dir;
-        if (bg_stars_mode[0] < STAR_MODE_NONE) {
-            bg_stars_mode[0] = STAR_MODE_MUSIC;
-        }
-        if (bg_stars_mode[0] > STAR_MODE_MUSIC) {
-            bg_stars_mode[0] = STAR_MODE_NONE;
-        }
+        if bg_stars_mode[0] < STAR_MODE_NONE {bg_stars_mode[0] = STAR_MODE_MUSIC;}
+        if bg_stars_mode[0] > STAR_MODE_MUSIC {bg_stars_mode[0] = STAR_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_STAR_PEAK_TARGET) {
@@ -901,174 +787,100 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
 }
 
 fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        return SETTINGS_ACTION_BACK;
-    }
+    if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
-    i32 max_scroll = SETTINGS_ITEM_COUNT - SETTINGS_VISIBLE_ROWS;
+    i32 max_scroll = (SETTINGS_ITEM_COUNT as i32) - (SETTINGS_VISIBLE_ROWS as i32);
     i32 item_count = visibleItemCount(bg_stars_mode[0]);
-    max_scroll = item_count - SETTINGS_VISIBLE_ROWS;
-    if (max_scroll < 0) {
-        max_scroll = 0;
-    }
+    max_scroll = item_count - (SETTINGS_VISIBLE_ROWS as i32);
+    if max_scroll < 0 {max_scroll = 0;}
 
     f32 wheel = GetMouseWheelMove();
-    if (wheel > 0.0) {
-        g_settings_scroll -= 1.0;
-    } else if (wheel < 0.0) {
-        g_settings_scroll += 1.0;
+    if (wheel > 0.0) {g_settings.scroll -= 1.0;} else if (wheel < 0.0) {
+        g_settings.scroll += 1.0;
     }
-    if (g_settings_scroll < 0.0) {
-        g_settings_scroll = 0.0;
-    }
-    if (g_settings_scroll > (max_scroll as f32)) {
-        g_settings_scroll = max_scroll as f32;
-    }
+    if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
+    if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
 
-    if (g_settings_index < 0) {
-        g_settings_index = SETTINGS_ITEM_COUNT - 1;
-    }
-    if (g_settings_index >= SETTINGS_ITEM_COUNT) {
-        g_settings_index = 0;
-    }
-    if (bg_stars_mode[0] != STAR_MODE_DROPS && (g_settings_index == SETTINGS_ITEM_STAR_PEAK_TARGET || g_settings_index == SETTINGS_ITEM_STAR_INTENSITY)) {
-        g_settings_index = SETTINGS_ITEM_BG_STARS_MODE;
-    }
+    if g_settings.index < 0 {g_settings.index = (SETTINGS_ITEM_COUNT as i32) - 1;}
+    if g_settings.index >= (SETTINGS_ITEM_COUNT as i32) {g_settings.index = 0;}
+    if bg_stars_mode[0] != STAR_MODE_DROPS && (g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET || g_settings.index == SETTINGS_ITEM_STAR_INTENSITY) {g_settings.index = SETTINGS_ITEM_BG_STARS_MODE;}
 
     if (IsKeyPressed(KEY_UP)) {
-        i32 idx = g_settings_index;
-        for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
+        i32 idx = g_settings.index;
+        for i32 i = 0; i < (SETTINGS_ITEM_COUNT as i32); i++ {
             idx -= 1;
-            if (idx < 0) {
-                idx = SETTINGS_ITEM_COUNT - 1;
-            }
+            if idx < 0 {idx = (SETTINGS_ITEM_COUNT as i32) - 1;}
             if (visibleOrderForItem(idx, bg_stars_mode[0]) >= 0) {
-                g_settings_index = idx;
+                g_settings.index = idx;
                 break;
             }
         }
-        i32 sel_order = visibleOrderForItem(g_settings_index, bg_stars_mode[0]);
-        if ((sel_order as f32) < g_settings_scroll) {
-            g_settings_scroll = sel_order as f32;
-        }
+        i32 sel_order = visibleOrderForItem(g_settings.index, bg_stars_mode[0]);
+        if (sel_order as f32) < g_settings.scroll {g_settings.scroll = sel_order as f32;}
     }
     if (IsKeyPressed(KEY_DOWN)) {
-        i32 idx = g_settings_index;
-        for i32 i = 0; i < SETTINGS_ITEM_COUNT; i++ {
+        i32 idx = g_settings.index;
+        for i32 i = 0; i < (SETTINGS_ITEM_COUNT as i32); i++ {
             idx += 1;
-            if (idx >= SETTINGS_ITEM_COUNT) {
-                idx = 0;
-            }
+            if idx >= (SETTINGS_ITEM_COUNT as i32) {idx = 0;}
             if (visibleOrderForItem(idx, bg_stars_mode[0]) >= 0) {
-                g_settings_index = idx;
+                g_settings.index = idx;
                 break;
             }
         }
-        i32 sel_order = visibleOrderForItem(g_settings_index, bg_stars_mode[0]);
-        if (sel_order >= (g_settings_scroll as i32) + SETTINGS_VISIBLE_ROWS) {
-            g_settings_scroll = (sel_order - (SETTINGS_VISIBLE_ROWS - 1)) as f32;
-        }
+        i32 sel_order = visibleOrderForItem(g_settings.index, bg_stars_mode[0]);
+        if sel_order >= (g_settings.scroll as i32) + (SETTINGS_VISIBLE_ROWS as i32) {g_settings.scroll = (sel_order - ((SETTINGS_VISIBLE_ROWS as i32) - 1)) as f32;}
     }
-    if (g_settings_scroll < 0.0) {
-        g_settings_scroll = 0.0;
-    }
-    if (g_settings_scroll > (max_scroll as f32)) {
-        g_settings_scroll = max_scroll as f32;
-    }
-    if (IsKeyPressed(KEY_LEFT)) {
-        return settingsNudgeValue(g_settings_index, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-    }
-    if (IsKeyPressed(KEY_RIGHT)) {
-        return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-    }
+    if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
+    if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
+    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
+    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
     if (IsKeyPressed(KEY_ENTER)) {
-        if (g_settings_index == SETTINGS_ITEM_BACK) {
-            return SETTINGS_ACTION_BACK;
-        }
-        if (g_settings_index == SETTINGS_ITEM_DOUBLE_ROW) {
-            double_row_ui[0] = !double_row_ui[0];
-        }
-        if (g_settings_index == SETTINGS_ITEM_INSTANT_RESTART) {
-            instant_restart[0] = !instant_restart[0];
-        }
-        if (g_settings_index == SETTINGS_ITEM_BG_STARS_MODE) {
-            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-        }
-        if (g_settings_index == SETTINGS_ITEM_STAR_PEAK_TARGET) {
-            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-        }
-        if (g_settings_index == SETTINGS_ITEM_STAR_INTENSITY) {
-            return settingsNudgeValue(g_settings_index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-        }
+        if g_settings.index == SETTINGS_ITEM_BACK {return SETTINGS_ACTION_BACK;}
+        if g_settings.index == SETTINGS_ITEM_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0];}
+        if g_settings.index == SETTINGS_ITEM_INSTANT_RESTART {instant_restart[0] = !instant_restart[0];}
+        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
     }
 
     Vector2 mouse = GetMousePosition();
     i32 visible_rows = item_count;
-    if (visible_rows > SETTINGS_VISIBLE_ROWS) {
-        visible_rows = SETTINGS_VISIBLE_ROWS;
-    }
+    if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
 
     if (pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base)) {
         f32 row_h = uiS(78) as f32;
         f32 local = (mouse.y - (uiY(246) as f32)) / row_h;
-        i32 hovered_order = (local + g_settings_scroll) as i32;
-        if (hovered_order < 0) {
-            hovered_order = 0;
-        }
-        if (hovered_order >= item_count) {
-            hovered_order = item_count - 1;
-        }
-        g_settings_index = itemFromVisibleOrder(hovered_order, bg_stars_mode[0]);
+        i32 hovered_order = (local + g_settings.scroll) as i32;
+        if hovered_order < 0 {hovered_order = 0;}
+        if hovered_order >= item_count {hovered_order = item_count - 1;}
+        g_settings.index = itemFromVisibleOrder(hovered_order, bg_stars_mode[0]);
     }
 
     if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_THEME, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (mouse.x < uiX(336) as f32) {
-            theme_index[0] = switchTheme(theme_index[0], -1);
-        } else {
+        if (mouse.x < uiX(336) as f32) {theme_index[0] = switchTheme(theme_index[0], -1);} else {
             theme_index[0] = switchTheme(theme_index[0], 1);
         }
     }
 
     if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BG_STARS_MODE, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (mouse.x < uiX(336) as f32) {
-            return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
-        }
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);}
         return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, arr, das, dcd, sdf, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, double_row_ui, instant_restart);
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DAS, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DCD, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_SDF, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BG_STARS_AMOUNT, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;
-    }
-    if (bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);
-    }
-    if (bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_INTENSITY, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);
-    }
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DAS, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);}
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DCD, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);}
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_SDF, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);}
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BG_STARS_AMOUNT, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;}
+    if bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);}
+    if bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_INTENSITY, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_DOUBLE_ROW, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        double_row_ui[0] = !double_row_ui[0];
-    }
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_INSTANT_RESTART, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        instant_restart[0] = !instant_restart[0];
-    }
+    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_DOUBLE_ROW, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {double_row_ui[0] = !double_row_ui[0];}
+    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_INSTANT_RESTART, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {instant_restart[0] = !instant_restart[0];}
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        return SETTINGS_ACTION_BACK;
-    }
+    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {return SETTINGS_ACTION_BACK;}
 
     return SETTINGS_ACTION_NONE;
 }

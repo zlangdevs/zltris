@@ -10,12 +10,8 @@ i32 g_scale_align_x = SCALE_ALIGN_CENTER;
 i32 g_scale_extra_x = 0;
 
 fun setScaleBase(w: i32, h: i32) >> void {
-    if (w > 0) {
-        g_scale_base_w = w;
-    }
-    if (h > 0) {
-        g_scale_base_h = h;
-    }
+    if w > 0 {g_scale_base_w = w;}
+    if h > 0 {g_scale_base_h = h;}
 }
 
 fun scaleAlignCenter() >> i32 { return SCALE_ALIGN_CENTER; }
@@ -36,17 +32,13 @@ fun setScaleExtraX(px: i32) >> void {
 fun uiScale() >> f32 {
     f32 sx = (GetScreenWidth() as f32) / (g_scale_base_w as f32);
     f32 sy = (GetScreenHeight() as f32) / (g_scale_base_h as f32);
-    if (sx < sy) {
-        return sx;
-    }
+    if sx < sy {return sx;}
     return sy;
 }
 
 fun uiOffsetX(scale: f32) >> i32 {
     i32 content_w = ((g_scale_base_w as f32) * scale) as i32;
-    if (g_scale_align_x == SCALE_ALIGN_RIGHT) {
-        return GetScreenWidth() - content_w + g_scale_extra_x;
-    }
+    if g_scale_align_x == SCALE_ALIGN_RIGHT {return GetScreenWidth() - content_w + g_scale_extra_x;}
     return (GetScreenWidth() - content_w) / 2 + g_scale_extra_x;
 }
 
@@ -67,8 +59,6 @@ fun uiY(base_y: i64) >> i32 {
 
 fun uiS(base_size: i64) >> i32 {
     i32 scaled = ((base_size as f32) * uiScale()) as i32;
-    if (scaled < 1) {
-        return 1;
-    }
+    if scaled < 1 {return 1;}
     return scaled;
 }

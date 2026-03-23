@@ -53,6 +53,14 @@ use zltris.theme
 
 #define SETTINGS_FILE_PATH "zltris.cfg"
 
+struct Game {
+    theme_index i32,
+    screen i32,
+    settings_return_screen i32,
+    screen_width i32,
+    screen_height i32,
+}
+
 arr<i32, BOARD_CELLS> g_board = {0};
 arr<i32, QUEUE_CAP> g_queue = {0};
 arr<i32, BAG_SIZE> g_bag = {0};
@@ -68,7 +76,7 @@ i32 g_queue_count = 0;
 i32 g_bag_pos = BAG_SIZE;
 i32 g_score = 0;
 i32 g_lines = 0;
-i32 g_theme_index = 0;
+Game g_game = {0};
 
 f32 g_gravity_timer = 0.0;
 f32 g_soft_timer = 0.0;
@@ -87,8 +95,6 @@ f32 g_sdf_multiplier = 14.0;
 
 bool g_game_over = false;
 bool g_debug_colors = false;
-i32 g_screen = SCREEN_MENU;
-i32 g_settings_return_screen = SCREEN_MENU;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
 i32 g_bg_stars_amount = 50;
@@ -123,7 +129,38 @@ fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
            ((a as u32) << 24);
 }
 
-fun currentTheme() >> Theme { return setTheme(g_theme_index); }
+fun refresh_screen_size(self: Game) >> Game {
+    Game next = self;
+    next.screen_width = GetScreenWidth();
+    next.screen_height = GetScreenHeight();
+    return next;
+}
+
+fun current_theme(self: Game) >> Theme {
+    return setTheme(self.theme_index);
+}
+
+fun next_theme(self: Game) >> Game {
+    Game next = self;
+    next.theme_index = switchTheme(self.theme_index, 1);
+    return next;
+}
+
+fun with_screen(self: Game, screen: i32) >> Game {
+    Game next = self;
+    next.screen = screen;
+    return next;
+}
+
+fun with_settings_return_screen(self: Game, screen: i32) >> Game {
+    Game next = self;
+    next.settings_return_screen = screen;
+    return next;
+}
+
+fun currentTheme() >> Theme {
+    return g_game.current_theme();
+}
 
 fun trimLeftSpaces(s: ptr<u8>) >> ptr<u8> {
     ptr<u8> p = s;
@@ -149,12 +186,8 @@ fun trimRightSpacesInPlace(s: ptr<u8>) >> void {
 fun parseBoolValue(s: ptr<u8>, fallback: bool) >> bool {
     ptr<u8> v = trimLeftSpaces(s);
     trimRightSpacesInPlace(v);
-    if (strEq(v, "1") || strEq(v, "true") || strEq(v, "TRUE") || strEq(v, "on") || strEq(v, "ON")) {
-        return true;
-    }
-    if (strEq(v, "0") || strEq(v, "false") || strEq(v, "FALSE") || strEq(v, "off") || strEq(v, "OFF")) {
-        return false;
-    }
+    if strEq(v, "1") || strEq(v, "true") || strEq(v, "TRUE") || strEq(v, "on") || strEq(v, "ON") {return true;}
+    if strEq(v, "0") || strEq(v, "false") || strEq(v, "FALSE") || strEq(v, "off") || strEq(v, "OFF") {return false;}
     return fallback;
 }
 
@@ -189,93 +222,47 @@ fun parseFloatValue(s: ptr<u8>, fallback: f32) >> f32 {
         }
     }
 
-    if (!seen_digit) {
-        return fallback;
-    }
+    if !seen_digit {return fallback;}
 
     f32 value = (int_part as f32) + (frac_part as f32) / (frac_div as f32);
-    if (sign < 0) {
-        value = -value;
-    }
+    if sign < 0 {value = -value;}
     return value;
 }
 
 fun clampSettings() >> void {
-    if (g_theme_index < 0) {
-        g_theme_index = 0;
-    }
-    if (g_theme_index >= themeCount()) {
-        g_theme_index = themeCount() - 1;
-    }
-    if (g_arr_frames < 0.0) {
-        g_arr_frames = 0.0;
-    }
-    if (g_arr_frames > 8.0) {
-        g_arr_frames = 8.0;
-    }
-    if (g_das_frames < 0.0) {
-        g_das_frames = 0.0;
-    }
-    if (g_das_frames > 20.0) {
-        g_das_frames = 20.0;
-    }
-    if (g_dcd_frames < 0.0) {
-        g_dcd_frames = 0.0;
-    }
-    if (g_dcd_frames > 10.0) {
-        g_dcd_frames = 10.0;
-    }
-    if (g_sdf_multiplier < 1.0) {
-        g_sdf_multiplier = 1.0;
-    }
-    if (g_sdf_multiplier > 40.0) {
-        g_sdf_multiplier = 40.0;
-    }
-    if (g_bg_stars_amount < 0) {
-        g_bg_stars_amount = 0;
-    }
-    if (g_bg_stars_amount > 150) {
-        g_bg_stars_amount = 150;
-    }
-    if (g_bg_star_react_mode < STAR_MODE_NONE) {
-        g_bg_star_react_mode = STAR_MODE_NONE;
-    }
-    if (g_bg_star_react_mode > STAR_MODE_MUSIC) {
-        g_bg_star_react_mode = STAR_MODE_MUSIC;
-    }
-    if (g_star_peak_target_dps < 0.5) {
-        g_star_peak_target_dps = 0.5;
-    }
-    if (g_star_peak_target_dps > 3.5) {
-        g_star_peak_target_dps = 3.5;
-    }
-    if (g_star_intensity < 0.1) {
-        g_star_intensity = 0.1;
-    }
-    if (g_star_intensity > 1.0) {
-        g_star_intensity = 1.0;
-    }
+    if g_game.theme_index < 0 {g_game.theme_index = 0;}
+    if g_game.theme_index >= themeCount() {g_game.theme_index = themeCount() - 1;}
+    if g_arr_frames < 0.0 {g_arr_frames = 0.0;}
+    if g_arr_frames > 8.0 {g_arr_frames = 8.0;}
+    if g_das_frames < 0.0 {g_das_frames = 0.0;}
+    if g_das_frames > 20.0 {g_das_frames = 20.0;}
+    if g_dcd_frames < 0.0 {g_dcd_frames = 0.0;}
+    if g_dcd_frames > 10.0 {g_dcd_frames = 10.0;}
+    if g_sdf_multiplier < 1.0 {g_sdf_multiplier = 1.0;}
+    if g_sdf_multiplier > 40.0 {g_sdf_multiplier = 40.0;}
+    if g_bg_stars_amount < 0 {g_bg_stars_amount = 0;}
+    if g_bg_stars_amount > 150 {g_bg_stars_amount = 150;}
+    if g_bg_star_react_mode < STAR_MODE_NONE {g_bg_star_react_mode = STAR_MODE_NONE;}
+    if g_bg_star_react_mode > STAR_MODE_MUSIC {g_bg_star_react_mode = STAR_MODE_MUSIC;}
+    if g_star_peak_target_dps < 0.5 {g_star_peak_target_dps = 0.5;}
+    if g_star_peak_target_dps > 3.5 {g_star_peak_target_dps = 3.5;}
+    if g_star_intensity < 0.1 {g_star_intensity = 0.1;}
+    if g_star_intensity > 1.0 {g_star_intensity = 1.0;}
 }
 
 fun saveSettingsFile() >> void {
     i32 fd = openForWrite(SETTINGS_FILE_PATH);
-    if (fd < 0) {
-        return;
-    }
+    if fd < 0 {return;}
 
-    writeLineFd(fd, TextFormat("theme=%i", g_theme_index));
+    writeLineFd(fd, TextFormat("theme=%i", g_game.theme_index));
     writeLineFd(fd, TextFormat("arr=%.2f", g_arr_frames));
     writeLineFd(fd, TextFormat("das=%.2f", g_das_frames));
     writeLineFd(fd, TextFormat("dcd=%.2f", g_dcd_frames));
     writeLineFd(fd, TextFormat("sdf=%.2f", g_sdf_multiplier));
     i32 double_row_flag = 0;
-    if (g_double_row_ui) {
-        double_row_flag = 1;
-    }
+    if g_double_row_ui {double_row_flag = 1;}
     i32 instant_restart_flag = 0;
-    if (g_instant_restart) {
-        instant_restart_flag = 1;
-    }
+    if g_instant_restart {instant_restart_flag = 1;}
 
     writeLineFd(fd, TextFormat("double_row_ui=%i", double_row_flag));
     writeLineFd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
@@ -289,16 +276,12 @@ fun saveSettingsFile() >> void {
 
 fun loadSettingsFile() >> void {
     i32 fd = openForRead(SETTINGS_FILE_PATH);
-    if (fd < 0) {
-        return;
-    }
+    if fd < 0 {return;}
 
     arr<u8, 4096> data = {0};
     i64 bytes_read = readAll(fd, &data[0], 4095);
     close(fd);
-    if (bytes_read <= 0) {
-        return;
-    }
+    if bytes_read <= 0 {return;}
     data[bytes_read as i32] = 0;
 
     ptr<u8> line = &data[0];
@@ -327,7 +310,7 @@ fun loadSettingsFile() >> void {
                 trimRightSpacesInPlace(value);
 
                 if (strEq(key, "theme")) {
-                    g_theme_index = atoi(value);
+                    g_game.theme_index = atoi(value);
                 } else if (strEq(key, "arr")) {
                     g_arr_frames = parseFloatValue(value, g_arr_frames);
                 } else if (strEq(key, "das")) {
@@ -384,9 +367,7 @@ fun handlingDcdSeconds() >> f32 {
 }
 
 fun canUseDoubleRowLayout() >> bool {
-    if (!g_double_row_ui) {
-        return false;
-    }
+    if !g_double_row_ui {return false;}
     i32 free_px = GetScreenWidth() - uiS(UI_BASE_W);
     return free_px >= uiS(210);
 }
@@ -394,19 +375,13 @@ fun canUseDoubleRowLayout() >> bool {
 fun fractf(v: f32) >> f32 {
     i32 whole = v as i32;
     f32 f = v - (whole as f32);
-    if (f < 0.0) {
-        f += 1.0;
-    }
+    if f < 0.0 {f += 1.0;}
     return f;
 }
 
 fun clamp01(v: f32) >> f32 {
-    if (v < 0.0) {
-        return 0.0;
-    }
-    if (v > 1.0) {
-        return 1.0;
-    }
+    if v < 0.0 {return 0.0;}
+    if v > 1.0 {return 1.0;}
     return v;
 }
 
@@ -416,9 +391,7 @@ fun starIntensityNorm() >> f32 {
 }
 
 fun starSpreadMul() >> f32 {
-    if (g_star_intensity >= 0.4) {
-        return 1.0 + ((g_star_intensity - 0.4) / 0.6) * 0.30;
-    }
+    if g_star_intensity >= 0.4 {return 1.0 + ((g_star_intensity - 0.4) / 0.6) * 0.30;}
     return 1.0 - ((0.4 - g_star_intensity) / 0.3) * 0.15;
 }
 
@@ -464,25 +437,17 @@ fun updateBackgroundStarReaction(dt: f32) >> void {
     if (IsKeyDown(KEY_DOWN)) {
         g_star_soft_glow += dt * (1.10 + norm * 1.90);
         f32 soft_cap = 0.46 + norm * 0.34;
-        if (g_star_soft_glow > soft_cap) {
-            g_star_soft_glow = soft_cap;
-        }
+        if g_star_soft_glow > soft_cap {g_star_soft_glow = soft_cap;}
     } else {
         g_star_soft_glow -= dt * (1.40 - norm * 0.20);
-        if (g_star_soft_glow < 0.0) {
-            g_star_soft_glow = 0.0;
-        }
+        if g_star_soft_glow < 0.0 {g_star_soft_glow = 0.0;}
     }
 
     g_star_pps_meter -= dt * g_star_peak_target_dps;
-    if (g_star_pps_meter < 0.0) {
-        g_star_pps_meter = 0.0;
-    }
+    if g_star_pps_meter < 0.0 {g_star_pps_meter = 0.0;}
 
     g_star_hard_target -= dt * (1.6 + norm * 1.2);
-    if (g_star_hard_target < 0.0) {
-        g_star_hard_target = 0.0;
-    }
+    if g_star_hard_target < 0.0 {g_star_hard_target = 0.0;}
 
     f32 rise = clamp01(dt * (3.0 + norm * 20.0));
     f32 fall = clamp01(dt * (2.7 + norm * 7.5));
@@ -521,23 +486,17 @@ fun drawStarArms(cx: i64, cy: i64, size: i64, style: i32, color: u32) >> void {
 }
 
 fun drawBackgroundStars(theme: Theme) >> void {
-    if (g_bg_stars_amount <= 0) {
-        return;
-    }
+    if g_bg_stars_amount <= 0 {return;}
 
     f32 t = GetTime() as f32;
     i64 span_y = UI_BASE_H + 160;
     i64 left = visibleBaseLeft();
     i64 right = visibleBaseRight();
     i64 span_x = right - left;
-    if (span_x < 1) {
-        span_x = 1;
-    }
+    if span_x < 1 {span_x = 1;}
 
     i32 count = g_bg_stars_amount;
-    if (count > BG_STAR_COUNT) {
-        count = BG_STAR_COUNT;
-    }
+    if count > BG_STAR_COUNT {count = BG_STAR_COUNT;}
 
     f32 react_boost = 0.0;
     f32 norm = starIntensityNorm();
@@ -548,9 +507,7 @@ fun drawBackgroundStars(theme: Theme) >> void {
         f32 base_boost = 0.06 + pps_norm * 0.72 + g_star_soft_glow * 0.50;
         f32 pulse_boost = g_star_hard_burst * (0.25 + norm * 1.35) * pulse_weight;
         react_boost = base_boost + pulse_boost;
-        if (react_boost > 2.0) {
-            react_boost = 2.0;
-        }
+        if react_boost > 2.0 {react_boost = 2.0;}
     }
 
     for i32 i = 0; i < count; i++ {
@@ -562,28 +519,20 @@ fun drawBackgroundStars(theme: Theme) >> void {
 
         f32 drift_loop = fractf(g_star_phase[i] * 1.7 + t * (0.08 + speed * 0.5));
         f32 drift = drift_loop;
-        if (drift_loop > 0.5) {
-            drift = 1.0 - drift_loop;
-        }
+        if drift_loop > 0.5 {drift = 1.0 - drift_loop;}
         i64 x = base_x + (((drift * 2.0) - 0.5) * 18.0) as i64;
 
         i64 s = g_star_size[i] as i64;
         f32 tw = fractf(t * (0.7 + g_star_speed[i] * 2.0) + g_star_phase[i]);
-        if (tw > 0.5) {
-            tw = 1.0 - tw;
-        }
+        if tw > 0.5 {tw = 1.0 - tw;}
         f32 alpha = 0.10 + tw * 0.34;
         if (g_bg_star_react_mode == STAR_MODE_DROPS) {
             alpha += react_boost * (0.55 + norm * 0.55);
-            if (alpha > 1.00) {
-                alpha = 1.00;
-            }
+            if alpha > 1.00 {alpha = 1.00;}
         }
 
         i64 glow_radius = ((s * 5) as f32 * spread_mul) as i64;
-        if (g_bg_star_react_mode == STAR_MODE_DROPS) {
-            glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;
-        }
+        if g_bg_star_react_mode == STAR_MODE_DROPS {glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;}
 
         u32 outer = alphaColor(theme.panel_stroke, alpha * 0.34);
         u32 inner = alphaColor(theme.panel_stroke, alpha * 0.72);
@@ -621,68 +570,46 @@ fun restartStripeTopScreen() >> i32 {
     i32 screen_h = GetScreenHeight();
     i32 top_target = uiY(852);
     i32 top = (screen_h as f32 - ((screen_h - top_target) as f32) * g_restart_charge) as i32;
-    if (top < 0) {
-        top = 0;
-    }
+    if top < 0 {top = 0;}
     return top;
 }
 
 fun restartAfterglowTopScreen() >> i32 {
     i32 start_top = uiY(852);
     i32 end_top = GetScreenHeight();
-    if (g_restart_afterglow <= 0.0) {
-        return end_top;
-    }
+    if g_restart_afterglow <= 0.0 {return end_top;}
     f32 p = 1.0 as f32 - (g_restart_afterglow / (0.24 as f32));
-    if (p < 0.0) {
-        p = 0.0;
-    }
-    if (p > 1.0) {
-        p = 1.0;
-    }
+    if p < 0.0 {p = 0.0;}
+    if p > 1.0 {p = 1.0;}
     return (start_top as f32 + ((end_top - start_top) as f32) * p) as i32;
 }
 
 fun restartHintAlpha() >> f32 {
-    if (g_restart_charge <= 0.0) {
-        return 1.0;
-    }
+    if g_restart_charge <= 0.0 {return 1.0;}
     f32 stripe_top = restartStripeTopScreen() as f32;
     f32 hint_y = uiY(831) as f32;
     f32 fade_zone = uiS(180) as f32;
     f32 dist = stripe_top - hint_y;
     f32 a = dist / fade_zone;
-    if (a < 0.0) {
-        a = 0.0;
-    }
-    if (a > 1.0) {
-        a = 1.0;
-    }
+    if a < 0.0 {a = 0.0;}
+    if a > 1.0 {a = 1.0;}
     return a;
 }
 
 fun drawRestartCharge(font: Font, theme: Theme) >> void {
-    if (g_restart_charge <= 0.0 && g_restart_afterglow <= 0.0) {
-        return;
-    }
+    if g_restart_charge <= 0.0 && g_restart_afterglow <= 0.0 {return;}
 
     i32 top = restartStripeTopScreen();
     f32 alpha_mul = 1.0;
     if (g_restart_charge <= 0.0) {
         top = restartAfterglowTopScreen();
         alpha_mul = g_restart_afterglow / (0.24 as f32);
-        if (alpha_mul < 0.0) {
-            alpha_mul = 0.0;
-        }
-        if (alpha_mul > 1.0) {
-            alpha_mul = 1.0;
-        }
+        if alpha_mul < 0.0 {alpha_mul = 0.0;}
+        if alpha_mul > 1.0 {alpha_mul = 1.0;}
     }
 
     f32 top_alpha = (0.26 + g_restart_charge * 0.44) * alpha_mul;
-    if (top_alpha > 0.86) {
-        top_alpha = 0.86;
-    }
+    if top_alpha > 0.86 {top_alpha = 0.86;}
     u32 top_color = alphaColor(theme.panel_stroke, top_alpha);
     u32 bottom_color = alphaColor(shadeColor(theme.bg_outer, 0.46), 0.92);
     DrawRectangleGradientV(0, top, GetScreenWidth(), GetScreenHeight() - top, toColor(top_color), toColor(bottom_color));
@@ -700,21 +627,15 @@ fun drawRestartCharge(font: Font, theme: Theme) >> void {
 fun updateRestartAfterglow(dt: f32) >> void {
     if (g_restart_afterglow > 0.0) {
         g_restart_afterglow -= dt;
-        if (g_restart_afterglow < 0.0) {
-            g_restart_afterglow = 0.0;
-        }
+        if g_restart_afterglow < 0.0 {g_restart_afterglow = 0.0;}
     }
 }
 
 fun updateRestartCharge(dt: f32) >> bool {
     bool r_down = IsKeyDown(KEY_R);
-    if (!r_down) {
-        g_restart_hold_latched = false;
-    }
+    if !r_down {g_restart_hold_latched = false;}
 
-    if (r_down && g_restart_hold_latched) {
-        return false;
-    }
+    if r_down && g_restart_hold_latched {return false;}
 
     if (r_down) {
         g_restart_charge += dt / 1.04;
@@ -731,23 +652,15 @@ fun updateRestartCharge(dt: f32) >> bool {
 
     if (g_restart_charge > 0.0) {
         g_restart_charge -= dt / 0.64;
-        if (g_restart_charge < 0.0) {
-            g_restart_charge = 0.0;
-        }
+        if g_restart_charge < 0.0 {g_restart_charge = 0.0;}
     }
     return false;
 }
 
 fun canShowHoldRestartEffect() >> bool {
-    if (g_instant_restart) {
-        return false;
-    }
-    if (g_game_over) {
-        return false;
-    }
-    if (isFortyLinesMode() && g_round_state != ROUND_RUNNING) {
-        return false;
-    }
+    if g_instant_restart {return false;}
+    if g_game_over {return false;}
+    if isFortyLinesMode() && g_round_state != ROUND_RUNNING {return false;}
     return true;
 }
 
@@ -758,12 +671,8 @@ fun applyDcd() >> void {
 fun alphaColor(base: u32, alpha: f32) >> u32 {
     i32 a = ((base >> 24) & 255) as i32;
     i32 scaled = ((a as f32) * alpha) as i32;
-    if (scaled < 0) {
-        scaled = 0;
-    }
-    if (scaled > 255) {
-        scaled = 255;
-    }
+    if scaled < 0 {scaled = 0;}
+    if scaled > 255 {scaled = 255;}
     return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
 }
 
@@ -773,24 +682,12 @@ fun shadeColor(base: u32, factor: f32) >> u32 {
     i32 b = ((((base >> 16) & 255) as i32) as f32 * factor) as i32;
     i32 a = ((base >> 24) & 255) as i32;
 
-    if (r < 0) {
-        r = 0;
-    }
-    if (g < 0) {
-        g = 0;
-    }
-    if (b < 0) {
-        b = 0;
-    }
-    if (r > 255) {
-        r = 255;
-    }
-    if (g > 255) {
-        g = 255;
-    }
-    if (b > 255) {
-        b = 255;
-    }
+    if r < 0 {r = 0;}
+    if g < 0 {g = 0;}
+    if b < 0 {b = 0;}
+    if r > 255 {r = 255;}
+    if g > 255 {g = 255;}
+    if b > 255 {b = 255;}
 
     return ((r as u32) & 255) |
            (((g as u32) & 255) << 8) |
@@ -803,7 +700,7 @@ fun colorG(color: u32) >> i32 { return ((color >> 8) & 255) as i32; }
 fun colorB(color: u32) >> i32 { return ((color >> 16) & 255) as i32; }
 
 fun printColorDebug(theme: Theme) >> void {
-    printf("[zltris] color debug theme=%s index=%d\n", themeName(g_theme_index), g_theme_index);
+    printf("[zltris] color debug theme=%s index=%d\n", themeName(g_game.theme_index), g_game.theme_index);
     for i32 i = 0; i < 7; i++ {
         u32 c = pieceColor(theme, i);
         printf("[zltris] kind=%d hex=0x%08X rgb=(%d,%d,%d)\n", i, c, colorR(c), colorG(c), colorB(c));
@@ -845,41 +742,25 @@ fun clearWithColor(color_rgba: u32) >> void {
 }
 
 fun currentPps() >> f32 {
-    if (g_run_timer <= 0.001) {
-        return 0.0;
-    }
+    if g_run_timer <= 0.001 {return 0.0;}
     return (g_pieces_placed as f32) / g_run_timer;
 }
 
 fun ghostColor(base: u32) >> u32 { return alphaColor(base, 0.28); }
 
 fun pieceColor(theme: Theme, kind: i32) >> u32 {
-    if (kind == PIECE_I) {
-        return theme.piece_i;
-    }
-    if (kind == PIECE_O) {
-        return theme.piece_o;
-    }
-    if (kind == PIECE_T) {
-        return theme.piece_t;
-    }
-    if (kind == PIECE_J) {
-        return theme.piece_j;
-    }
-    if (kind == PIECE_L) {
-        return theme.piece_l;
-    }
-    if (kind == PIECE_S) {
-        return theme.piece_s;
-    }
+    if kind == PIECE_I {return theme.piece_i;}
+    if kind == PIECE_O {return theme.piece_o;}
+    if kind == PIECE_T {return theme.piece_t;}
+    if kind == PIECE_J {return theme.piece_j;}
+    if kind == PIECE_L {return theme.piece_l;}
+    if kind == PIECE_S {return theme.piece_s;}
     return theme.piece_z;
 }
 
 fun normalizeRotation(rotation: i32) >> i32 {
     i32 res = rotation % 4;
-    if (res < 0) {
-        res += 4;
-    }
+    if res < 0 {res += 4;}
     return res;
 }
 
@@ -899,158 +780,102 @@ fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
     i32 rot = normalizeRotation(rotation);
 
     if (kind == PIECE_I) {
-        if (rot == 0) {
-            return idx;
-        }
-        if (rot == 1) {
-            return 2;
-        }
-        if (rot == 2) {
-            return idx;
-        }
+        if rot == 0 {return idx;}
+        if rot == 1 {return 2;}
+        if rot == 2 {return idx;}
         return 1;
     }
 
     if (kind == PIECE_O) {
-        if (idx == 0 || idx == 2) {
-            return 1;
-        }
+        if idx == 0 || idx == 2 {return 1;}
         return 2;
     }
 
     if (kind == PIECE_T) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 1;
-            }
+            if idx == 0 {return 1;}
             return idx - 1;
         }
         if (rot == 1) {
-            if (idx == 2) {
-                return 2;
-            }
+            if idx == 2 {return 2;}
             return 1;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 1;
-            }
+            if idx == 3 {return 1;}
             return idx;
         }
-        if (idx == 1) {
-            return 0;
-        }
+        if idx == 1 {return 0;}
         return 1;
     }
 
     if (kind == PIECE_J) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 0;
-            }
+            if idx == 0 {return 0;}
             return idx - 1;
         }
         if (rot == 1) {
-            if (idx == 0 || idx == 2 || idx == 3) {
-                return 1;
-            }
+            if idx == 0 || idx == 2 || idx == 3 {return 1;}
             return 2;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return idx;
         }
-        if (idx == 2) {
-            return 0;
-        }
+        if idx == 2 {return 0;}
         return 1;
     }
 
     if (kind == PIECE_L) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 2;
-            }
+            if idx == 0 {return 2;}
             return idx - 1;
         }
         if (rot == 1) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return 1;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 0;
-            }
+            if idx == 3 {return 0;}
             return idx;
         }
-        if (idx == 0) {
-            return 0;
-        }
+        if idx == 0 {return 0;}
         return 1;
     }
 
     if (kind == PIECE_S) {
         if (rot == 0) {
-            if (idx == 0 || idx == 3) {
-                return 1;
-            }
-            if (idx == 1) {
-                return 2;
-            }
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
             return 0;
         }
         if (rot == 1) {
-            if (idx == 0 || idx == 1) {
-                return 1;
-            }
+            if idx == 0 || idx == 1 {return 1;}
             return 2;
         }
         if (rot == 2) {
-            if (idx == 0 || idx == 3) {
-                return 1;
-            }
-            if (idx == 1) {
-                return 2;
-            }
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
             return 0;
         }
-        if (idx == 0 || idx == 1) {
-            return 0;
-        }
+        if idx == 0 || idx == 1 {return 0;}
         return 1;
     }
 
     if (rot == 0) {
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 1 || idx == 2) {
-            return 1;
-        }
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
         return 2;
     }
     if (rot == 1) {
-        if (idx == 0 || idx == 2) {
-            return 2;
-        }
+        if idx == 0 || idx == 2 {return 2;}
         return 1;
     }
     if (rot == 2) {
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 1 || idx == 2) {
-            return 1;
-        }
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
         return 2;
     }
-    if (idx == 0 || idx == 2) {
-        return 1;
-    }
+    if idx == 0 || idx == 2 {return 1;}
     return 0;
 }
 
@@ -1058,485 +883,283 @@ fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
     i32 rot = normalizeRotation(rotation);
 
     if (kind == PIECE_I) {
-        if (rot == 0) {
-            return 1;
-        }
-        if (rot == 1) {
-            return idx;
-        }
-        if (rot == 2) {
-            return 2;
-        }
+        if rot == 0 {return 1;}
+        if rot == 1 {return idx;}
+        if rot == 2 {return 2;}
         return idx;
     }
 
     if (kind == PIECE_O) {
-        if (idx < 2) {
-            return 0;
-        }
+        if idx < 2 {return 0;}
         return 1;
     }
 
     if (kind == PIECE_T) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 0;
-            }
+            if idx == 0 {return 0;}
             return 1;
         }
         if (rot == 1) {
-            if (idx == 3) {
-                return 2;
-            }
-            if (idx == 2) {
-                return 1;
-            }
+            if idx == 3 {return 2;}
+            if idx == 2 {return 1;}
             return idx;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return 1;
         }
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 3) {
-            return 2;
-        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
         return 1;
     }
 
     if (kind == PIECE_J) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 0;
-            }
+            if idx == 0 {return 0;}
             return 1;
         }
         if (rot == 1) {
-            if (idx == 0 || idx == 1) {
-                return 0;
-            }
-            if (idx == 2) {
-                return 1;
-            }
+            if idx == 0 || idx == 1 {return 0;}
+            if idx == 2 {return 1;}
             return 2;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return 1;
         }
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 1) {
-            return 1;
-        }
+        if idx == 0 {return 0;}
+        if idx == 1 {return 1;}
         return 2;
     }
 
     if (kind == PIECE_L) {
         if (rot == 0) {
-            if (idx == 0) {
-                return 0;
-            }
+            if idx == 0 {return 0;}
             return 1;
         }
         if (rot == 1) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return idx;
         }
         if (rot == 2) {
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 3 {return 2;}
             return 1;
         }
-        if (idx < 2) {
-            return 0;
-        }
-        if (idx == 2) {
-            return 1;
-        }
+        if idx < 2 {return 0;}
+        if idx == 2 {return 1;}
         return 2;
     }
 
     if (kind == PIECE_S) {
         if (rot == 0) {
-            if (idx < 2) {
-                return 0;
-            }
+            if idx < 2 {return 0;}
             return 1;
         }
         if (rot == 1) {
-            if (idx == 0) {
-                return 0;
-            }
-            if (idx == 3) {
-                return 2;
-            }
+            if idx == 0 {return 0;}
+            if idx == 3 {return 2;}
             return 1;
         }
         if (rot == 2) {
-            if (idx < 2) {
-                return 1;
-            }
+            if idx < 2 {return 1;}
             return 2;
         }
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 3) {
-            return 2;
-        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
         return 1;
     }
 
     if (rot == 0) {
-        if (idx < 2) {
-            return 0;
-        }
+        if idx < 2 {return 0;}
         return 1;
     }
     if (rot == 1) {
-        if (idx == 0) {
-            return 0;
-        }
-        if (idx == 3) {
-            return 2;
-        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
         return 1;
     }
     if (rot == 2) {
-        if (idx < 2) {
-            return 1;
-        }
+        if idx < 2 {return 1;}
         return 2;
     }
-    if (idx == 0) {
-        return 0;
-    }
-    if (idx == 3) {
-        return 2;
-    }
+    if idx == 0 {return 0;}
+    if idx == 3 {return 2;}
     return 1;
 }
 
 fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
-        if (test == 1 || test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 2 || test == 4 {return -1;}
         return 0;
     }
     if (from == 1 && to == 0) {
-        if (test == 1 || test == 2 || test == 4) {
-            return 1;
-        }
+        if test == 1 || test == 2 || test == 4 {return 1;}
         return 0;
     }
     if (from == 1 && to == 2) {
-        if (test == 1 || test == 2 || test == 4) {
-            return 1;
-        }
+        if test == 1 || test == 2 || test == 4 {return 1;}
         return 0;
     }
     if (from == 2 && to == 1) {
-        if (test == 1 || test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 2 || test == 4 {return -1;}
         return 0;
     }
     if (from == 2 && to == 3) {
-        if (test == 1 || test == 2 || test == 4) {
-            return 1;
-        }
+        if test == 1 || test == 2 || test == 4 {return 1;}
         return 0;
     }
     if (from == 3 && to == 2) {
-        if (test == 1 || test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 2 || test == 4 {return -1;}
         return 0;
     }
     if (from == 3 && to == 0) {
-        if (test == 1 || test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 2 || test == 4 {return -1;}
         return 0;
     }
-    if (test == 1 || test == 2 || test == 4) {
-        return 1;
-    }
+    if test == 1 || test == 2 || test == 4 {return 1;}
     return 0;
 }
 
 fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
-        if (test == 2) {
-            return 1;
-        }
-        if (test == 3) {
-            return -2;
-        }
-        if (test == 4) {
-            return -2;
-        }
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
         return 0;
     }
     if (from == 1 && to == 0) {
-        if (test == 2) {
-            return -1;
-        }
-        if (test == 3) {
-            return 2;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
         return 0;
     }
     if (from == 1 && to == 2) {
-        if (test == 2) {
-            return -1;
-        }
-        if (test == 3) {
-            return 2;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
         return 0;
     }
     if (from == 2 && to == 1) {
-        if (test == 2) {
-            return 1;
-        }
-        if (test == 3) {
-            return -2;
-        }
-        if (test == 4) {
-            return -2;
-        }
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
         return 0;
     }
     if (from == 2 && to == 3) {
-        if (test == 2) {
-            return 1;
-        }
-        if (test == 3) {
-            return -2;
-        }
-        if (test == 4) {
-            return -2;
-        }
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
         return 0;
     }
     if (from == 3 && to == 2) {
-        if (test == 2) {
-            return -1;
-        }
-        if (test == 3) {
-            return 2;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
         return 0;
     }
     if (from == 3 && to == 0) {
-        if (test == 2) {
-            return -1;
-        }
-        if (test == 3) {
-            return 2;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
         return 0;
     }
-    if (test == 2) {
-        return 1;
-    }
-    if (test == 3) {
-        return -2;
-    }
-    if (test == 4) {
-        return -2;
-    }
+    if test == 2 {return 1;}
+    if test == 3 {return -2;}
+    if test == 4 {return -2;}
     return 0;
 }
 
 fun iKickX(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
-        if (test == 1 || test == 3) {
-            return -2;
-        }
-        if (test == 2 || test == 4) {
-            return 1;
-        }
+        if test == 1 || test == 3 {return -2;}
+        if test == 2 || test == 4 {return 1;}
         return 0;
     }
     if (from == 1 && to == 0) {
-        if (test == 1 || test == 3) {
-            return 2;
-        }
-        if (test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 3 {return 2;}
+        if test == 2 || test == 4 {return -1;}
         return 0;
     }
     if (from == 1 && to == 2) {
-        if (test == 1 || test == 3) {
-            return -1;
-        }
-        if (test == 2 || test == 4) {
-            return 2;
-        }
+        if test == 1 || test == 3 {return -1;}
+        if test == 2 || test == 4 {return 2;}
         return 0;
     }
     if (from == 2 && to == 1) {
-        if (test == 1 || test == 3) {
-            return 1;
-        }
-        if (test == 2 || test == 4) {
-            return -2;
-        }
+        if test == 1 || test == 3 {return 1;}
+        if test == 2 || test == 4 {return -2;}
         return 0;
     }
     if (from == 2 && to == 3) {
-        if (test == 1 || test == 3) {
-            return 2;
-        }
-        if (test == 2 || test == 4) {
-            return -1;
-        }
+        if test == 1 || test == 3 {return 2;}
+        if test == 2 || test == 4 {return -1;}
         return 0;
     }
     if (from == 3 && to == 2) {
-        if (test == 1 || test == 3) {
-            return -2;
-        }
-        if (test == 2 || test == 4) {
-            return 1;
-        }
+        if test == 1 || test == 3 {return -2;}
+        if test == 2 || test == 4 {return 1;}
         return 0;
     }
     if (from == 3 && to == 0) {
-        if (test == 1 || test == 3) {
-            return 1;
-        }
-        if (test == 2 || test == 4) {
-            return -2;
-        }
+        if test == 1 || test == 3 {return 1;}
+        if test == 2 || test == 4 {return -2;}
         return 0;
     }
-    if (test == 1 || test == 3) {
-        return -1;
-    }
-    if (test == 2 || test == 4) {
-        return 2;
-    }
+    if test == 1 || test == 3 {return -1;}
+    if test == 2 || test == 4 {return 2;}
     return 0;
 }
 
 fun iKickY(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
-        if (test == 3) {
-            return -1;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 3 {return -1;}
+        if test == 4 {return 2;}
         return 0;
     }
     if (from == 1 && to == 0) {
-        if (test == 3) {
-            return 1;
-        }
-        if (test == 4) {
-            return -2;
-        }
+        if test == 3 {return 1;}
+        if test == 4 {return -2;}
         return 0;
     }
     if (from == 1 && to == 2) {
-        if (test == 3) {
-            return 2;
-        }
-        if (test == 4) {
-            return -1;
-        }
+        if test == 3 {return 2;}
+        if test == 4 {return -1;}
         return 0;
     }
     if (from == 2 && to == 1) {
-        if (test == 3) {
-            return -2;
-        }
-        if (test == 4) {
-            return 1;
-        }
+        if test == 3 {return -2;}
+        if test == 4 {return 1;}
         return 0;
     }
     if (from == 2 && to == 3) {
-        if (test == 3) {
-            return 1;
-        }
-        if (test == 4) {
-            return -2;
-        }
+        if test == 3 {return 1;}
+        if test == 4 {return -2;}
         return 0;
     }
     if (from == 3 && to == 2) {
-        if (test == 3) {
-            return -1;
-        }
-        if (test == 4) {
-            return 2;
-        }
+        if test == 3 {return -1;}
+        if test == 4 {return 2;}
         return 0;
     }
     if (from == 3 && to == 0) {
-        if (test == 3) {
-            return -2;
-        }
-        if (test == 4) {
-            return 1;
-        }
+        if test == 3 {return -2;}
+        if test == 4 {return 1;}
         return 0;
     }
-    if (test == 3) {
-        return 2;
-    }
-    if (test == 4) {
-        return -1;
-    }
+    if test == 3 {return 2;}
+    if test == 4 {return -1;}
     return 0;
 }
 
 fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
-    if (kind == PIECE_I) {
-        return iKickX(from, to, test);
-    }
-    if (kind == PIECE_O) {
-        return 0;
-    }
+    if kind == PIECE_I {return iKickX(from, to, test);}
+    if kind == PIECE_O {return 0;}
     return jlstzKickX(from, to, test);
 }
 
 fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
-    if (kind == PIECE_I) {
-        return iKickY(from, to, test);
-    }
-    if (kind == PIECE_O) {
-        return 0;
-    }
+    if kind == PIECE_I {return iKickY(from, to, test);}
+    if kind == PIECE_O {return 0;}
     return jlstzKickY(from, to, test);
 }
 
@@ -1545,15 +1168,9 @@ fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
         i32 x = base_x + minoX(kind, rotation, idx);
         i32 y = base_y + minoY(kind, rotation, idx);
 
-        if (x < 0 || x >= BOARD_W) {
-            return false;
-        }
-        if (y >= BOARD_H) {
-            return false;
-        }
-        if (y >= 0 && boardGet(x, y) != 0) {
-            return false;
-        }
+        if x < 0 || x >= BOARD_W {return false;}
+        if y >= BOARD_H {return false;}
+        if y >= 0 && boardGet(x, y) != 0 {return false;}
     }
     return true;
 }
@@ -1578,9 +1195,7 @@ fun refillBag() >> void {
 }
 
 fun enqueueFromBag() >> void {
-    if (g_bag_pos >= BAG_SIZE) {
-        refillBag();
-    }
+    if g_bag_pos >= BAG_SIZE {refillBag();}
     g_queue[g_queue_count] = g_bag[g_bag_pos];
     g_queue_count += 1;
     g_bag_pos += 1;
@@ -1621,9 +1236,7 @@ fun spawnNextPiece() >> void {
     g_hold_used = false;
     applyDcd();
 
-    if (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation)) {
-        g_game_over = true;
-    }
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {g_game_over = true;}
 }
 
 fun resetBoard() >> void {
@@ -1656,9 +1269,7 @@ fun resetGame() >> void {
 }
 
 fun holdCurrent() >> void {
-    if (g_hold_used) {
-        return;
-    }
+    if g_hold_used {return;}
 
     i32 current = g_piece_kind;
     if (g_hold_kind < 0) {
@@ -1682,17 +1293,13 @@ fun holdCurrent() >> void {
     g_shift_dir = 0;
     applyDcd();
 
-    if (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation)) {
-        g_game_over = true;
-    }
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {g_game_over = true;}
 }
 
 fun tryMove(dx: i32, dy: i32) >> bool {
     i32 next_x = g_piece_x + dx;
     i32 next_y = g_piece_y + dy;
-    if (!currentFitsAt(next_x, next_y, g_piece_rotation)) {
-        return false;
-    }
+    if !currentFitsAt(next_x, next_y, g_piece_rotation) {return false;}
     g_piece_x = next_x;
     g_piece_y = next_y;
     g_lock_timer = 0.0;
@@ -1741,25 +1348,15 @@ fun lockCurrentPiece() >> void {
     for i32 idx = 0; idx < 4; idx++ {
         i32 x = g_piece_x + minoX(g_piece_kind, g_piece_rotation, idx);
         i32 y = g_piece_y + minoY(g_piece_kind, g_piece_rotation, idx);
-        if (y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W) {
-            boardSet(x, y, g_piece_kind + 1);
-        }
+        if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {boardSet(x, y, g_piece_kind + 1);}
     }
 }
 
 fun awardLineClear(lines_cleared: i32) >> void {
-    if (lines_cleared == 1) {
-        g_score += 100;
-    }
-    if (lines_cleared == 2) {
-        g_score += 300;
-    }
-    if (lines_cleared == 3) {
-        g_score += 500;
-    }
-    if (lines_cleared >= 4) {
-        g_score += 800;
-    }
+    if lines_cleared == 1 {g_score += 100;}
+    if lines_cleared == 2 {g_score += 300;}
+    if lines_cleared == 3 {g_score += 500;}
+    if lines_cleared >= 4 {g_score += 800;}
 
     g_lines += lines_cleared;
 }
@@ -1769,9 +1366,7 @@ fun clearLines() >> i32 {
     for i32 y = BOARD_H - 1; y >= 0; y-- {
         bool full = true;
         for i32 x = 0; x < BOARD_W; x++ {
-            if (boardGet(x, y) == 0) {
-                full = false;
-            }
+            if boardGet(x, y) == 0 {full = false;}
         }
 
         if (full) {
@@ -1788,9 +1383,7 @@ fun clearLines() >> i32 {
         }
     }
 
-    if (cleared > 0) {
-        awardLineClear(cleared);
-    }
+    if cleared > 0 {awardLineClear(cleared);}
     return cleared;
 }
 
@@ -1814,13 +1407,9 @@ fun hardDrop() >> void {
     if (g_bg_star_react_mode == STAR_MODE_DROPS) {
         f32 norm = starIntensityNorm();
         g_star_pps_meter += 1.0;
-        if (g_star_pps_meter > 3.0) {
-            g_star_pps_meter = 3.0;
-        }
+        if g_star_pps_meter > 3.0 {g_star_pps_meter = 3.0;}
         g_star_hard_target += 0.06 + norm * 0.64;
-        if (g_star_hard_target > 1.0) {
-            g_star_hard_target = 1.0;
-        }
+        if g_star_hard_target > 1.0 {g_star_hard_target = 1.0;}
     }
     stepLock();
 }
@@ -1850,9 +1439,7 @@ fun drawPieceAt(kind: i32, rotation: i32, base_x: i64, base_y: i64, color: u32) 
     for i32 idx = 0; idx < 4; idx++ {
         i64 x = base_x + (minoX(kind, rotation, idx) as i64);
         i64 y = base_y + (minoY(kind, rotation, idx) as i64);
-        if (y >= HIDDEN_ROWS) {
-            drawCell((BOARD_LEFT as i64) + x * (CELL as i64), (BOARD_TOP as i64) + (y - (HIDDEN_ROWS as i64)) * (CELL as i64), color);
-        }
+        if y >= HIDDEN_ROWS {drawCell((BOARD_LEFT as i64) + x * (CELL as i64), (BOARD_TOP as i64) + (y - (HIDDEN_ROWS as i64)) * (CELL as i64), color);}
     }
 }
 
@@ -1873,18 +1460,10 @@ fun drawMiniPieceCentered(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, p
     for i32 idx = 0; idx < 4; idx++ {
         i32 mx = minoX(kind, 0, idx);
         i32 my = minoY(kind, 0, idx);
-        if (mx < min_x) {
-            min_x = mx;
-        }
-        if (mx > max_x) {
-            max_x = mx;
-        }
-        if (my < min_y) {
-            min_y = my;
-        }
-        if (my > max_y) {
-            max_y = my;
-        }
+        if mx < min_x {min_x = mx;}
+        if mx > max_x {max_x = mx;}
+        if my < min_y {min_y = my;}
+        if my > max_y {max_y = my;}
     }
 
     i32 piece_w = max_x - min_x + 1;
@@ -1905,9 +1484,7 @@ fun drawBoard(theme: Theme) >> void {
             i32 sx = BOARD_LEFT + x * (CELL as i32);
             i32 sy = BOARD_TOP + (y - HIDDEN_ROWS) * (CELL as i32);
             strokeRect(sx, sy, CELL, CELL, theme.board_grid);
-            if (boardGet(x, y) != 0) {
-                drawCell(sx, sy, pieceColor(theme, boardGet(x, y) - 1));
-            }
+            if boardGet(x, y) != 0 {drawCell(sx, sy, pieceColor(theme, boardGet(x, y) - 1));}
         }
     }
 
@@ -1928,16 +1505,12 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawTextColor(font, "HOLD", -194, 230, 14, theme.text_main);
         fillRect(-178, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
         strokeRect(-178, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78));
-        if (g_hold_kind >= 0) {
-            drawMiniPieceCentered(theme, g_hold_kind, -178, 256, 112, 112, 16);
-        }
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, -178, 256, 112, 112, 16);}
 
         drawTextColor(font, TextFormat("SCORE\n%i", g_score), -194, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_lines), -194, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS\n%.2f", currentPps()), -194, 532, 16, theme.text_main);
-        if (isFortyLinesMode()) {
-            drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), -194, 586, 14, theme.panel_stroke);
-        }
+        if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), -194, 586, 14, theme.panel_stroke);}
 
         fillRect(SIDEBAR_X, 120, 178, 510, theme.panel_bg);
         strokeRect(SIDEBAR_X, 120, 178, 510, theme.panel_stroke);
@@ -1958,14 +1531,10 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     drawTextColor(font, "first strike", SIDEBAR_X + 20, 142, 11, theme.text_muted);
 
     drawTextColor(font, "HOLD", SIDEBAR_X + 20, 190, 14, theme.text_main);
-    if (isFortyLinesMode()) {
-        drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);
-    }
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_mode_timer * 100.0) as i32) / 6000, (((g_mode_timer * 100.0) as i32) / 100) % 60, ((g_mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
     fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
     strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
-    if (g_hold_kind >= 0) {
-        drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);
-    }
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
 
     drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -1984,7 +1553,7 @@ fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
     strokeRect(28, 76, 504, 674, theme.panel_stroke);
 
     drawTextColor(font, "COLOR DEBUG (F3)", 52, 104, 19, theme.text_main);
-    drawTextColor(font, TextFormat("theme: %s idx:%i", themeName(g_theme_index), g_theme_index), 52, 136, 14, theme.text_muted);
+    drawTextColor(font, TextFormat("theme: %s idx:%i", themeName(g_game.theme_index), g_game.theme_index), 52, 136, 14, theme.text_muted);
 
     for i32 i = 0; i < 7; i++ {
         u32 c = pieceColor(theme, i);
@@ -2014,9 +1583,7 @@ fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
 }
 
 fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
-    if (!isFortyLinesMode()) {
-        return;
-    }
+    if !isFortyLinesMode() {return;}
 
     if (g_round_state == ROUND_COUNTDOWN) {
         ptr<u8> text = "3";
@@ -2043,12 +1610,8 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
             seg = g_countdown_timer;
         }
 
-        if (seg < 0.0) {
-            seg = 0.0;
-        }
-        if (seg > 1.0) {
-            seg = 1.0;
-        }
+        if seg < 0.0 {seg = 0.0;}
+        if seg > 1.0 {seg = 1.0;}
         f32 fade = 0.18 + seg * 0.82;
 
         fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.86));
@@ -2067,8 +1630,9 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
 }
 
 fun drawApp(font: Font) >> void {
+    g_game = g_game.refresh_screen_size();
     setScaleAlignX(scaleAlignCenter());
-    if (g_screen == SCREEN_GAME && canUseDoubleRowLayout()) {
+    if (g_game.screen == SCREEN_GAME && canUseDoubleRowLayout()) {
         setScaleExtraX(uiS(131));
     } else {
         setScaleExtraX(0);
@@ -2078,20 +1642,16 @@ fun drawApp(font: Font) >> void {
     BeginDrawing();
     clearWithColor(theme.bg_outer);
 
-    if (g_screen == SCREEN_MENU) {
+    if (g_game.screen == SCREEN_MENU) {
         drawMenu(font, theme);
-        if (g_debug_colors) {
-            drawColorDebugOverlay(font, theme);
-        }
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
         EndDrawing();
         return;
     }
 
-    if (g_screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
-        if (g_debug_colors) {
-            drawColorDebugOverlay(font, theme);
-        }
+    if (g_game.screen == SCREEN_SETTINGS) {
+        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
         EndDrawing();
         return;
     }
@@ -2101,6 +1661,7 @@ fun drawApp(font: Font) >> void {
 }
 
 fun updateApp() >> void {
+    g_game = g_game.refresh_screen_size();
     if (IsKeyPressed(KEY_F3)) {
         g_debug_colors = !g_debug_colors;
         Theme theme = currentTheme();
@@ -2113,24 +1674,24 @@ fun updateApp() >> void {
         }
     }
 
-    if (g_screen == SCREEN_MENU) {
+    if (g_game.screen == SCREEN_MENU) {
         i32 action = menuUpdate();
         if (action == menuActionStartFreePlay()) {
-            g_screen = SCREEN_GAME;
+            g_game = g_game.with_screen(SCREEN_GAME);
             startGameMode(MODE_FREE_PLAY);
         } else if (action == menuActionStart40Lines()) {
-            g_screen = SCREEN_GAME;
+            g_game = g_game.with_screen(SCREEN_GAME);
             startGameMode(MODE_40_LINES);
         } else if (action == menuActionOpenSettings()) {
-            g_settings_return_screen = SCREEN_MENU;
+            g_game = g_game.with_settings_return_screen(SCREEN_MENU);
             settingsInit();
-            g_screen = SCREEN_SETTINGS;
+            g_game = g_game.with_screen(SCREEN_SETTINGS);
         }
         return;
     }
 
-    if (g_screen == SCREEN_SETTINGS) {
-        i32 prev_theme = g_theme_index;
+    if (g_game.screen == SCREEN_SETTINGS) {
+        i32 prev_theme = g_game.theme_index;
         f32 prev_arr = g_arr_frames;
         f32 prev_das = g_das_frames;
         f32 prev_dcd = g_dcd_frames;
@@ -2142,8 +1703,8 @@ fun updateApp() >> void {
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
 
-        i32 settings_action = settingsUpdate(&g_theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
-        if (prev_theme != g_theme_index ||
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
+        if (prev_theme != g_game.theme_index ||
             prev_arr != g_arr_frames ||
             prev_das != g_das_frames ||
             prev_dcd != g_dcd_frames ||
@@ -2157,9 +1718,7 @@ fun updateApp() >> void {
             clampSettings();
             saveSettingsFile();
         }
-        if (settings_action == settingsActionBack()) {
-            g_screen = g_settings_return_screen;
-        }
+        if settings_action == settingsActionBack() {g_game = g_game.with_screen(g_game.settings_return_screen);}
         return;
     }
 
@@ -2170,16 +1729,12 @@ fun drawGameFrame(font: Font) >> void {
     Theme theme = currentTheme();
     bool split_layout = canUseDoubleRowLayout();
     f32 hint_alpha = 1.0;
-    if (canShowHoldRestartEffect()) {
-        hint_alpha = restartHintAlpha();
-    }
+    if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawBackgroundStars(theme);
     drawBoard(theme);
     drawSidebar(font, theme, split_layout);
-    if (canShowHoldRestartEffect()) {
-        drawRestartCharge(font, theme);
-    }
+    if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
     drawTextColor(font, "LEFT/RIGHT move", 48, 24, 12, theme.text_muted);
     drawTextColor(font, "TAB settings  F3 color debug", 48, 42, 12, theme.text_muted);
@@ -2195,18 +1750,12 @@ fun drawGameFrame(font: Font) >> void {
 
     drawFortyLinesOverlay(font, theme);
 
-    if (g_debug_colors) {
-        drawColorDebugOverlay(font, theme);
-    }
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
 }
 
 fun updateHorizontalInput(dt: f32) >> void {
-    if (IsKeyPressed(KEY_LEFT)) {
-        g_last_horizontal_press = -1;
-    }
-    if (IsKeyPressed(KEY_RIGHT)) {
-        g_last_horizontal_press = 1;
-    }
+    if IsKeyPressed(KEY_LEFT) {g_last_horizontal_press = -1;}
+    if IsKeyPressed(KEY_RIGHT) {g_last_horizontal_press = 1;}
 
     bool left_down = IsKeyDown(KEY_LEFT);
     bool right_down = IsKeyDown(KEY_RIGHT);
@@ -2237,9 +1786,7 @@ fun updateHorizontalInput(dt: f32) >> void {
 
     if (g_dcd_timer > 0.0) {
         g_dcd_timer -= dt;
-        if (g_dcd_timer < 0.0) {
-            g_dcd_timer = 0.0;
-        }
+        if g_dcd_timer < 0.0 {g_dcd_timer = 0.0;}
         return;
     }
 
@@ -2258,9 +1805,7 @@ fun updateHorizontalInput(dt: f32) >> void {
         g_shift_repeat_timer = 0.0;
     }
 
-    if (g_shift_hold_timer < das_seconds) {
-        return;
-    }
+    if g_shift_hold_timer < das_seconds {return;}
 
     if (arr_seconds <= 0.0001) {
         for (tryMove(desired_dir, 0)) {}
@@ -2280,18 +1825,10 @@ fun updateHorizontalInput(dt: f32) >> void {
 fun updateMovementInput(dt: f32) >> void {
     updateHorizontalInput(dt);
 
-    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X)) {
-        tryRotate(1);
-    }
-    if (IsKeyPressed(KEY_Z)) {
-        tryRotate(-1);
-    }
-    if (IsKeyPressed(KEY_C)) {
-        holdCurrent();
-    }
-    if (IsKeyPressed(KEY_SPACE)) {
-        hardDrop();
-    }
+    if IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X) {tryRotate(1);}
+    if IsKeyPressed(KEY_Z) {tryRotate(-1);}
+    if IsKeyPressed(KEY_C) {holdCurrent();}
+    if IsKeyPressed(KEY_SPACE) {hardDrop();}
 }
 
 fun updateSoftDrop(dt: f32) >> void {
@@ -2302,9 +1839,7 @@ fun updateSoftDrop(dt: f32) >> void {
 
     g_soft_timer += dt;
     f32 soft_interval = gravityInterval() / g_sdf_multiplier;
-    if (soft_interval < 0.005) {
-        soft_interval = 0.005;
-    }
+    if soft_interval < 0.005 {soft_interval = 0.005;}
     for (g_soft_timer >= soft_interval) {
         if (tryMove(0, 1)) {
             g_score += 1;
@@ -2334,9 +1869,7 @@ fun updateLock(dt: f32) >> void {
     }
 
     g_lock_timer += dt;
-    if (g_lock_timer >= 0.45) {
-        stepLock();
-    }
+    if g_lock_timer >= 0.45 {stepLock();}
 }
 
 fun updateGameScreen() >> void {
@@ -2352,7 +1885,7 @@ fun updateGameScreen() >> void {
     if (IsKeyPressed(KEY_ESCAPE)) {
         g_restart_charge = 0.0;
         g_restart_hold_latched = false;
-        g_screen = SCREEN_MENU;
+        g_game = g_game.with_screen(SCREEN_MENU);
         menuInit();
         return;
     }
@@ -2360,9 +1893,9 @@ fun updateGameScreen() >> void {
     if (IsKeyPressed(KEY_TAB)) {
         g_restart_charge = 0.0;
         g_restart_hold_latched = false;
-        g_settings_return_screen = SCREEN_GAME;
+        g_game = g_game.with_settings_return_screen(SCREEN_GAME);
         settingsInit();
-        g_screen = SCREEN_SETTINGS;
+        g_game = g_game.with_screen(SCREEN_SETTINGS);
         return;
     }
 
@@ -2371,9 +1904,7 @@ fun updateGameScreen() >> void {
         g_restart_hold_latched = false;
     }
 
-    if (canShowHoldRestartEffect() && updateRestartCharge(dt)) {
-        return;
-    }
+    if canShowHoldRestartEffect() && updateRestartCharge(dt) {return;}
 
     if (isFortyLinesMode()) {
         if (g_round_state == ROUND_COUNTDOWN) {
@@ -2387,9 +1918,7 @@ fun updateGameScreen() >> void {
         }
 
         if (g_round_state == ROUND_FINISHED) {
-            if (IsKeyPressed(KEY_R)) {
-                startGameMode(g_game_mode);
-            }
+            if IsKeyPressed(KEY_R) {startGameMode(g_game_mode);}
             return;
         }
 
@@ -2397,35 +1926,25 @@ fun updateGameScreen() >> void {
     }
 
     if (!g_game_over) {
-        if (!isFortyLinesMode() || g_round_state == ROUND_RUNNING) {
-            g_run_timer += dt;
-        }
+        if !isFortyLinesMode() || g_round_state == ROUND_RUNNING {g_run_timer += dt;}
     }
 
     if (g_game_over) {
-        if (IsKeyPressed(KEY_R)) {
-            startGameMode(g_game_mode);
-        }
+        if IsKeyPressed(KEY_R) {startGameMode(g_game_mode);}
         return;
     }
 
     updateMovementInput(dt);
-    if (g_game_over) {
-        return;
-    }
+    if g_game_over {return;}
 
     updateSoftDrop(dt);
     updateGravity(dt);
-    if (!g_game_over) {
-        updateLock(dt);
-    }
+    if !g_game_over {updateLock(dt);}
 }
 
 fun shouldQuitApp() >> bool {
     bool ctrl_down = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-    if (ctrl_down && IsKeyPressed(KEY_Q)) {
-        return true;
-    }
+    if ctrl_down && IsKeyPressed(KEY_Q) {return true;}
     return false;
 }
 
@@ -2448,27 +1967,23 @@ fun main() >> i32 {
         printf("[zltris] failed to load custom font, using default\n");
     }
 
-    g_theme_index = 0;
+    g_game.theme_index = 0;
     loadSettingsFile();
     clampSettings();
     startGameMode(MODE_FREE_PLAY);
     initBackgroundStars();
-    g_screen = SCREEN_MENU;
-    g_settings_return_screen = SCREEN_MENU;
+    g_game = g_game.with_screen(SCREEN_MENU);
+    g_game = g_game.with_settings_return_screen(SCREEN_MENU);
     menuInit();
     settingsInit();
 
     for (true) {
-        if (WindowShouldClose() || shouldQuitApp()) {
-            break;
-        }
+        if WindowShouldClose() || shouldQuitApp() {break;}
         updateApp();
         drawApp(ui_font);
     }
 
-    if (custom_font_loaded) {
-        UnloadFont(ui_font);
-    }
+    if custom_font_loaded {UnloadFont(ui_font);}
     CloseWindow();
     return 0;
 }
