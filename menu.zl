@@ -11,6 +11,7 @@ use raylib
 #define MENU_ACTION_START_FREE_PLAY 1
 #define MENU_ACTION_OPEN_SETTINGS 2
 #define MENU_ACTION_START_40_LINES 3
+#define MENU_ACTION_START_BLITZ 4
 
 struct MenuState {
     index i32,
@@ -63,6 +64,7 @@ fun menuActionNone() >> i32 { return MENU_ACTION_NONE; }
 fun menuActionStartFreePlay() >> i32 { return MENU_ACTION_START_FREE_PLAY; }
 fun menuActionOpenSettings() >> i32 { return MENU_ACTION_OPEN_SETTINGS; }
 fun menuActionStart40Lines() >> i32 { return MENU_ACTION_START_40_LINES; }
+fun menuActionStartBlitz() >> i32 { return MENU_ACTION_START_BLITZ; }
 
 fun toColor(color_rgba: u32) >> Color {
     return Color{
@@ -129,7 +131,7 @@ fun menuLabel(index: i32) >> ptr<u8> {
 }
 
 fun menuEnabled(index: i32) >> bool {
-    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_SETTINGS;
+    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_SETTINGS;
 }
 
 fun menuButtonY(index: i32) >> i64 {
@@ -248,6 +250,7 @@ fun menuUpdate() >> i32 {
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 if i == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
                 if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
+                if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
                 if i == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
                 g_menu = g_menu.show_notice(i);
             }
@@ -257,6 +260,7 @@ fun menuUpdate() >> i32 {
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
         if g_menu.index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
         if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
+        if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
         if g_menu.index == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
         g_menu = g_menu.show_notice(g_menu.index);
     }
