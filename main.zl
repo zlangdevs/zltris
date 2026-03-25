@@ -84,6 +84,17 @@ struct GameRuntime {
     star_hard_burst f32,
     star_hard_target f32,
     star_pps_meter f32,
+    board_shake_time f32,
+    board_shake_amp f32,
+    board_shake_seed i32,
+    board_shake_render_x f32,
+    board_shake_render_y f32,
+    board_shake_vel_x f32,
+    board_shake_vel_y f32,
+    board_shake_px_x i32,
+    board_shake_px_y i32,
+    board_shake_res_x f32,
+    board_shake_res_y f32,
     combo i32,
     back_to_back_count i32,
     back_to_back bool,
@@ -146,6 +157,7 @@ i32 g_bg_stars_amount = 50;
 i32 g_bg_star_react_mode = STAR_MODE_DROPS;
 f32 g_star_peak_target_dps = 1.5;
 f32 g_star_intensity = 0.4;
+i32 g_board_bounciness = 50;
 
 arr<i32, BG_STAR_COUNT> g_star_x = {0};
 arr<i32, BG_STAR_COUNT> g_star_y = {0};
@@ -280,6 +292,8 @@ fun clampSettings() >> void {
     if g_star_peak_target_dps > 3.5 {g_star_peak_target_dps = 3.5;}
     if g_star_intensity < 0.1 {g_star_intensity = 0.1;}
     if g_star_intensity > 1.0 {g_star_intensity = 1.0;}
+    if g_board_bounciness < 0 {g_board_bounciness = 0;}
+    if g_board_bounciness > 100 {g_board_bounciness = 100;}
 }
 
 fun saveSettingsFile() >> void {
@@ -302,6 +316,7 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
     writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
     writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
+    writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
 
     close(fd);
 }
@@ -363,6 +378,8 @@ fun loadSettingsFile() >> void {
                     g_star_peak_target_dps = parseFloatValue(value, g_star_peak_target_dps);
                 } else if (strEq(key, "star_intensity")) {
                     g_star_intensity = parseFloatValue(value, g_star_intensity);
+                } else if (strEq(key, "board_bounciness")) {
+                    g_board_bounciness = atoi(value);
                 }
             }
         }
@@ -417,6 +434,11 @@ fun clamp01(v: f32) >> f32 {
     return v;
 }
 
+fun absf(v: f32) >> f32 {
+    if v < 0.0 {return -v;}
+    return v;
+}
+
 fun starIntensityNorm() >> f32 {
     f32 n = clamp01((g_star_intensity - 0.1) / 0.9);
     return n * (0.35 + 0.65 * n);
@@ -425,6 +447,100 @@ fun starIntensityNorm() >> f32 {
 fun starSpreadMul() >> f32 {
     if g_star_intensity >= 0.4 {return 1.0 + ((g_star_intensity - 0.4) / 0.6) * 0.30;}
     return 1.0 - ((0.4 - g_star_intensity) / 0.3) * 0.15;
+}
+
+fun kickBoardShake(base_amp: f32, time_sec: f32) >> void {
+    if g_board_bounciness <= 0 {return;}
+
+    f32 mul = (g_board_bounciness as f32) / 70.0;
+    f32 impulse = base_amp * mul;
+    if impulse <= 0.0 {return;}
+
+    f32 dir_x = 0.34;
+    if (g_rt.board_shake_seed & 1) == 1 {dir_x = -0.34;}
+    f32 dir_y = -1.0;
+
+    g_rt.board_shake_vel_x += dir_x * impulse * 11.0;
+    g_rt.board_shake_vel_y += dir_y * impulse * 14.0;
+    g_rt.board_shake_amp += impulse;
+    if g_rt.board_shake_amp > 24.0 {g_rt.board_shake_amp = 24.0;}
+    if g_rt.board_shake_time < time_sec {g_rt.board_shake_time = time_sec;}
+    g_rt.board_shake_seed += 1;
+}
+
+fun lineClearShakeAmp(lines_cleared: i32) >> f32 {
+    if lines_cleared <= 0 {return 0.0;}
+    if lines_cleared == 1 {return 4.4;}
+    if lines_cleared == 2 {return 6.2;}
+    if lines_cleared == 3 {return 8.4;}
+    return 11.2;
+}
+
+fun updateBoardShake(dt: f32) >> void {
+    f32 step = dt;
+    if step > 0.05 {step = 0.05;}
+    if step <= 0.0 {return;}
+
+    if g_rt.board_shake_time > 0.0 {
+        g_rt.board_shake_time -= step;
+        if g_rt.board_shake_time < 0.0 {g_rt.board_shake_time = 0.0;}
+    }
+
+    if g_rt.board_shake_amp > 0.0 {
+        g_rt.board_shake_amp -= step * (7.4 + g_rt.board_shake_amp * 2.5);
+        if g_rt.board_shake_amp < 0.0 {g_rt.board_shake_amp = 0.0;}
+    }
+
+    f32 spring_x = 136.0;
+    f32 spring_y = 124.0;
+    f32 damping = 29.0;
+
+    f32 acc_x = -g_rt.board_shake_render_x * spring_x - g_rt.board_shake_vel_x * damping;
+    f32 acc_y = -g_rt.board_shake_render_y * spring_y - g_rt.board_shake_vel_y * damping;
+    g_rt.board_shake_vel_x += acc_x * step;
+    g_rt.board_shake_vel_y += acc_y * step;
+    g_rt.board_shake_render_x += g_rt.board_shake_vel_x * step;
+    g_rt.board_shake_render_y += g_rt.board_shake_vel_y * step;
+
+    if g_rt.board_shake_render_x > 21.0 {g_rt.board_shake_render_x = 21.0;}
+    if g_rt.board_shake_render_x < -21.0 {g_rt.board_shake_render_x = -21.0;}
+    if g_rt.board_shake_render_y > 18.0 {g_rt.board_shake_render_y = 18.0;}
+    if g_rt.board_shake_render_y < -18.0 {g_rt.board_shake_render_y = -18.0;}
+
+    if (g_rt.board_shake_time <= 0.0 &&
+        g_rt.board_shake_amp <= 0.02 &&
+        absf(g_rt.board_shake_render_x) < 0.04 &&
+        absf(g_rt.board_shake_render_y) < 0.04 &&
+        absf(g_rt.board_shake_vel_x) < 0.6 &&
+        absf(g_rt.board_shake_vel_y) < 0.6) {
+        g_rt.board_shake_render_x = 0.0;
+        g_rt.board_shake_render_y = 0.0;
+        g_rt.board_shake_vel_x = 0.0;
+        g_rt.board_shake_vel_y = 0.0;
+        g_rt.board_shake_px_x = 0;
+        g_rt.board_shake_px_y = 0;
+        g_rt.board_shake_res_x = 0.0;
+        g_rt.board_shake_res_y = 0.0;
+        return;
+    }
+
+    f32 x_total = g_rt.board_shake_render_x + g_rt.board_shake_res_x;
+    i32 x_px = x_total as i32;
+    g_rt.board_shake_res_x = x_total - (x_px as f32);
+    g_rt.board_shake_px_x = x_px;
+
+    f32 y_total = g_rt.board_shake_render_y + g_rt.board_shake_res_y;
+    i32 y_px = y_total as i32;
+    g_rt.board_shake_res_y = y_total - (y_px as f32);
+    g_rt.board_shake_px_y = y_px;
+}
+
+fun boardShakeX() >> i32 {
+    return g_rt.board_shake_px_x;
+}
+
+fun boardShakeY() >> i32 {
+    return g_rt.board_shake_px_y;
 }
 
 fun visibleBaseLeft() >> i64 {
@@ -1311,6 +1427,17 @@ fun resetGame() >> void {
     g_rt.shift_dir = 0;
     g_rt.last_horizontal_press = 0;
     g_rt.dcd_timer = 0.0;
+    g_rt.board_shake_time = 0.0;
+    g_rt.board_shake_amp = 0.0;
+    g_rt.board_shake_seed = 0;
+    g_rt.board_shake_render_x = 0.0;
+    g_rt.board_shake_render_y = 0.0;
+    g_rt.board_shake_vel_x = 0.0;
+    g_rt.board_shake_vel_y = 0.0;
+    g_rt.board_shake_px_x = 0;
+    g_rt.board_shake_px_y = 0;
+    g_rt.board_shake_res_x = 0.0;
+    g_rt.board_shake_res_y = 0.0;
     g_rt.combo = -1;
     g_rt.back_to_back_count = 0;
     g_rt.back_to_back = false;
@@ -1554,8 +1681,10 @@ fun applyLockScore(lines_cleared: i32) >> void {
 
 fun stepLock() >> void {
     lockCurrentPiece();
+    kickBoardShake(3.0, 0.08);
     g_rt.pieces_placed += 1;
     i32 lines_cleared = clearLines();
+    if lines_cleared > 0 {kickBoardShake(lineClearShakeAmp(lines_cleared), 0.11);}
     applyLockScore(lines_cleared);
     if (isFortyLinesMode() && g_play.round_state == ROUND_RUNNING && g_play.lines >= 40) {
         g_play = g_play.with_round_state(ROUND_FINISHED);
@@ -1810,11 +1939,18 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
 fun drawApp(font: Font) >> void {
     g_game = g_game.refresh_screen_size();
     setScaleAlignX(scaleAlignCenter());
-    if (g_game.screen == SCREEN_GAME && canUseDoubleRowLayout()) {
-        setScaleExtraX(uiS(131));
-    } else {
-        setScaleExtraX(0);
+    i32 shake_x = 0;
+    i32 shake_y = 0;
+    if g_game.screen == SCREEN_GAME {
+        shake_x = boardShakeX();
+        shake_y = boardShakeY();
     }
+    if (g_game.screen == SCREEN_GAME && canUseDoubleRowLayout()) {
+        setScaleExtraX(uiS(131) + shake_x);
+    } else {
+        setScaleExtraX(shake_x);
+    }
+    setScaleExtraY(shake_y);
 
     Theme theme = currentTheme();
     BeginDrawing();
@@ -1828,7 +1964,7 @@ fun drawApp(font: Font) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
+        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         EndDrawing();
         return;
@@ -1877,6 +2013,7 @@ fun updateApp() >> void {
         f32 prev_das = g_das_frames;
         f32 prev_dcd = g_dcd_frames;
         f32 prev_sdf = g_sdf_multiplier;
+        i32 prev_board_bounciness = g_board_bounciness;
         i32 prev_bg_amount = g_bg_stars_amount;
         i32 prev_bg_mode = g_bg_star_react_mode;
         f32 prev_peak = g_star_peak_target_dps;
@@ -1884,12 +2021,13 @@ fun updateApp() >> void {
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
         if (prev_theme != g_game.theme_index ||
             prev_arr != g_arr_frames ||
             prev_das != g_das_frames ||
             prev_dcd != g_dcd_frames ||
             prev_sdf != g_sdf_multiplier ||
+            prev_board_bounciness != g_board_bounciness ||
             prev_bg_amount != g_bg_stars_amount ||
             prev_bg_mode != g_bg_star_react_mode ||
             prev_peak != g_star_peak_target_dps ||
@@ -2056,6 +2194,7 @@ fun updateLock(dt: f32) >> void {
 fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
     updateBackgroundStarReaction(dt);
+    updateBoardShake(dt);
     updateRestartAfterglow(dt);
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
