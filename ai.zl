@@ -1,0 +1,565 @@
+module zltris.ai;
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define BOARD_CELLS 220
+
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
+#define PIECE_Z 6
+
+struct AiMove {
+    valid bool,
+    x i32,
+    rotation i32,
+    tspin bool,
+}
+
+fun boardIndex(x: i32, y: i32) >> i32 {
+    return y * BOARD_W + x;
+}
+
+fun normalizeRotation(rotation: i32) >> i32 {
+    i32 r = rotation % 4;
+    if r < 0 {r += 4;}
+    return r;
+}
+
+fun rotationCount(kind: i32) >> i32 {
+    if kind == PIECE_O {return 1;}
+    return 4;
+}
+
+fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if kind == PIECE_I {
+        if rot == 0 {return idx;}
+        if rot == 1 {return 2;}
+        if rot == 2 {return idx;}
+        return 1;
+    }
+
+    if kind == PIECE_O {
+        if idx == 0 || idx == 2 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_T {
+        if rot == 0 {
+            if idx == 0 {return 1;}
+            if idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 || idx == 3 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 0 {return 0;}
+            if idx == 1 {return 1;}
+            if idx == 2 {return 2;}
+            return 1;
+        }
+        if idx == 0 || idx == 2 || idx == 3 {return 1;}
+        return 0;
+    }
+
+    if kind == PIECE_J {
+        if rot == 0 {
+            if idx == 0 || idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 1 {
+            if idx == 0 {return 1;}
+            if idx == 1 {return 2;}
+            if idx == 2 || idx == 3 {return 1;}
+        }
+        if rot == 2 {
+            if idx == 0 {return 0;}
+            if idx == 1 {return 1;}
+            if idx == 2 {return 2;}
+            return 2;
+        }
+        if idx == 0 || idx == 1 || idx == 3 {return 1;}
+        return 0;
+    }
+
+    if kind == PIECE_L {
+        if rot == 0 {
+            if idx == 0 {return 2;}
+            if idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 || idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 0 {return 0;}
+            if idx == 1 {return 1;}
+            if idx == 2 {return 2;}
+            return 0;
+        }
+        if idx == 0 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_S {
+        if rot == 0 {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 {return 1;}
+            if idx == 2 || idx == 3 {return 2;}
+        }
+        if rot == 2 {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if idx == 0 || idx == 1 {return 0;}
+        return 1;
+    }
+
+    if rot == 0 {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if rot == 1 {
+        if idx == 0 || idx == 2 {return 2;}
+        return 1;
+    }
+    if rot == 2 {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 || idx == 2 {return 1;}
+    return 0;
+}
+
+fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if kind == PIECE_I {
+        if rot == 0 {return 1;}
+        if rot == 1 {return idx;}
+        if rot == 2 {return 2;}
+        return idx;
+    }
+
+    if kind == PIECE_O {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_T {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 3 {return 2;}
+            if idx == 2 {return 1;}
+            return idx;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if kind == PIECE_J {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 1 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_L {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx < 2 {return 0;}
+        if idx == 2 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_S {
+        if rot == 0 {
+            if idx < 2 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 0 {return 0;}
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if rot == 2 {
+            if idx < 2 {return 1;}
+            return 2;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if rot == 0 {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+    if rot == 1 {
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+    if rot == 2 {
+        if idx < 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 {return 0;}
+    if idx == 3 {return 2;}
+    return 1;
+}
+
+fun pieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
+        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
+    }
+    return true;
+}
+
+fun dropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32) >> i32 {
+    i32 y = -4;
+    if !pieceFits(board, kind, rotation, x, y) {return -9999;}
+    for (pieceFits(board, kind, rotation, x, y + 1)) {y += 1;}
+    return y;
+}
+
+fun clearLinesLocal(board: ptr<i32>) >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if board[boardIndex(x, y)] == 0 {full = false;}
+        }
+        if (full) {
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {
+                    board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];
+                }
+            }
+            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
+            y += 1;
+        }
+    }
+    return cleared;
+}
+
+fun boardIsEmptyLocal(board: ptr<i32>) >> bool {
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        if board[i] != 0 {return false;}
+    }
+    return true;
+}
+
+fun boardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
+    if x < 0 || x >= BOARD_W {return true;}
+    if y >= BOARD_H {return true;}
+    if y < 0 {return false;}
+    return board[boardIndex(x, y)] != 0;
+}
+
+fun isTSpinPlacement(board_after_place: ptr<i32>, kind: i32, x: i32, y: i32) >> bool {
+    if kind != PIECE_T {return false;}
+    i32 cx = x + 1;
+    i32 cy = y + 1;
+    i32 corners = 0;
+    if boardCellBlocked(board_after_place, cx - 1, cy - 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx + 1, cy - 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx - 1, cy + 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx + 1, cy + 1) {corners += 1;}
+    return corners >= 3;
+}
+
+fun absi(v: i32) >> i32 {
+    if v < 0 {return -v;}
+    return v;
+}
+
+fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
+    arr<i32, BOARD_W> heights = {0};
+    i32 aggregate_h = 0;
+    i32 holes = 0;
+    i32 hole_depth = 0;
+    i32 max_h = 0;
+
+    for i32 x = 0; x < BOARD_W; x++ {
+        i32 top = -1;
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {
+                top = y;
+                break;
+            }
+        }
+
+        i32 h = 0;
+        if top >= 0 {
+            h = BOARD_H - top;
+            for i32 y = top + 1; y < BOARD_H; y++ {
+                if board[boardIndex(x, y)] == 0 {
+                    holes += 1;
+                    hole_depth += BOARD_H - y;
+                }
+            }
+        }
+        heights[x] = h;
+        aggregate_h += h;
+        if h > max_h {max_h = h;}
+    }
+
+    i32 bump = 0;
+    for i32 x = 0; x < BOARD_W - 1; x++ {
+        bump += absi(heights[x] - heights[x + 1]);
+    }
+
+    i32 near_full_well = 0;
+    i32 well_x = BOARD_W - 1;
+    for i32 y = 0; y < BOARD_H; y++ {
+        if board[boardIndex(well_x, y)] != 0 {continue;}
+        i32 filled = 0;
+        for i32 x = 0; x < BOARD_W - 1; x++ {
+            if board[boardIndex(x, y)] != 0 {filled += 1;}
+        }
+        if filled >= BOARD_W - 1 {near_full_well += 1;}
+    }
+
+    i32 danger = 0;
+    if max_h >= 18 {danger += (max_h - 17) * 1300;}
+    if max_h >= 20 {danger += 3500;}
+
+    i32 score = near_full_well * 40 - holes * 5200 - hole_depth * 340 - bump * 140 - aggregate_h * 36 - max_h * 160 - danger;
+    return score;
+}
+
+fun applyClearModel(lines_cleared: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, next_combo: ptr<i32>, next_b2b: ptr<bool>, score_gain: ptr<i32>, attack_gain: ptr<i32>) >> void {
+    i32 clear_points = 0;
+    if tspin {
+        if lines_cleared <= 0 {clear_points = 400;}
+        if lines_cleared == 1 {clear_points = 800;}
+        if lines_cleared == 2 {clear_points = 1200;}
+        if lines_cleared == 3 {clear_points = 1600;}
+        if lines_cleared >= 4 {clear_points = 2600;}
+    } else {
+        if lines_cleared == 1 {clear_points = 100;}
+        if lines_cleared == 2 {clear_points = 300;}
+        if lines_cleared == 3 {clear_points = 500;}
+        if lines_cleared >= 4 {clear_points = 800;}
+    }
+
+    bool difficult = lines_cleared >= 4 || (tspin && lines_cleared > 0);
+    if difficult && b2b {clear_points = (clear_points * 3) / 2;}
+
+    next_combo[0] = combo;
+    if lines_cleared > 0 {next_combo[0] += 1;} else {next_combo[0] = -1;}
+
+    i32 combo_points = 0;
+    if lines_cleared > 0 {combo_points = next_combo[0] * 50;}
+    i32 all_clear_points = 0;
+    if all_clear && lines_cleared > 0 {all_clear_points = 3500;}
+    score_gain[0] = (clear_points + combo_points + all_clear_points) * level;
+
+    attack_gain[0] = 0;
+    if tspin {
+        if lines_cleared == 1 {attack_gain[0] = 2;}
+        if lines_cleared == 2 {attack_gain[0] = 4;}
+        if lines_cleared >= 3 {attack_gain[0] = 6;}
+    } else {
+        if lines_cleared == 2 {attack_gain[0] = 1;}
+        if lines_cleared == 3 {attack_gain[0] = 2;}
+        if lines_cleared >= 4 {attack_gain[0] = 4;}
+    }
+    if difficult && b2b {attack_gain[0] += 1;}
+    if lines_cleared > 0 && next_combo[0] >= 1 {attack_gain[0] += next_combo[0] / 2;}
+    if all_clear && lines_cleared > 0 {attack_gain[0] += 10;}
+
+    next_b2b[0] = b2b;
+    if difficult {next_b2b[0] = true;} else if lines_cleared > 0 {next_b2b[0] = false;}
+}
+
+fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, out_board: ptr<i32>, out_lines: ptr<i32>, out_tspin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    i32 y = dropY(board, kind, rotation, x);
+    if y < -1000 {return false;}
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = board[i];}
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if my >= 0 {out_board[boardIndex(mx, my)] = kind + 1;}
+    }
+    if isTSpinPlacement(out_board, kind, x, y) {out_tspin[0] = 1;} else {out_tspin[0] = 0;}
+    out_lines[0] = clearLinesLocal(out_board);
+    if boardIsEmptyLocal(out_board) {out_all_clear[0] = 1;} else {out_all_clear[0] = 0;}
+    return true;
+}
+
+fun evaluateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, combo: i32, b2b: bool, level: i32, out_board: ptr<i32>, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>, out_tspin: ptr<i32>) >> bool {
+    i32 lines = 0;
+    i32 tspin = 0;
+    i32 all_clear = 0;
+    if !simulateMove(board, kind, rotation, x, out_board, &lines, &tspin, &all_clear) {return false;}
+
+    i32 score_gain = 0;
+    i32 attack_gain = 0;
+    out_next_combo[0] = combo;
+    out_next_b2b[0] = b2b;
+    applyClearModel(lines, tspin != 0, all_clear != 0, combo, b2b, level, out_next_combo, out_next_b2b, &score_gain, &attack_gain);
+
+    bool difficult = lines >= 4 || (tspin != 0 && lines > 0);
+    i32 value = evaluateBoardStructural(out_board) * 5 + score_gain * 6 + attack_gain * 500;
+    if tspin != 0 && lines > 0 {value += 5200 + lines * 900;}
+    if lines == 4 {value += 6200;}
+    if all_clear != 0 && lines > 0 {value += 13000;}
+    if b2b && lines > 0 && !difficult {value -= 2600;}
+    out_value[0] = value;
+    out_tspin[0] = tspin;
+    return true;
+}
+
+fun bestImmediateMove(board: ptr<i32>, kind: i32, combo: i32, b2b: bool, level: i32, out_x: ptr<i32>, out_rot: ptr<i32>, out_tspin: ptr<i32>, out_board: ptr<i32>, out_combo: ptr<i32>, out_b2b: ptr<bool>, out_value: ptr<i32>) >> bool {
+    bool found = false;
+    i32 best_value = -2147483647;
+    i32 rot_count = rotationCount(kind);
+
+    for i32 rot = 0; rot < rot_count; rot++ {
+        for i32 x = -2; x < BOARD_W + 2; x++ {
+            arr<i32, BOARD_CELLS> cand_board = {0};
+            i32 cand_combo = combo;
+            bool cand_b2b = b2b;
+            i32 cand_value = 0;
+            i32 cand_tspin = 0;
+            if !evaluateMove(board, kind, rot, x, combo, b2b, level, &cand_board[0], &cand_combo, &cand_b2b, &cand_value, &cand_tspin) {continue;}
+
+            if !found || cand_value > best_value {
+                found = true;
+                best_value = cand_value;
+                out_x[0] = x;
+                out_rot[0] = rot;
+                out_tspin[0] = cand_tspin;
+                out_combo[0] = cand_combo;
+                out_b2b[0] = cand_b2b;
+                out_value[0] = cand_value;
+                for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = cand_board[i];}
+            }
+        }
+    }
+
+    return found;
+}
+
+fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32) >> i32 {
+    if queue_count <= 0 {return 0;}
+
+    arr<i32, BOARD_CELLS> state = {0};
+    for i32 i = 0; i < BOARD_CELLS; i++ {state[i] = board[i];}
+
+    i32 total = 0;
+    i32 c = combo;
+    bool b = b2b;
+
+    for i32 qi = 0; qi < queue_count; qi++ {
+        i32 move_x = 0;
+        i32 move_rot = 0;
+        i32 move_tspin = 0;
+        arr<i32, BOARD_CELLS> next_state = {0};
+        i32 next_combo = c;
+        bool next_b2b = b;
+        i32 move_value = 0;
+        if !bestImmediateMove(&state[0], queue[qi], c, b, level, &move_x, &move_rot, &move_tspin, &next_state[0], &next_combo, &next_b2b, &move_value) {
+            total -= 500000;
+            break;
+        }
+        total += move_value;
+        c = next_combo;
+        b = next_b2b;
+        for i32 i = 0; i < BOARD_CELLS; i++ {state[i] = next_state[i];}
+    }
+
+    return total;
+}
+
+fun findBestMove(board: ptr<i32>, kind: i32, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32) >> AiMove {
+    if level < 1 {level = 1;}
+
+    AiMove best = {0};
+    best.valid = false;
+    best.x = 3;
+    best.rotation = 0;
+    best.tspin = false;
+
+    i32 best_score = -2147483647;
+    i32 rot_count = rotationCount(kind);
+
+    for i32 rot = 0; rot < rot_count; rot++ {
+        for i32 x = -2; x < BOARD_W + 2; x++ {
+            arr<i32, BOARD_CELLS> temp = {0};
+            i32 next_combo = combo;
+            bool next_b2b = b2b;
+            i32 score = 0;
+            i32 tspin = 0;
+            if !evaluateMove(board, kind, rot, x, combo, b2b, level, &temp[0], &next_combo, &next_b2b, &score, &tspin) {continue;}
+
+            i32 cont = greedyQueueValue(&temp[0], queue, queue_count, next_combo, next_b2b, level);
+            score += (cont * 85) / 100;
+
+            if !best.valid || score > best_score {
+                best_score = score;
+                best.valid = true;
+                best.x = x;
+                best.rotation = rot;
+                best.tspin = tspin != 0;
+            }
+        }
+    }
+
+    return best;
+}

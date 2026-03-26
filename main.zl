@@ -3,6 +3,7 @@ use raylib
 use std.io
 use std.fs
 use std.string
+use zltris.ai
 use zltris.menu
 use zltris.scale
 use zltris.settings
@@ -48,6 +49,13 @@ use zltris.theme
 #define ROUND_COUNTDOWN 1
 #define ROUND_FINISHED 2
 
+#define HOLD_ACTION_NONE 0
+#define HOLD_ACTION_RESTART 1
+#define HOLD_ACTION_MENU 2
+
+#define HOLD_RESTART_SECONDS 1.04
+#define HOLD_MENU_SECONDS 2.08
+
 #define BG_STAR_COUNT 150
 
 #define STAR_MODE_NONE 0
@@ -80,6 +88,7 @@ struct GameRuntime {
     restart_charge f32,
     restart_hold_latched bool,
     restart_afterglow f32,
+    hold_action i32,
     star_soft_glow f32,
     star_hard_burst f32,
     star_hard_target f32,
@@ -151,6 +160,8 @@ f32 g_dcd_frames = 2.0;
 f32 g_sdf_multiplier = 14.0;
 
 bool g_debug_colors = false;
+bool g_ai_enabled = false;
+bool g_ai_armed = false;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
 i32 g_bg_stars_amount = 50;
@@ -711,10 +722,14 @@ fun blitzTimeLeft() >> f32 {
 
 fun startGameMode(mode: i32) >> void {
     g_play = g_play.with_mode(mode);
+    g_ai_enabled = false;
+    g_ai_armed = false;
     resetGame();
     g_rt.mode_timer = 0.0;
     g_rt.restart_charge = 0.0;
     g_rt.restart_hold_latched = false;
+    g_rt.restart_afterglow = 0.0;
+    g_rt.hold_action = HOLD_ACTION_NONE;
     g_rt.star_soft_glow = 0.0;
     g_rt.star_hard_burst = 0.0;
     g_rt.star_hard_target = 0.0;
@@ -726,6 +741,11 @@ fun startGameMode(mode: i32) >> void {
         g_play = g_play.with_round_state(ROUND_RUNNING);
         g_rt.countdown_timer = 0.0;
     }
+}
+
+fun restartCurrentModeWithShake() >> void {
+    startGameMode(g_play.game_mode);
+    kickBoardShake(lineClearShakeAmp(4), 0.11);
 }
 
 fun restartStripeTopScreen() >> i32 {
@@ -778,6 +798,7 @@ fun drawRestartCharge(font: Font, theme: Theme) >> void {
     DrawRectangle(0, top - 2, GetScreenWidth(), 2, toColor(alphaColor(theme.text_main, (0.52 as f32) * alpha_mul)));
 
     ptr<u8> hint = "Hold for restart";
+    if g_rt.hold_action == HOLD_ACTION_MENU {hint = "Hold for menu";}
     f32 hint_size = uiS(12) as f32;
     Vector2 m = MeasureTextExSize(font, hint, hint_size, 0.0 as f32);
     f32 tx = ((GetScreenWidth() as f32) - m.x) * 0.5;
@@ -794,19 +815,47 @@ fun updateRestartAfterglow(dt: f32) >> void {
 }
 
 fun updateRestartCharge(dt: f32) >> bool {
+    bool esc_down = IsKeyDown(KEY_ESCAPE);
     bool r_down = IsKeyDown(KEY_R);
-    if !r_down {g_rt.restart_hold_latched = false;}
+    if g_instant_restart {r_down = false;}
 
-    if r_down && g_rt.restart_hold_latched {return false;}
+    i32 action = HOLD_ACTION_NONE;
+    if esc_down {
+        action = HOLD_ACTION_MENU;
+    } else if r_down {
+        action = HOLD_ACTION_RESTART;
+    }
 
-    if (r_down) {
-        g_rt.restart_charge += dt / 1.04;
+    if action == HOLD_ACTION_NONE {
+        g_rt.restart_hold_latched = false;
+    } else if action != g_rt.hold_action {
+        g_rt.hold_action = action;
+        g_rt.restart_hold_latched = false;
+        g_rt.restart_charge = 0.0;
+    }
+
+    if action != HOLD_ACTION_NONE && g_rt.restart_hold_latched {return false;}
+
+    if action != HOLD_ACTION_NONE {
+        f32 hold_seconds = HOLD_RESTART_SECONDS;
+        if action == HOLD_ACTION_MENU {hold_seconds = HOLD_MENU_SECONDS;}
+
+        g_rt.restart_charge += dt / hold_seconds;
         if (g_rt.restart_charge >= 1.0) {
             g_rt.restart_charge = 1.0;
             g_rt.restart_hold_latched = true;
-            startGameMode(g_play.game_mode);
-            g_rt.restart_afterglow = 0.24 as f32;
-            g_rt.restart_hold_latched = true;
+            if action == HOLD_ACTION_RESTART {
+                restartCurrentModeWithShake();
+                g_rt.restart_afterglow = 0.24 as f32;
+                return true;
+            }
+
+            g_rt.restart_charge = 0.0;
+            g_rt.restart_hold_latched = false;
+            g_rt.hold_action = HOLD_ACTION_NONE;
+            g_rt.restart_afterglow = 0.0;
+            g_game = g_game.with_screen(SCREEN_MENU);
+            menuInit();
             return true;
         }
         return false;
@@ -816,11 +865,11 @@ fun updateRestartCharge(dt: f32) >> bool {
         g_rt.restart_charge -= dt / 0.64;
         if g_rt.restart_charge < 0.0 {g_rt.restart_charge = 0.0;}
     }
+    if g_rt.restart_charge <= 0.0 {g_rt.hold_action = HOLD_ACTION_NONE;}
     return false;
 }
 
 fun canShowHoldRestartEffect() >> bool {
-    if g_instant_restart {return false;}
     if g_play.game_over {return false;}
     if modeUsesRoundState() && g_play.round_state != ROUND_RUNNING {return false;}
     return true;
@@ -1976,7 +2025,14 @@ fun drawApp(font: Font) >> void {
 
 fun updateApp() >> void {
     g_game = g_game.refresh_screen_size();
+
+    if (g_debug_colors && IsKeyPressed(KEY_G)) {
+        g_ai_armed = true;
+        printf("[zltris] AI armed (close F3 to start)\n");
+    }
+
     if (IsKeyPressed(KEY_F3)) {
+        bool was_debug_open = g_debug_colors;
         g_debug_colors = !g_debug_colors;
         Theme theme = currentTheme();
         if (g_debug_colors) {
@@ -1985,6 +2041,12 @@ fun updateApp() >> void {
         } else {
             printf("[zltris] F3 debug OFF\n");
             printColorDebug(theme);
+        }
+
+        if (was_debug_open && !g_debug_colors && g_ai_armed) {
+            g_ai_enabled = true;
+            g_ai_armed = false;
+            printf("[zltris] AI bot started\n");
         }
     }
 
@@ -2191,6 +2253,39 @@ fun updateLock(dt: f32) >> void {
     if g_rt.lock_timer >= 0.45 {stepLock();}
 }
 
+fun updateAiBot() >> void {
+    if !g_ai_enabled {return;}
+
+    i32 level = (g_play.lines / 10) + 1;
+    bool b2b = g_rt.back_to_back_count > 0;
+    i32 lookahead_count = g_play.queue_count;
+    if lookahead_count < 0 {lookahead_count = 0;}
+    AiMove move = findBestMove(&g_board[0], g_piece_kind, &g_queue[0], lookahead_count, g_rt.combo, b2b, level);
+
+    if !move.valid {
+        hardDrop();
+        return;
+    }
+
+    g_piece_rotation = move.rotation;
+    g_piece_x = move.x;
+    if move.tspin {
+        g_rt.last_rotate_success = true;
+        g_rt.last_rotate_kick_test = 1;
+    } else {
+        g_rt.last_rotate_success = false;
+        g_rt.last_rotate_kick_test = -1;
+    }
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {
+        hardDrop();
+        return;
+    }
+
+    g_piece_y = currentGhostY();
+    stepLock();
+}
+
 fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
     updateBackgroundStarReaction(dt);
@@ -2198,21 +2293,14 @@ fun updateGameScreen() >> void {
     updateRestartAfterglow(dt);
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
-        startGameMode(g_play.game_mode);
-        return;
-    }
-
-    if (IsKeyPressed(KEY_ESCAPE)) {
-        g_rt.restart_charge = 0.0;
-        g_rt.restart_hold_latched = false;
-        g_game = g_game.with_screen(SCREEN_MENU);
-        menuInit();
+        restartCurrentModeWithShake();
         return;
     }
 
     if (IsKeyPressed(KEY_TAB)) {
         g_rt.restart_charge = 0.0;
         g_rt.restart_hold_latched = false;
+        g_rt.hold_action = HOLD_ACTION_NONE;
         g_game = g_game.with_settings_return_screen(SCREEN_GAME);
         settingsInit();
         g_game = g_game.with_screen(SCREEN_SETTINGS);
@@ -2222,6 +2310,13 @@ fun updateGameScreen() >> void {
     if (!canShowHoldRestartEffect()) {
         g_rt.restart_charge = 0.0;
         g_rt.restart_hold_latched = false;
+        g_rt.hold_action = HOLD_ACTION_NONE;
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            g_rt.restart_afterglow = 0.0;
+            g_game = g_game.with_screen(SCREEN_MENU);
+            menuInit();
+            return;
+        }
     }
 
     if canShowHoldRestartEffect() && updateRestartCharge(dt) {return;}
@@ -2238,7 +2333,7 @@ fun updateGameScreen() >> void {
         }
 
         if (g_play.round_state == ROUND_FINISHED) {
-            if IsKeyPressed(KEY_R) {startGameMode(g_play.game_mode);}
+            if IsKeyPressed(KEY_R) {restartCurrentModeWithShake();}
             return;
         }
 
@@ -2255,7 +2350,12 @@ fun updateGameScreen() >> void {
     }
 
     if (g_play.game_over) {
-        if IsKeyPressed(KEY_R) {startGameMode(g_play.game_mode);}
+        if IsKeyPressed(KEY_R) {restartCurrentModeWithShake();}
+        return;
+    }
+
+    if g_ai_enabled {
+        updateAiBot();
         return;
     }
 
