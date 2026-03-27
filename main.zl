@@ -84,6 +84,7 @@ struct GameRuntime {
     mode_timer f32,
     run_timer f32,
     pieces_placed i32,
+    attack_sent i32,
     countdown_timer f32,
     restart_charge f32,
     restart_hold_latched bool,
@@ -706,6 +707,10 @@ fun isFortyLinesMode() >> bool {
     return g_play.is_mode(MODE_40_LINES);
 }
 
+fun isFreePlayMode() >> bool {
+    return g_play.is_mode(MODE_FREE_PLAY);
+}
+
 fun isBlitzMode() >> bool {
     return g_play.is_mode(MODE_BLITZ);
 }
@@ -718,6 +723,11 @@ fun blitzTimeLeft() >> f32 {
     f32 left = BLITZ_DURATION_SECONDS - g_rt.mode_timer;
     if left < 0.0 {left = 0.0;}
     return left;
+}
+
+fun currentApm() >> f32 {
+    if g_rt.run_timer <= 0.001 {return 0.0;}
+    return ((g_rt.attack_sent as f32) * 60.0) / g_rt.run_timer;
 }
 
 fun startGameMode(mode: i32) >> void {
@@ -1468,6 +1478,7 @@ fun resetGame() >> void {
     g_play.lines = 0;
     g_rt.run_timer = 0.0;
     g_rt.pieces_placed = 0;
+    g_rt.attack_sent = 0;
     g_hold_kind = -1;
     g_hold_used = false;
     g_play.game_over = false;
@@ -1673,6 +1684,31 @@ fun miniSpinBasePoints(lines_cleared: i32) >> i32 {
     return 1600;
 }
 
+fun lockAttack(lines_cleared: i32, spin: bool, mini: bool, difficult: bool, b2b_chain: bool, combo_value: i32, all_clear: bool) >> i32 {
+    i32 attack = 0;
+
+    if spin {
+        if mini {
+            if lines_cleared == 1 {attack = 1;}
+            if lines_cleared == 2 {attack = 2;}
+            if lines_cleared >= 3 {attack = 4;}
+        } else {
+            if lines_cleared == 1 {attack = 2;}
+            if lines_cleared == 2 {attack = 4;}
+            if lines_cleared >= 3 {attack = 6;}
+        }
+    } else {
+        if lines_cleared == 2 {attack = 1;}
+        if lines_cleared == 3 {attack = 2;}
+        if lines_cleared >= 4 {attack = 4;}
+    }
+
+    if difficult && b2b_chain {attack += 1;}
+    if lines_cleared > 0 && combo_value >= 1 {attack += combo_value / 2;}
+    if all_clear && lines_cleared > 0 {attack += 10;}
+    return attack;
+}
+
 fun scoreLevel() >> i32 {
     i32 level = (g_play.lines / 10) + 1;
     if level < 1 {level = 1;}
@@ -1699,9 +1735,10 @@ fun applyLockScore(lines_cleared: i32) >> void {
     bool difficult = false;
     if lines_cleared == 4 {difficult = true;}
     if spin && lines_cleared > 0 {difficult = true;}
+    bool b2b_chain = g_rt.back_to_back_count > 0;
 
     i32 clear_points = base;
-    if difficult && g_rt.back_to_back_count > 0 {clear_points = (clear_points * 3) / 2;}
+    if difficult && b2b_chain {clear_points = (clear_points * 3) / 2;}
 
     i32 combo_points = 0;
     i32 all_clear_points = 0;
@@ -1713,8 +1750,12 @@ fun applyLockScore(lines_cleared: i32) >> void {
         g_rt.combo = -1;
     }
 
-    if lines_cleared > 0 && boardIsEmpty() {all_clear_points = 3500;}
+    bool all_clear = lines_cleared > 0 && boardIsEmpty();
+    if all_clear {all_clear_points = 3500;}
     g_play.score += (clear_points + combo_points + all_clear_points) * level;
+
+    i32 attack = lockAttack(lines_cleared, spin, mini, difficult, b2b_chain, g_rt.combo, all_clear);
+    g_rt.attack_sent += attack;
 
     if difficult {
         g_rt.back_to_back_count += 1;
@@ -1854,6 +1895,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), -194, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), -194, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), -194, 532, 16, theme.text_main);
+        if isFreePlayMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), -194, 548, 12, theme.panel_stroke);}
         if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), -194, 560, 11, theme.panel_stroke);}
         if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), -194, 574, 11, theme.panel_stroke);}
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), -194, 600, 14, theme.panel_stroke);}
@@ -1896,6 +1938,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
 
     drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
     drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
 }
 
 fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
