@@ -4,14 +4,16 @@ use raylib
 #define MENU_BTN_FREE_PLAY 0
 #define MENU_BTN_40_LINES 1
 #define MENU_BTN_BLITZ 2
-#define MENU_BTN_SETTINGS 3
-#define MENU_BTN_COUNT 4
+#define MENU_BTN_AGAINST_BOT 3
+#define MENU_BTN_SETTINGS 4
+#define MENU_BTN_COUNT 5
 
 #define MENU_ACTION_NONE 0
 #define MENU_ACTION_START_FREE_PLAY 1
 #define MENU_ACTION_OPEN_SETTINGS 2
 #define MENU_ACTION_START_40_LINES 3
 #define MENU_ACTION_START_BLITZ 4
+#define MENU_ACTION_OPEN_BOT_SETUP 5
 
 struct MenuState {
     index i32,
@@ -65,6 +67,7 @@ fun menuActionStartFreePlay() >> i32 { return MENU_ACTION_START_FREE_PLAY; }
 fun menuActionOpenSettings() >> i32 { return MENU_ACTION_OPEN_SETTINGS; }
 fun menuActionStart40Lines() >> i32 { return MENU_ACTION_START_40_LINES; }
 fun menuActionStartBlitz() >> i32 { return MENU_ACTION_START_BLITZ; }
+fun menuActionOpenBotSetup() >> i32 { return MENU_ACTION_OPEN_BOT_SETUP; }
 
 fun toColor(color_rgba: u32) >> Color {
     return Color{
@@ -126,12 +129,13 @@ fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rg
 fun menuLabel(index: i32) >> ptr<u8> {
     if index == MENU_BTN_40_LINES {return "40 LINES";}
     if index == MENU_BTN_BLITZ {return "BLITZ";}
+    if index == MENU_BTN_AGAINST_BOT {return "AGAINST BOT";}
     if index == MENU_BTN_SETTINGS {return "SETTINGS";}
     return "FREE PLAY";
 }
 
 fun menuEnabled(index: i32) >> bool {
-    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_SETTINGS;
+    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_AGAINST_BOT || index == MENU_BTN_SETTINGS;
 }
 
 fun menuButtonY(index: i32) >> i64 {
@@ -226,8 +230,8 @@ fun drawMenu(font: Font, theme: Theme) >> void {
         drawMenuButton(font, theme, i);
     }
 
-    drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 704, 12, theme.text_muted);
-    drawTextColor(font, "ESC in game returns here", 146, 727, 12, theme.text_muted);
+    drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 761, 12, theme.text_muted);
+    drawTextColor(font, "ESC in game returns here", 146, 784, 12, theme.text_muted);
 
     if (g_menu.notice_timer > 0.0) {
         fillRect(146, 764, 354, 42, alphaColor(theme.board_bg, 0.92));
@@ -251,6 +255,7 @@ fun menuUpdate() >> i32 {
                 if i == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
                 if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
                 if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
+                if i == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
                 if i == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
                 g_menu = g_menu.show_notice(i);
             }
@@ -261,6 +266,7 @@ fun menuUpdate() >> i32 {
         if g_menu.index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
         if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
         if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
+        if g_menu.index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
         if g_menu.index == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
         g_menu = g_menu.show_notice(g_menu.index);
     }

@@ -52,61 +52,49 @@ fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
     if kind == PIECE_T {
         if rot == 0 {
             if idx == 0 {return 1;}
-            if idx == 1 {return 0;}
-            if idx == 2 {return 1;}
-            return 2;
+            return idx - 1;
         }
         if rot == 1 {
-            if idx == 0 || idx == 1 || idx == 3 {return 1;}
-            return 2;
-        }
-        if rot == 2 {
-            if idx == 0 {return 0;}
-            if idx == 1 {return 1;}
             if idx == 2 {return 2;}
             return 1;
         }
-        if idx == 0 || idx == 2 || idx == 3 {return 1;}
-        return 0;
+        if rot == 2 {
+            if idx == 3 {return 1;}
+            return idx;
+        }
+        if idx == 1 {return 0;}
+        return 1;
     }
 
     if kind == PIECE_J {
         if rot == 0 {
-            if idx == 0 || idx == 1 {return 0;}
-            if idx == 2 {return 1;}
-            return 2;
+            if idx == 0 {return 0;}
+            return idx - 1;
         }
         if rot == 1 {
-            if idx == 0 {return 1;}
-            if idx == 1 {return 2;}
-            if idx == 2 || idx == 3 {return 1;}
-        }
-        if rot == 2 {
-            if idx == 0 {return 0;}
-            if idx == 1 {return 1;}
-            if idx == 2 {return 2;}
+            if idx == 0 || idx == 2 || idx == 3 {return 1;}
             return 2;
         }
-        if idx == 0 || idx == 1 || idx == 3 {return 1;}
-        return 0;
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if idx == 2 {return 0;}
+        return 1;
     }
 
     if kind == PIECE_L {
         if rot == 0 {
             if idx == 0 {return 2;}
-            if idx == 1 {return 0;}
-            if idx == 2 {return 1;}
-            return 2;
+            return idx - 1;
         }
         if rot == 1 {
-            if idx == 0 || idx == 1 || idx == 2 {return 1;}
-            return 2;
+            if idx == 3 {return 2;}
+            return 1;
         }
         if rot == 2 {
-            if idx == 0 {return 0;}
-            if idx == 1 {return 1;}
-            if idx == 2 {return 2;}
-            return 0;
+            if idx == 3 {return 0;}
+            return idx;
         }
         if idx == 0 {return 0;}
         return 1;
@@ -120,7 +108,7 @@ fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
         }
         if rot == 1 {
             if idx == 0 || idx == 1 {return 1;}
-            if idx == 2 || idx == 3 {return 2;}
+            return 2;
         }
         if rot == 2 {
             if idx == 0 || idx == 3 {return 1;}
@@ -267,8 +255,8 @@ fun pieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool
     return true;
 }
 
-fun dropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32) >> i32 {
-    i32 y = -4;
+fun dropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32) >> i32 {
+    i32 y = spawn_y;
     if !pieceFits(board, kind, rotation, x, y) {return -9999;}
     for (pieceFits(board, kind, rotation, x, y + 1)) {y += 1;}
     return y;
@@ -326,12 +314,96 @@ fun absi(v: i32) >> i32 {
     return v;
 }
 
+fun boardHoleStats(board: ptr<i32>, out_holes: ptr<i32>, out_hole_depth: ptr<i32>, out_max_h: ptr<i32>) >> void {
+    out_holes[0] = 0;
+    out_hole_depth[0] = 0;
+    out_max_h[0] = 0;
+
+    for i32 x = 0; x < BOARD_W; x++ {
+        i32 top = -1;
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {
+                top = y;
+                break;
+            }
+        }
+
+        if top < 0 {continue;}
+
+        i32 h = BOARD_H - top;
+        if h > out_max_h[0] {out_max_h[0] = h;}
+        for i32 y = top + 1; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {continue;}
+            out_holes[0] += 1;
+            out_hole_depth[0] += BOARD_H - y;
+        }
+    }
+}
+
+fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, out_access: ptr<i32>) >> void {
+    out_rows[0] = 0;
+    out_cover[0] = 0;
+    out_access[0] = 0;
+
+    i32 best_access = 999999;
+
+    for i32 y = 0; y < BOARD_H; y++ {
+        bool has_garbage = false;
+        i32 hole_x = -1;
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 cell = board[boardIndex(x, y)];
+            if cell == 8 {has_garbage = true;}
+            if cell == 0 {hole_x = x;}
+        }
+
+        if !has_garbage || hole_x < 0 {continue;}
+
+        out_rows[0] += 1;
+
+        i32 cover = 0;
+        i32 access = 0;
+        for i32 py = 0; py < y; py++ {
+            if board[boardIndex(hole_x, py)] != 0 {
+                cover += 1;
+                access += 4;
+            }
+        }
+
+        if hole_x > 0 {
+            for i32 py = 0; py <= y; py++ {
+                if board[boardIndex(hole_x - 1, py)] != 0 {access += 1;}
+            }
+        } else {
+            access += 6;
+        }
+
+        if hole_x + 1 < BOARD_W {
+            for i32 py = 0; py <= y; py++ {
+                if board[boardIndex(hole_x + 1, py)] != 0 {access += 1;}
+            }
+        } else {
+            access += 6;
+        }
+
+        access += cover * 3;
+        out_cover[0] += cover;
+        if access < best_access {best_access = access;}
+    }
+
+    if best_access != 999999 {out_access[0] = best_access;}
+}
+
 fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
     arr<i32, BOARD_W> heights = {0};
     i32 aggregate_h = 0;
     i32 holes = 0;
     i32 hole_depth = 0;
     i32 max_h = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    i32 garbage_access = 0;
+
+    boardGarbageStats(board, &garbage_rows, &garbage_cover, &garbage_access);
 
     for i32 x = 0; x < BOARD_W; x++ {
         i32 top = -1;
@@ -363,21 +435,30 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
     }
 
     i32 near_full_well = 0;
-    i32 well_x = BOARD_W - 1;
-    for i32 y = 0; y < BOARD_H; y++ {
-        if board[boardIndex(well_x, y)] != 0 {continue;}
-        i32 filled = 0;
-        for i32 x = 0; x < BOARD_W - 1; x++ {
-            if board[boardIndex(x, y)] != 0 {filled += 1;}
+    if garbage_rows == 0 {
+        i32 well_x = BOARD_W - 1;
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(well_x, y)] != 0 {continue;}
+            i32 filled = 0;
+            for i32 x = 0; x < BOARD_W - 1; x++ {
+                if board[boardIndex(x, y)] != 0 {filled += 1;}
+            }
+            if filled >= BOARD_W - 1 {near_full_well += 1;}
         }
-        if filled >= BOARD_W - 1 {near_full_well += 1;}
     }
 
     i32 danger = 0;
     if max_h >= 18 {danger += (max_h - 17) * 1300;}
     if max_h >= 20 {danger += 3500;}
 
-    i32 score = near_full_well * 40 - holes * 5200 - hole_depth * 340 - bump * 140 - aggregate_h * 36 - max_h * 160 - danger;
+    i32 garbage_penalty = 0;
+    if garbage_rows > 0 {
+        garbage_penalty += garbage_rows * 2400;
+        garbage_penalty += garbage_cover * 240;
+        garbage_penalty += garbage_access * 150;
+    }
+
+    i32 score = near_full_well * 40 - holes * 5200 - hole_depth * 340 - bump * 140 - aggregate_h * 36 - max_h * 160 - danger - garbage_penalty;
     return score;
 }
 
@@ -418,7 +499,19 @@ fun applyClearModel(lines_cleared: i32, tspin: bool, all_clear: bool, combo: i32
         if lines_cleared == 3 {attack_gain[0] = 2;}
         if lines_cleared >= 4 {attack_gain[0] = 4;}
     }
-    if difficult && b2b {attack_gain[0] += 1;}
+    if difficult && b2b {
+        if tspin {
+            if lines_cleared == 1 {attack_gain[0] += 1;} else if lines_cleared == 2 {
+                attack_gain[0] += 2;
+            } else {
+                attack_gain[0] += 3;
+            }
+        } else if lines_cleared >= 4 {
+            attack_gain[0] += 2;
+        } else {
+            attack_gain[0] += 1;
+        }
+    }
     if lines_cleared > 0 && next_combo[0] >= 1 {attack_gain[0] += next_combo[0] / 2;}
     if all_clear && lines_cleared > 0 {attack_gain[0] += 10;}
 
@@ -426,8 +519,8 @@ fun applyClearModel(lines_cleared: i32, tspin: bool, all_clear: bool, combo: i32
     if difficult {next_b2b[0] = true;} else if lines_cleared > 0 {next_b2b[0] = false;}
 }
 
-fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, out_board: ptr<i32>, out_lines: ptr<i32>, out_tspin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
-    i32 y = dropY(board, kind, rotation, x);
+fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32, out_board: ptr<i32>, out_lines: ptr<i32>, out_tspin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    i32 y = dropY(board, kind, rotation, x, spawn_y);
     if y < -1000 {return false;}
 
     for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = board[i];}
@@ -442,30 +535,147 @@ fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, out_board: p
     return true;
 }
 
-fun evaluateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, combo: i32, b2b: bool, level: i32, out_board: ptr<i32>, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>, out_tspin: ptr<i32>) >> bool {
-    i32 lines = 0;
-    i32 tspin = 0;
-    i32 all_clear = 0;
-    if !simulateMove(board, kind, rotation, x, out_board, &lines, &tspin, &all_clear) {return false;}
+fun evaluateLockedBoard(board_before: ptr<i32>, board_after: ptr<i32>, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    i32 cur_garbage_access = 0;
+    i32 next_garbage_rows = 0;
+    i32 next_garbage_cover = 0;
+    i32 next_garbage_access = 0;
+    i32 cur_holes = 0;
+    i32 cur_hole_depth = 0;
+    i32 cur_max_h = 0;
+    i32 next_holes = 0;
+    i32 next_hole_depth = 0;
+    i32 next_max_h = 0;
+    boardGarbageStats(board_before, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
+    boardGarbageStats(board_after, &next_garbage_rows, &next_garbage_cover, &next_garbage_access);
+    boardHoleStats(board_before, &cur_holes, &cur_hole_depth, &cur_max_h);
+    boardHoleStats(board_after, &next_holes, &next_hole_depth, &next_max_h);
 
     i32 score_gain = 0;
     i32 attack_gain = 0;
     out_next_combo[0] = combo;
     out_next_b2b[0] = b2b;
-    applyClearModel(lines, tspin != 0, all_clear != 0, combo, b2b, level, out_next_combo, out_next_b2b, &score_gain, &attack_gain);
+    applyClearModel(lines, tspin, all_clear, combo, b2b, level, out_next_combo, out_next_b2b, &score_gain, &attack_gain);
 
-    bool difficult = lines >= 4 || (tspin != 0 && lines > 0);
-    i32 value = evaluateBoardStructural(out_board) * 5 + score_gain * 6 + attack_gain * 500;
-    if tspin != 0 && lines > 0 {value += 5200 + lines * 900;}
+    bool difficult = lines >= 4 || (tspin && lines > 0);
+    i32 attack_weight = 500;
+    if cur_garbage_rows > 0 {attack_weight = 180;}
+
+    i32 value = evaluateBoardStructural(board_after) * 5 + score_gain * 6 + attack_gain * attack_weight;
+
+    i32 hole_delta = next_holes - cur_holes;
+    i32 hole_depth_delta = next_hole_depth - cur_hole_depth;
+    i32 max_h_delta = next_max_h - cur_max_h;
+    bool garbage_improved = next_garbage_rows < cur_garbage_rows || next_garbage_cover < cur_garbage_cover || next_garbage_access < cur_garbage_access;
+    bool garbage_worse = next_garbage_rows > cur_garbage_rows || next_garbage_cover > cur_garbage_cover || next_garbage_access > cur_garbage_access;
+
+    if hole_delta > 0 {
+        i32 hole_penalty = 6500;
+        if cur_garbage_rows > 0 || next_garbage_rows > 0 {hole_penalty = 21000;}
+        value -= hole_delta * hole_penalty;
+    } else if hole_delta < 0 {
+        i32 hole_reward = 2100;
+        if cur_garbage_rows > 0 || next_garbage_rows > 0 {hole_reward = 9000;}
+        value += (-hole_delta) * hole_reward;
+    }
+
+    if hole_depth_delta > 0 {
+        i32 depth_penalty = 520;
+        if cur_garbage_rows > 0 || next_garbage_rows > 0 {depth_penalty = 1600;}
+        value -= hole_depth_delta * depth_penalty;
+    } else if hole_depth_delta < 0 {
+        i32 depth_reward = 180;
+        if cur_garbage_rows > 0 || next_garbage_rows > 0 {depth_reward = 620;}
+        value += (-hole_depth_delta) * depth_reward;
+    }
+
+    if max_h_delta > 0 {
+        i32 stack_penalty = 1400;
+        if cur_garbage_rows > 0 || next_garbage_rows > 0 {stack_penalty = 5200;}
+        value -= max_h_delta * stack_penalty;
+    }
+
+    if cur_garbage_rows > 0 || next_garbage_rows > 0 {
+        value -= next_garbage_rows * 28000;
+        value -= next_garbage_cover * 3200;
+        value -= next_garbage_access * 1600;
+
+        value += (cur_garbage_rows - next_garbage_rows) * 220000;
+        value += (cur_garbage_cover - next_garbage_cover) * 18000;
+        value += (cur_garbage_access - next_garbage_access) * 12000;
+
+        if cur_garbage_rows > 0 {
+            if lines > 0 {
+                if garbage_improved {
+                    value += lines * 18000;
+                } else {
+                    value -= lines * 12000;
+                }
+            }
+
+            if next_garbage_rows < cur_garbage_rows {value += 140000;}
+            if next_garbage_access < cur_garbage_access {value += 22000;}
+            if next_garbage_cover < cur_garbage_cover {value += 12000;}
+
+            if lines == 0 && !garbage_improved {value -= 260000;}
+            if lines == 0 && hole_delta > 0 {value -= hole_delta * 60000;}
+            if lines == 0 && hole_depth_delta > 0 {value -= hole_depth_delta * 2500;}
+            if lines == 0 && max_h_delta > 0 {value -= max_h_delta * 12000;}
+
+            if lines == 0 && next_garbage_rows > cur_garbage_rows {value -= 140000;}
+            if lines == 0 && next_garbage_cover > cur_garbage_cover {value -= 90000;}
+            if lines == 0 && next_garbage_access > cur_garbage_access {value -= 100000;}
+
+            if lines > 0 && !garbage_improved && (hole_delta > 0 || max_h_delta > 0) {value -= 80000;}
+
+            if lines == 0 && next_garbage_rows >= cur_garbage_rows && next_garbage_access >= cur_garbage_access && next_garbage_cover >= cur_garbage_cover {
+                value -= 180000;
+            }
+            if lines == 0 && next_garbage_rows >= cur_garbage_rows && next_garbage_access > cur_garbage_access {value -= 120000;}
+            if lines > 0 && garbage_worse {value -= 70000;}
+        }
+    }
+
+    if tspin && lines > 0 {value += 5200 + lines * 900;}
     if lines == 4 {value += 6200;}
-    if all_clear != 0 && lines > 0 {value += 13000;}
+    if all_clear && lines > 0 {value += 13000;}
     if b2b && lines > 0 && !difficult {value -= 2600;}
     out_value[0] = value;
+}
+
+fun evaluateExactLockedState(board_before: ptr<i32>, board_after: ptr<i32>, lines: i32, tspin: bool, all_clear: bool, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32) >> i32 {
+    i32 next_combo = combo;
+    bool next_b2b = b2b;
+    i32 value = 0;
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    i32 cur_garbage_access = 0;
+    evaluateLockedBoard(board_before, board_after, lines, tspin, all_clear, combo, b2b, level, &next_combo, &next_b2b, &value);
+    boardGarbageStats(board_before, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
+    i32 cont = greedyQueueValue(board_after, queue, queue_count, spawn_y, next_combo, next_b2b, level);
+    i32 cont_weight = 85;
+    if cur_garbage_rows > 0 {cont_weight = 25;}
+    if cur_garbage_rows > 0 && cur_garbage_access >= 12 {cont_weight = 15;}
+    if cur_garbage_rows > 0 && cur_garbage_access >= 18 {cont_weight = 8;}
+    if cur_garbage_rows > 0 && cur_garbage_access >= 24 {cont_weight = 0;}
+    if cur_garbage_rows > 0 && cur_garbage_cover >= 8 && cont_weight > 12 {cont_weight = 12;}
+    if cur_garbage_rows >= 4 && cur_garbage_cover >= 12 {cont_weight = 0;}
+    return value + (cont * cont_weight) / 100;
+}
+
+fun evaluateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, out_board: ptr<i32>, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>, out_tspin: ptr<i32>) >> bool {
+    i32 lines = 0;
+    i32 tspin = 0;
+    i32 all_clear = 0;
+    if !simulateMove(board, kind, rotation, x, spawn_y, out_board, &lines, &tspin, &all_clear) {return false;}
+    evaluateLockedBoard(board, out_board, lines, tspin != 0, all_clear != 0, combo, b2b, level, out_next_combo, out_next_b2b, out_value);
     out_tspin[0] = tspin;
     return true;
 }
 
-fun bestImmediateMove(board: ptr<i32>, kind: i32, combo: i32, b2b: bool, level: i32, out_x: ptr<i32>, out_rot: ptr<i32>, out_tspin: ptr<i32>, out_board: ptr<i32>, out_combo: ptr<i32>, out_b2b: ptr<bool>, out_value: ptr<i32>) >> bool {
+fun bestImmediateMove(board: ptr<i32>, kind: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, out_x: ptr<i32>, out_rot: ptr<i32>, out_tspin: ptr<i32>, out_board: ptr<i32>, out_combo: ptr<i32>, out_b2b: ptr<bool>, out_value: ptr<i32>) >> bool {
     bool found = false;
     i32 best_value = -2147483647;
     i32 rot_count = rotationCount(kind);
@@ -477,7 +687,7 @@ fun bestImmediateMove(board: ptr<i32>, kind: i32, combo: i32, b2b: bool, level: 
             bool cand_b2b = b2b;
             i32 cand_value = 0;
             i32 cand_tspin = 0;
-            if !evaluateMove(board, kind, rot, x, combo, b2b, level, &cand_board[0], &cand_combo, &cand_b2b, &cand_value, &cand_tspin) {continue;}
+            if !evaluateMove(board, kind, rot, x, spawn_y, combo, b2b, level, &cand_board[0], &cand_combo, &cand_b2b, &cand_value, &cand_tspin) {continue;}
 
             if !found || cand_value > best_value {
                 found = true;
@@ -496,7 +706,7 @@ fun bestImmediateMove(board: ptr<i32>, kind: i32, combo: i32, b2b: bool, level: 
     return found;
 }
 
-fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32) >> i32 {
+fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32) >> i32 {
     if queue_count <= 0 {return 0;}
 
     arr<i32, BOARD_CELLS> state = {0};
@@ -514,7 +724,7 @@ fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, combo: 
         i32 next_combo = c;
         bool next_b2b = b;
         i32 move_value = 0;
-        if !bestImmediateMove(&state[0], queue[qi], c, b, level, &move_x, &move_rot, &move_tspin, &next_state[0], &next_combo, &next_b2b, &move_value) {
+        if !bestImmediateMove(&state[0], queue[qi], spawn_y, c, b, level, &move_x, &move_rot, &move_tspin, &next_state[0], &next_combo, &next_b2b, &move_value) {
             total -= 500000;
             break;
         }
@@ -527,7 +737,7 @@ fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, combo: 
     return total;
 }
 
-fun findBestMove(board: ptr<i32>, kind: i32, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32) >> AiMove {
+fun findBestMove(board: ptr<i32>, kind: i32, spawn_y: i32, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32) >> AiMove {
     if level < 1 {level = 1;}
 
     AiMove best = {0};
@@ -546,9 +756,9 @@ fun findBestMove(board: ptr<i32>, kind: i32, queue: ptr<i32>, queue_count: i32, 
             bool next_b2b = b2b;
             i32 score = 0;
             i32 tspin = 0;
-            if !evaluateMove(board, kind, rot, x, combo, b2b, level, &temp[0], &next_combo, &next_b2b, &score, &tspin) {continue;}
+            if !evaluateMove(board, kind, rot, x, spawn_y, combo, b2b, level, &temp[0], &next_combo, &next_b2b, &score, &tspin) {continue;}
 
-            i32 cont = greedyQueueValue(&temp[0], queue, queue_count, next_combo, next_b2b, level);
+            i32 cont = greedyQueueValue(&temp[0], queue, queue_count, spawn_y, next_combo, next_b2b, level);
             score += (cont * 85) / 100;
 
             if !best.valid || score > best_score {
