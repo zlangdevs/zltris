@@ -32,7 +32,8 @@ use zltris.theme
 #define BOT_APM_MAX 400.0
 #define HIGH_STACK_SPAWN_ROWS 6
 #define HIGH_STACK_BOARD_SHIFT 64
-#define LOGMODE true
+#define LOGMODE false
+#define BOTDEVMODE false
 #define AI_LOG_FILE_PATH "ai_debug.log"
 #define BOT_PLAN_MAX 128
 #define BOT_SEARCH_MAX 2048
@@ -49,6 +50,11 @@ use zltris.theme
 #define BOT_ACTION_CCW 4
 #define BOT_ACTION_DROP 5
 #define BOT_ACTION_DOWN 6
+
+#define BOT_MODE_CLEAN 0
+#define BOT_MODE_DIG 1
+#define BOT_MODE_SURVIVE 2
+#define BOT_SIMPLE_PLAN true
 
 #define PIECE_I 0
 #define PIECE_O 1
@@ -67,6 +73,7 @@ use zltris.theme
 #define MODE_40_LINES 1
 #define MODE_BLITZ 2
 #define MODE_VS_BOT 3
+#define MODE_BOT_DUELS 4
 
 #define BLITZ_DURATION_SECONDS 120.0
 
@@ -92,6 +99,14 @@ use zltris.theme
 #define STAR_MODE_MUSIC 2
 
 #define SETTINGS_FILE_PATH "zltris.cfg"
+#define BOT_DUELS_FILE_PATH "bot_duels.cfg"
+#define BOT_DUELS_SIM_STEPS 6
+#define BOT_DUELS_FIXED_APM 300.0
+#define AI_TUNE_COUNT 154
+#define BOT_ARENA_LEFT 0
+#define BOT_ARENA_RIGHT 1
+#define BOT_WEIGHTS_STOCK 0
+#define BOT_WEIGHTS_CHAMPION 1
 
 struct Game {
     theme_index i32,
@@ -145,6 +160,7 @@ struct BotSetupState {
     target_apm f32,
     garbage_messiness f32,
     high_stack_tolerance bool,
+    weights_mode i32,
     index i32,
 }
 
@@ -173,6 +189,43 @@ struct BotRuntime {
     pending_garbage i32,
     place_meter f32,
 }
+
+struct BotArenaSide {
+    setup BotSetupState,
+    runtime BotRuntime,
+    generation i32,
+    plan_len i32,
+    plan_index i32,
+    plan_pending_snapshot i32,
+    planned_lines i32,
+    planned_spin bool,
+    planned_all_clear bool,
+    garbage_hole i32,
+}
+
+struct BotArenaState {
+    champion_setup BotSetupState,
+    champion_generation i32,
+    candidate_setup BotSetupState,
+    candidate_generation i32,
+    champion_wins i32,
+    total_matches i32,
+    last_winner_generation i32,
+    last_winner_side i32,
+    compare_stock bool,
+    compare_stock_wins i32,
+    compare_stock_losses i32,
+    generation_round i32,
+    generation_left_wins i32,
+    generation_right_wins i32,
+    generation_stage i32,
+    stock_round i32,
+    stock_left_wins i32,
+    stock_right_wins i32,
+}
+
+#define BOT_ARENA_STAGE_CHAMPION 0
+#define BOT_ARENA_STAGE_STOCK 1
 
 struct GameplayState {
     queue_count i32,
@@ -217,11 +270,28 @@ GameRuntime g_rt = {0};
 GameplayState g_play = {0};
 BotSetupState g_bot_setup = {0};
 BotRuntime g_bot = {0};
+BotArenaState g_bot_arena = {0};
+BotArenaSide g_bot_arena_left = {0};
+BotArenaSide g_bot_arena_right = {0};
 arr<i32, BOARD_CELLS> g_bot_board = {0};
 arr<i32, QUEUE_CAP> g_bot_queue = {0};
 arr<i32, BAG_SIZE> g_bot_bag = {0};
 arr<i32, BOT_PLAN_MAX> g_bot_plan_actions = {0};
 arr<i32, BOARD_CELLS> g_bot_planned_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_left_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_right_board = {0};
+arr<i32, QUEUE_CAP> g_bot_arena_left_queue = {0};
+arr<i32, QUEUE_CAP> g_bot_arena_right_queue = {0};
+arr<i32, BAG_SIZE> g_bot_arena_left_bag = {0};
+arr<i32, BAG_SIZE> g_bot_arena_right_bag = {0};
+arr<i32, BOT_PLAN_MAX> g_bot_arena_left_plan_actions = {0};
+arr<i32, BOT_PLAN_MAX> g_bot_arena_right_plan_actions = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_left_planned_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_right_planned_board = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_champion_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_candidate_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_left_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_right_tuning = {0};
 arr<i32, BOT_SEARCH_MAX> g_bot_search_xs = {0};
 arr<i32, BOT_SEARCH_MAX> g_bot_search_ys = {0};
 arr<i32, BOT_SEARCH_MAX> g_bot_search_rots = {0};
@@ -265,6 +335,7 @@ i32 g_player_garbage_hole = -1;
 i32 g_bot_garbage_hole = -1;
 i32 g_bot_plan_len = 0;
 i32 g_bot_plan_index = 0;
+i32 g_bot_plan_pending_snapshot = 0;
 i32 g_bot_planned_lines = 0;
 bool g_bot_planned_spin = false;
 bool g_bot_planned_all_clear = false;
@@ -500,6 +571,220 @@ fun loadSettingsFile() >> void {
     clampSettings();
 }
 
+fun defaultArenaChampionSetup() >> BotSetupState {
+    BotSetupState setup = {0};
+    setup.target_apm = BOT_DUELS_FIXED_APM;
+    setup.garbage_messiness = 35.0;
+    setup.high_stack_tolerance = false;
+    setup.index = 0;
+    return setup;
+}
+
+fun clampArenaSetup(setup: BotSetupState) >> BotSetupState {
+    BotSetupState next = setup;
+    next.target_apm = BOT_DUELS_FIXED_APM;
+    next.garbage_messiness = 35.0;
+    next.high_stack_tolerance = false;
+    next.index = 0;
+    return next;
+}
+
+fun copyI32Array(dst: ptr<i32>, src: ptr<i32>, count: i32) >> void {
+    for i32 i = 0; i < count; i++ {dst[i] = src[i];}
+}
+
+fun loadDefaultArenaTuning() >> void {
+    aiFillDefaultTuning(&g_bot_arena_champion_tuning[0]);
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
+    }
+}
+
+fun applyAiTuning(values: ptr<i32>) >> void {
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        aiSetTuningValue(i, values[i]);
+    }
+}
+
+fun applyChampionAiTuning() >> void {
+    applyAiTuning(&g_bot_arena_champion_tuning[0]);
+}
+
+fun applyStockAiTuning() >> void {
+    aiResetTuningDefaults();
+}
+
+fun applyBotSetupWeights() >> void {
+    if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {applyStockAiTuning();}
+    else {applyChampionAiTuning();}
+}
+
+fun parseArenaTuneKey(key: ptr<u8>) >> i32 {
+    if key[0] != ('t' as u8) {return -1;}
+    if key[1] < ('0' as u8) || key[1] > ('9' as u8) {return -1;}
+    return atoi(key + 1);
+}
+
+fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> void {
+    i32 changed = 0;
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        i32 value = base[i];
+        i32 step = aiTuningMutationStep(i);
+        if generation >= 24 && step > 1 {step = maxI(1, (step * 3) / 4);}
+        if generation >= 64 && step > 1 {step = maxI(1, (step * 2) / 3);}
+
+        if GetRandomValue(0 as i32, 99 as i32) < 78 {
+            value += GetRandomValue(0 as i32 - step, step) as i32;
+        }
+        if GetRandomValue(0 as i32, 99 as i32) < 22 {
+            i32 jump = step * 3;
+            if jump < 1 {jump = 1;}
+            value += GetRandomValue(0 as i32 - jump, jump) as i32;
+        }
+
+        out_values[i] = aiClampTuningValue(i, value);
+        if out_values[i] != base[i] {changed += 1;}
+    }
+
+    if changed == 0 {
+        i32 forced = GetRandomValue(0 as i32, (AI_TUNE_COUNT - 1) as i32) as i32;
+        i32 step = aiTuningMutationStep(forced);
+        if step < 1 {step = 1;}
+        if GetRandomValue(0 as i32, 1 as i32) == 0 {out_values[forced] = aiClampTuningValue(forced, base[forced] - step);} else {out_values[forced] = aiClampTuningValue(forced, base[forced] + step);}
+    }
+}
+
+fun saveBotDuelsFile() >> void {
+    i32 fd = openForWrite(BOT_DUELS_FILE_PATH);
+    if fd < 0 {return;}
+
+    writeLineFd(fd, TextFormat("champion_generation=%i", g_bot_arena.champion_generation));
+    writeLineFd(fd, TextFormat("champion_wins=%i", g_bot_arena.champion_wins));
+    writeLineFd(fd, TextFormat("total_matches=%i", g_bot_arena.total_matches));
+    writeLineFd(fd, TextFormat("target_apm=%.2f", g_bot_arena.champion_setup.target_apm));
+    writeLineFd(fd, TextFormat("garbage_messiness=%.2f", g_bot_arena.champion_setup.garbage_messiness));
+    i32 high_stack_flag = 0;
+    if g_bot_arena.champion_setup.high_stack_tolerance {high_stack_flag = 1;}
+    writeLineFd(fd, TextFormat("high_stack_tolerance=%i", high_stack_flag));
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        writeLineFd(fd, TextFormat("t%i=%i", i, g_bot_arena_champion_tuning[i]));
+    }
+
+    close(fd);
+}
+
+fun loadBotDuelsFile() >> void {
+    g_bot_arena.champion_setup = defaultArenaChampionSetup();
+    g_bot_arena.candidate_setup = g_bot_arena.champion_setup;
+    loadDefaultArenaTuning();
+    copyI32Array(&g_bot_arena_candidate_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+    g_bot_arena.champion_generation = 0;
+    g_bot_arena.candidate_generation = 0;
+    g_bot_arena.champion_wins = 0;
+    g_bot_arena.total_matches = 0;
+    g_bot_arena.last_winner_generation = 0;
+    g_bot_arena.last_winner_side = 0;
+    g_bot_arena.compare_stock = false;
+    g_bot_arena.compare_stock_wins = 0;
+    g_bot_arena.compare_stock_losses = 0;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+
+    i32 fd = openForRead(BOT_DUELS_FILE_PATH);
+    if fd < 0 {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        return;
+    }
+
+    arr<u8, 4096> data = {0};
+    i64 bytes_read = readAll(fd, &data[0], 4095);
+    close(fd);
+    if bytes_read <= 0 {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        return;
+    }
+    data[bytes_read as i32] = 0;
+
+    ptr<u8> line = &data[0];
+    for (line[0] != 0) {
+        ptr<u8> next = line;
+        for (next[0] != 0 && next[0] != ('\n' as u8)) {
+            next = next + 1;
+        }
+        if (next[0] == ('\n' as u8)) {
+            next[0] = 0;
+            next = next + 1;
+        }
+
+        ptr<u8> raw = trimLeftSpaces(line);
+        trimRightSpacesInPlace(raw);
+        if (raw[0] != 0 && raw[0] != ('#' as u8) && raw[0] != (';' as u8)) {
+            ptr<u8> eq = raw;
+            for (eq[0] != 0 && eq[0] != ('=' as u8)) {
+                eq = eq + 1;
+            }
+            if (eq[0] == ('=' as u8)) {
+                eq[0] = 0;
+
+                ptr<u8> key = trimLeftSpaces(raw);
+                trimRightSpacesInPlace(key);
+                ptr<u8> value = trimLeftSpaces(eq + 1);
+                trimRightSpacesInPlace(value);
+
+                if (strEq(key, "champion_generation")) {
+                    g_bot_arena.champion_generation = atoi(value);
+                } else if (strEq(key, "champion_wins")) {
+                    g_bot_arena.champion_wins = atoi(value);
+                } else if (strEq(key, "total_matches")) {
+                    g_bot_arena.total_matches = atoi(value);
+                } else if (strEq(key, "target_apm")) {
+                    g_bot_arena.champion_setup.target_apm = parseFloatValue(value, g_bot_arena.champion_setup.target_apm);
+                } else if (strEq(key, "garbage_messiness")) {
+                    g_bot_arena.champion_setup.garbage_messiness = parseFloatValue(value, g_bot_arena.champion_setup.garbage_messiness);
+                } else if (strEq(key, "high_stack_tolerance")) {
+                    g_bot_arena.champion_setup.high_stack_tolerance = parseBoolValue(value, g_bot_arena.champion_setup.high_stack_tolerance);
+                } else {
+                    i32 tune_index = parseArenaTuneKey(key);
+                    if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
+                        g_bot_arena_champion_tuning[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                    }
+                }
+            }
+        }
+
+        line = next;
+    }
+
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+    if g_bot_arena.champion_generation < 0 {g_bot_arena.champion_generation = 0;}
+    if g_bot_arena.candidate_generation < 0 {g_bot_arena.candidate_generation = 0;}
+    if g_bot_arena.champion_wins < 0 {g_bot_arena.champion_wins = 0;}
+    if g_bot_arena.total_matches < 0 {g_bot_arena.total_matches = 0;}
+    g_bot_arena.compare_stock_wins = 0;
+    g_bot_arena.compare_stock_losses = 0;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
+    }
+}
+
+fun mutateArenaSetup(base: BotSetupState, generation: i32) >> BotSetupState {
+    BotSetupState next = base;
+    next = clampArenaSetup(next);
+    return next;
+}
+
 fun toColor(color_rgba: u32) >> Color {
     return Color{
         r = (color_rgba & 255) as u8,
@@ -703,7 +988,7 @@ fun currentPlayerBoardLeft() >> i64 {
 }
 
 fun duelShowsHighStackArea() >> bool {
-    return isVsBotMode() && g_bot_setup.high_stack_tolerance;
+    return false;
 }
 
 fun currentBoardTop() >> i64 {
@@ -916,6 +1201,10 @@ fun isVsBotMode() >> bool {
     return g_play.is_mode(MODE_VS_BOT);
 }
 
+fun isBotDuelsMode() >> bool {
+    return g_play.is_mode(MODE_BOT_DUELS);
+}
+
 fun modeUsesRoundState() >> bool {
     return isFortyLinesMode() || isBlitzMode();
 }
@@ -985,6 +1274,8 @@ fun drawBotWidthPopup(font: Font, theme: Theme, show_back_hint: bool) >> void {
 
 fun startGameMode(mode: i32) >> void {
     g_play = g_play.with_mode(mode);
+    if mode == MODE_VS_BOT {applyBotSetupWeights();}
+    else if mode != MODE_BOT_DUELS {applyChampionAiTuning();}
     g_ai_enabled = false;
     g_ai_armed = false;
     g_duel_running = false;
@@ -1012,6 +1303,8 @@ fun startGameMode(mode: i32) >> void {
     if isVsBotMode() {
         initBotMatch();
         g_duel_running = true;
+    } else if isBotDuelsMode() {
+        initBotArenaRound();
     }
 }
 
@@ -1702,7 +1995,6 @@ fun popQueue() >> i32 {
 }
 
 fun playerSpawnY() >> i32 {
-    if isVsBotMode() && g_bot_setup.high_stack_tolerance {return -6;}
     return 0;
 }
 
@@ -1782,6 +2074,11 @@ fun minI(a: i32, b: i32) >> i32 {
     return b;
 }
 
+fun maxI(a: i32, b: i32) >> i32 {
+    if a > b {return a;}
+    return b;
+}
+
 fun botBoardGet(x: i32, y: i32) >> i32 {
     return g_bot_board[boardIndex(x, y)];
 }
@@ -1831,7 +2128,6 @@ fun botPopQueue() >> i32 {
 }
 
 fun botSpawnY() >> i32 {
-    if g_bot_setup.high_stack_tolerance {return -6;}
     return 0;
 }
 
@@ -1934,6 +2230,41 @@ fun insertGarbageIntoPlayer(amount: i32) >> void {
     }
 }
 
+fun addFreePlayGarbageLine() >> void {
+    if !isFreePlayMode() {return;}
+    if g_play.game_over {return;}
+
+    insertGarbageIntoPlayer(1);
+    if g_play.game_over {
+        aiLog("fp garbage+1 -> game over");
+        return;
+    }
+
+    g_piece_y -= 1;
+    i32 lift = 0;
+    for (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) && lift < 8) {
+        g_piece_y -= 1;
+        lift += 1;
+    }
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {
+        g_play.game_over = true;
+        aiLog("fp garbage+1 -> piece blocked");
+        return;
+    }
+
+    g_rt.lock_timer = 0.0;
+    applyDcd();
+
+    i32 max_h = 0;
+    i32 holes = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+    aiLog(TextFormat("fp garbage+1 max_h=%i holes=%i garbage_rows=%i cover=%i access=%i piece_y=%i", max_h, holes, garbage_rows, garbage_cover, garbage_access, g_piece_y));
+}
+
 fun insertGarbageIntoBot(amount: i32) >> void {
     if amount <= 0 {return;}
     aiLog(TextFormat("garbage->bot amount=%i pending_before=%i", amount, g_bot_pending_garbage));
@@ -1960,7 +2291,17 @@ fun routePlayerAttack(attack: i32) >> void {
     i32 cancel = minI(attack, g_player_pending_garbage);
     g_player_pending_garbage -= cancel;
     i32 out = attack - cancel;
-    if out > 0 {g_bot_pending_garbage += out;}
+    if out > 0 {
+        i32 before = g_bot_pending_garbage;
+        g_bot_pending_garbage += out;
+
+        if g_duel_running {
+            g_bot.target_valid = false;
+            g_bot_plan_len = 0;
+            g_bot_plan_index = 0;
+            aiLog(TextFormat(" replan trigger garbage pending_before=%i pending_after=%i", before, g_bot_pending_garbage));
+        }
+    }
 }
 
 fun routeBotAttack(attack: i32) >> void {
@@ -1977,6 +2318,7 @@ fun initBotMatch() >> void {
     g_bot.bag_pos = BAG_SIZE;
     g_bot_plan_len = 0;
     g_bot_plan_index = 0;
+    g_bot_plan_pending_snapshot = 0;
     g_bot_planned_lines = 0;
     g_bot_planned_spin = false;
     g_bot_planned_all_clear = false;
@@ -2130,464 +2472,40 @@ fun botTryRotate(dir: i32) >> bool {
     return false;
 }
 
-fun boardStackStats(board: ptr<i32>, out_max_h: ptr<i32>, out_holes: ptr<i32>, out_garbage_rows: ptr<i32>, out_cover: ptr<i32>) >> void {
-    out_max_h[0] = 0;
-    out_holes[0] = 0;
-    out_garbage_rows[0] = 0;
-    out_cover[0] = 0;
-
-    for i32 x = 0; x < BOARD_W; x++ {
-        i32 top = -1;
-        for i32 y = 0; y < BOARD_H; y++ {
-            if board[boardIndex(x, y)] != 0 {
-                top = y;
-                break;
-            }
-        }
-        if top >= 0 {
-            i32 h = BOARD_H - top;
-            if h > out_max_h[0] {out_max_h[0] = h;}
-            for i32 y = top + 1; y < BOARD_H; y++ {
-                if board[boardIndex(x, y)] == 0 {out_holes[0] += 1;}
-            }
-        }
-    }
-
-    for i32 y = 0; y < BOARD_H; y++ {
-        bool has_garbage = false;
-        i32 hole_x = -1;
-        for i32 x = 0; x < BOARD_W; x++ {
-            i32 cell = board[boardIndex(x, y)];
-            if cell == 8 {has_garbage = true;}
-            if cell == 0 {hole_x = x;}
-        }
-        if has_garbage && hole_x >= 0 {
-            out_garbage_rows[0] += 1;
-            for i32 py = 0; py < y; py++ {
-                if board[boardIndex(hole_x, py)] != 0 {out_cover[0] += 1;}
-            }
-        }
-    }
-}
-
-fun boardGarbageAccessScore(board: ptr<i32>) >> i32 {
-    i32 best = 999999;
-
-    for i32 y = BOARD_H - 1; y >= 0; y-- {
-        bool has_garbage = false;
-        i32 hole_x = -1;
-        for i32 x = 0; x < BOARD_W; x++ {
-            i32 cell = board[boardIndex(x, y)];
-            if cell == 8 {has_garbage = true;}
-            if cell == 0 {hole_x = x;}
-        }
-        if !has_garbage || hole_x < 0 {continue;}
-
-        i32 score = 0;
-        for i32 py = 0; py < y; py++ {
-            if board[boardIndex(hole_x, py)] != 0 {score += 4;}
-        }
-
-        if hole_x > 0 {
-            for i32 py = 0; py <= y; py++ {
-                if board[boardIndex(hole_x - 1, py)] != 0 {score += 1;}
-            }
-        } else {
-            score += 6;
-        }
-
-        if hole_x + 1 < BOARD_W {
-            for i32 py = 0; py <= y; py++ {
-                if board[boardIndex(hole_x + 1, py)] != 0 {score += 1;}
-            }
-        } else {
-            score += 6;
-        }
-
-        i32 surface_penalty = 0;
-        for i32 py = 0; py < y; py++ {
-            if board[boardIndex(hole_x, py)] != 0 {surface_penalty += 1;}
-        }
-        score += surface_penalty * 3;
-
-        if score < best {best = score;}
-    }
-
-    if best == 999999 {return 0;}
-    return best;
-}
-
-fun botDirtyCandidateBetter(cur_rows: i32, cur_cover: i32, cur_access: i32, cur_holes: i32, cur_max_h: i32, cand_rows: i32, cand_cover: i32, cand_access: i32, cand_holes: i32, cand_max_h: i32, cand_lines: i32, cand_steps: i32, cand_score: i32, best_rows: i32, best_cover: i32, best_access: i32, best_holes: i32, best_max_h: i32, best_lines: i32, best_steps: i32, best_score: i32) >> bool {
-    i32 cand_worse = 0;
-    if cand_rows > cur_rows {cand_worse += 1;}
-    if cand_cover > cur_cover {cand_worse += 1;}
-    if cand_access > cur_access {cand_worse += 1;}
-    if cand_holes > cur_holes {cand_worse += 1;}
-    if cand_max_h > cur_max_h {cand_worse += 1;}
-
-    i32 best_worse = 0;
-    if best_rows > cur_rows {best_worse += 1;}
-    if best_cover > cur_cover {best_worse += 1;}
-    if best_access > cur_access {best_worse += 1;}
-    if best_holes > cur_holes {best_worse += 1;}
-    if best_max_h > cur_max_h {best_worse += 1;}
-
-    if cand_worse < best_worse {return true;}
-    if cand_worse > best_worse {return false;}
-
-    i32 cand_improve = 0;
-    if cand_rows < cur_rows {cand_improve += 1;}
-    if cand_cover < cur_cover {cand_improve += 1;}
-    if cand_access < cur_access {cand_improve += 1;}
-    if cand_holes < cur_holes {cand_improve += 1;}
-    if cand_max_h < cur_max_h {cand_improve += 1;}
-
-    i32 best_improve = 0;
-    if best_rows < cur_rows {best_improve += 1;}
-    if best_cover < cur_cover {best_improve += 1;}
-    if best_access < cur_access {best_improve += 1;}
-    if best_holes < cur_holes {best_improve += 1;}
-    if best_max_h < cur_max_h {best_improve += 1;}
-
-    if cand_improve > best_improve {return true;}
-    if cand_improve < best_improve {return false;}
-
-    if cand_rows < best_rows {return true;}
-    if cand_rows > best_rows {return false;}
-    if cand_cover < best_cover {return true;}
-    if cand_cover > best_cover {return false;}
-    if cand_access < best_access {return true;}
-    if cand_access > best_access {return false;}
-    if cand_holes < best_holes {return true;}
-    if cand_holes > best_holes {return false;}
-    if cand_max_h < best_max_h {return true;}
-    if cand_max_h > best_max_h {return false;}
-    if cand_lines > best_lines {return true;}
-    if cand_lines < best_lines {return false;}
-    if cand_steps < best_steps {return true;}
-    if cand_steps > best_steps {return false;}
-    return cand_score > best_score;
-}
-
 fun botProjectDirtyNext(board: ptr<i32>, next_kind: i32, out_rows: ptr<i32>, out_cover: ptr<i32>, out_access: ptr<i32>, out_holes: ptr<i32>, out_max_h: ptr<i32>, out_lines: ptr<i32>, out_score: ptr<i32>) >> void {
-    i32 base_max_h = 0;
-    i32 base_holes = 0;
-    i32 base_rows = 0;
-    i32 base_cover = 0;
-    boardStackStats(board, &base_max_h, &base_holes, &base_rows, &base_cover);
-    i32 base_access = boardGarbageAccessScore(board);
-
-    out_rows[0] = base_rows;
-    out_cover[0] = base_cover;
-    out_access[0] = base_access;
-    out_holes[0] = base_holes;
-    out_max_h[0] = base_max_h;
-    out_lines[0] = 0;
-    out_score[0] = -2147483647;
-
-    if next_kind < PIECE_I || next_kind > PIECE_Z {return;}
-
-    i32 best_rows = base_rows;
-    i32 best_cover = base_cover;
-    i32 best_access = base_access;
-    i32 best_holes = base_holes;
-    i32 best_max_h = base_max_h;
-    i32 best_lines = 0;
-    i32 best_steps = 0;
-    i32 best_score = -2147483647;
-    bool found = false;
-
-    i32 spawn_x = 3;
-    i32 spawn_y = botSpawnY();
-    i32 spawn_rot = 0;
-    if !botTempPieceFits(board, next_kind, spawn_rot, spawn_x, spawn_y) {return;}
-
-    for i32 i = 0; i < BOT_DIRTY_PROJ_SEARCH_MAX; i++ {
-        g_bot_dirty_xs[i] = 0;
-        g_bot_dirty_ys[i] = 0;
-        g_bot_dirty_rots[i] = 0;
-        g_bot_dirty_rotate_flags[i] = 0;
-        g_bot_dirty_depths[i] = 0;
-    }
-    for i32 i = 0; i < BOT_STATE_TABLE_SIZE; i++ {
-        g_bot_dirty_visited[i] = 0;
-        g_bot_dirty_landing_states[i] = 0;
-        g_bot_dirty_landing_steps[i] = 0;
-    }
-
-    i32 count = 1;
-    i32 head = 0;
-    g_bot_dirty_xs[0] = spawn_x;
-    g_bot_dirty_ys[0] = spawn_y;
-    g_bot_dirty_rots[0] = spawn_rot;
-    g_bot_dirty_rotate_flags[0] = 0;
-    g_bot_dirty_depths[0] = 0;
-    i32 root_slot = botStateTableIndex(g_bot_dirty_xs[0], g_bot_dirty_ys[0], g_bot_dirty_rots[0], g_bot_dirty_rotate_flags[0]);
-    if root_slot < 0 {return;}
-    g_bot_dirty_visited[root_slot] = 1;
-
-    for (head < count) {
-        i32 next_x = g_bot_dirty_xs[head] - 1;
-        if botTempPieceFits(board, next_kind, g_bot_dirty_rots[head], next_x, g_bot_dirty_ys[head]) {
-            i32 slot = botStateTableIndex(next_x, g_bot_dirty_ys[head], g_bot_dirty_rots[head], g_bot_dirty_rotate_flags[head]);
-            if slot >= 0 && g_bot_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
-                i32 idx = count;
-                g_bot_dirty_visited[slot] = idx + 1;
-                g_bot_dirty_xs[idx] = next_x;
-                g_bot_dirty_ys[idx] = g_bot_dirty_ys[head];
-                g_bot_dirty_rots[idx] = g_bot_dirty_rots[head];
-                g_bot_dirty_rotate_flags[idx] = g_bot_dirty_rotate_flags[head];
-                g_bot_dirty_depths[idx] = g_bot_dirty_depths[head] + 1;
-                count += 1;
-            }
-        }
-
-        next_x = g_bot_dirty_xs[head] + 1;
-        if botTempPieceFits(board, next_kind, g_bot_dirty_rots[head], next_x, g_bot_dirty_ys[head]) {
-            i32 slot = botStateTableIndex(next_x, g_bot_dirty_ys[head], g_bot_dirty_rots[head], g_bot_dirty_rotate_flags[head]);
-            if slot >= 0 && g_bot_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
-                i32 idx = count;
-                g_bot_dirty_visited[slot] = idx + 1;
-                g_bot_dirty_xs[idx] = next_x;
-                g_bot_dirty_ys[idx] = g_bot_dirty_ys[head];
-                g_bot_dirty_rots[idx] = g_bot_dirty_rots[head];
-                g_bot_dirty_rotate_flags[idx] = g_bot_dirty_rotate_flags[head];
-                g_bot_dirty_depths[idx] = g_bot_dirty_depths[head] + 1;
-                count += 1;
-            }
-        }
-
-        i32 next_y = g_bot_dirty_ys[head] + 1;
-        if botTempPieceFits(board, next_kind, g_bot_dirty_rots[head], g_bot_dirty_xs[head], next_y) {
-            i32 slot = botStateTableIndex(g_bot_dirty_xs[head], next_y, g_bot_dirty_rots[head], g_bot_dirty_rotate_flags[head]);
-            if slot >= 0 && g_bot_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
-                i32 idx = count;
-                g_bot_dirty_visited[slot] = idx + 1;
-                g_bot_dirty_xs[idx] = g_bot_dirty_xs[head];
-                g_bot_dirty_ys[idx] = next_y;
-                g_bot_dirty_rots[idx] = g_bot_dirty_rots[head];
-                g_bot_dirty_rotate_flags[idx] = g_bot_dirty_rotate_flags[head];
-                g_bot_dirty_depths[idx] = g_bot_dirty_depths[head] + 1;
-                count += 1;
-            }
-        }
-
-        i32 rx = 0;
-        i32 ry = 0;
-        i32 rrot = 0;
-        i32 rkick = -1;
-        if botApplyRotateState(board, next_kind, g_bot_dirty_xs[head], g_bot_dirty_ys[head], g_bot_dirty_rots[head], 1, &rx, &ry, &rrot, &rkick) {
-            i32 slot = botStateTableIndex(rx, ry, rrot, 1);
-            if slot >= 0 && g_bot_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
-                i32 idx = count;
-                g_bot_dirty_visited[slot] = idx + 1;
-                g_bot_dirty_xs[idx] = rx;
-                g_bot_dirty_ys[idx] = ry;
-                g_bot_dirty_rots[idx] = normalizeRotation(rrot);
-                g_bot_dirty_rotate_flags[idx] = 1;
-                g_bot_dirty_depths[idx] = g_bot_dirty_depths[head] + 1;
-                count += 1;
-            }
-        }
-
-        if botApplyRotateState(board, next_kind, g_bot_dirty_xs[head], g_bot_dirty_ys[head], g_bot_dirty_rots[head], -1, &rx, &ry, &rrot, &rkick) {
-            i32 slot = botStateTableIndex(rx, ry, rrot, 1);
-            if slot >= 0 && g_bot_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
-                i32 idx = count;
-                g_bot_dirty_visited[slot] = idx + 1;
-                g_bot_dirty_xs[idx] = rx;
-                g_bot_dirty_ys[idx] = ry;
-                g_bot_dirty_rots[idx] = normalizeRotation(rrot);
-                g_bot_dirty_rotate_flags[idx] = 1;
-                g_bot_dirty_depths[idx] = g_bot_dirty_depths[head] + 1;
-                count += 1;
-            }
-        }
-
-        head += 1;
-    }
-
-    for i32 state_idx = 0; state_idx < count; state_idx++ {
-        if g_bot_dirty_depths[state_idx] >= BOT_PLAN_MAX - 1 {continue;}
-        i32 final_y = botTempDropY(board, next_kind, g_bot_dirty_rots[state_idx], g_bot_dirty_xs[state_idx], g_bot_dirty_ys[state_idx]);
-        if final_y < -1000 {continue;}
-
-        i32 slot = botStateTableIndex(g_bot_dirty_xs[state_idx], final_y, g_bot_dirty_rots[state_idx], g_bot_dirty_rotate_flags[state_idx]);
-        if slot < 0 {continue;}
-
-        i32 steps = g_bot_dirty_depths[state_idx] + 1;
-        if g_bot_dirty_landing_states[slot] == 0 {
-            g_bot_dirty_landing_states[slot] = state_idx + 1;
-            g_bot_dirty_landing_steps[slot] = steps;
-        } else if steps < g_bot_dirty_landing_steps[slot] {
-            g_bot_dirty_landing_states[slot] = state_idx + 1;
-            g_bot_dirty_landing_steps[slot] = steps;
-        }
-    }
-
-    for i32 slot = 0; slot < BOT_STATE_TABLE_SIZE; slot++ {
-        if g_bot_dirty_landing_states[slot] == 0 {continue;}
-        i32 state_idx = g_bot_dirty_landing_states[slot] - 1;
-        if state_idx < 0 || state_idx >= count {continue;}
-
-        bool last_rotate = false;
-        if g_bot_dirty_rotate_flags[state_idx] != 0 {last_rotate = true;}
-
-        i32 final_y = 0;
-        i32 lines = 0;
-        i32 spin = 0;
-        i32 all_clear = 0;
-        arr<i32, BOARD_CELLS> tmp = {0};
-        if !botSimulateDropPlacement(board, next_kind, g_bot_dirty_xs[state_idx], g_bot_dirty_ys[state_idx], g_bot_dirty_rots[state_idx], last_rotate, &tmp[0], &final_y, &lines, &spin, &all_clear) {continue;}
-
-        i32 cand_max_h = 0;
-        i32 cand_holes = 0;
-        i32 cand_rows = 0;
-        i32 cand_cover = 0;
-        boardStackStats(&tmp[0], &cand_max_h, &cand_holes, &cand_rows, &cand_cover);
-        i32 cand_access = boardGarbageAccessScore(&tmp[0]);
-
-        i32 steps = g_bot_dirty_landing_steps[slot];
-        i32 cand_score = lines * 20000;
-        cand_score -= cand_access * 1200;
-        cand_score -= cand_cover * 500;
-        cand_score -= cand_rows * 420;
-        cand_score -= cand_holes * 260;
-        cand_score -= cand_max_h * 140;
-        cand_score -= steps * 80;
-
-        bool better = false;
-        if !found {
-            better = true;
-        } else {
-            better = botDirtyCandidateBetter(base_rows, base_cover, base_access, base_holes, base_max_h, cand_rows, cand_cover, cand_access, cand_holes, cand_max_h, lines, steps, cand_score, best_rows, best_cover, best_access, best_holes, best_max_h, best_lines, best_steps, best_score);
-        }
-
-        if better {
-            found = true;
-            best_rows = cand_rows;
-            best_cover = cand_cover;
-            best_access = cand_access;
-            best_holes = cand_holes;
-            best_max_h = cand_max_h;
-            best_lines = lines;
-            best_steps = steps;
-            best_score = cand_score;
-        }
-    }
-
-    if found {
-        out_rows[0] = best_rows;
-        out_cover[0] = best_cover;
-        out_access[0] = best_access;
-        out_holes[0] = best_holes;
-        out_max_h[0] = best_max_h;
-        out_lines[0] = best_lines;
-        out_score[0] = best_score;
-    }
+    aiBotProjectDirtyNext(board, next_kind, botSpawnY(), out_rows, out_cover, out_access, out_holes, out_max_h, out_lines, out_score);
 }
 
 fun botTempPieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
-    for i32 i = 0; i < 4; i++ {
-        i32 mx = x + minoX(kind, rotation, i);
-        i32 my = y + minoY(kind, rotation, i);
-        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
-        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
-    }
-    return true;
+    return aiBotTempPieceFits(board, kind, rotation, x, y);
 }
 
 fun botTempDropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> i32 {
-    i32 drop_y = y;
-    if !botTempPieceFits(board, kind, rotation, x, drop_y) {return -9999;}
-    for (botTempPieceFits(board, kind, rotation, x, drop_y + 1)) {drop_y += 1;}
-    return drop_y;
+    return aiBotTempDropY(board, kind, rotation, x, y);
 }
 
 fun botTempBoardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
-    if x < 0 || x >= BOARD_W {return true;}
-    if y >= BOARD_H {return true;}
-    if y < 0 {return false;}
-    return board[boardIndex(x, y)] != 0;
+    return aiBotTempBoardCellBlocked(board, x, y);
 }
 
 fun botTempIsTSpin(board: ptr<i32>, kind: i32, x: i32, y: i32, last_rotate_success: bool) >> bool {
-    if kind != PIECE_T {return false;}
-    if !last_rotate_success {return false;}
-    i32 cx = x + 1;
-    i32 cy = y + 1;
-    i32 corners = 0;
-    if botTempBoardCellBlocked(board, cx - 1, cy - 1) {corners += 1;}
-    if botTempBoardCellBlocked(board, cx + 1, cy - 1) {corners += 1;}
-    if botTempBoardCellBlocked(board, cx - 1, cy + 1) {corners += 1;}
-    if botTempBoardCellBlocked(board, cx + 1, cy + 1) {corners += 1;}
-    return corners >= 3;
+    return aiBotTempIsTSpin(board, kind, x, y, last_rotate_success);
 }
 
 fun clearLinesTemp(board: ptr<i32>) >> i32 {
-    i32 cleared = 0;
-    for i32 y = BOARD_H - 1; y >= 0; y-- {
-        bool full = true;
-        for i32 x = 0; x < BOARD_W; x++ {
-            if board[boardIndex(x, y)] == 0 {full = false;}
-        }
-        if full {
-            cleared += 1;
-            for i32 pull = y; pull > 0; pull-- {
-                for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];}
-            }
-            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
-            y += 1;
-        }
-    }
-    return cleared;
+    return aiClearLinesTemp(board);
 }
 
 fun boardIsEmptyTemp(board: ptr<i32>) >> bool {
-    for i32 i = 0; i < BOARD_CELLS; i++ {
-        if board[i] != 0 {return false;}
-    }
-    return true;
+    return aiBoardIsEmptyTemp(board);
 }
 
 fun botApplyRotateState(board: ptr<i32>, kind: i32, x: i32, y: i32, rotation: i32, dir: i32, out_x: ptr<i32>, out_y: ptr<i32>, out_rotation: ptr<i32>, out_kick_test: ptr<i32>) >> bool {
-    if kind == PIECE_O {return false;}
-
-    i32 from = normalizeRotation(rotation);
-    i32 to = normalizeRotation(rotation + dir);
-    if botTempPieceFits(board, kind, to, x, y) {
-        out_x[0] = x;
-        out_y[0] = y;
-        out_rotation[0] = to;
-        out_kick_test[0] = 0;
-        return true;
-    }
-
-    for i32 test = 0; test < 5; test++ {
-        i32 dx = kickX(kind, from, to, test);
-        i32 dy = kickY(kind, from, to, test);
-        i32 next_x = x + dx;
-        i32 next_y = y - dy;
-        if botTempPieceFits(board, kind, to, next_x, next_y) {
-            out_x[0] = next_x;
-            out_y[0] = next_y;
-            out_rotation[0] = to;
-            out_kick_test[0] = test;
-            return true;
-        }
-    }
-
-    return false;
+    return aiBotApplyRotateState(board, kind, x, y, rotation, dir, out_x, out_y, out_rotation, out_kick_test);
 }
 
 fun botStateTableIndex(x: i32, y: i32, rot: i32, rotate_flag: i32) >> i32 {
-    i32 xi = x - BOT_STATE_X_MIN;
-    i32 yi = y - BOT_STATE_Y_MIN;
-    if xi < 0 || xi >= BOT_STATE_X_COUNT {return -1;}
-    if yi < 0 || yi >= BOT_STATE_Y_COUNT {return -1;}
-    i32 flag = 0;
-    if rotate_flag != 0 {flag = 1;}
-    return ((((yi * BOT_STATE_X_COUNT) + xi) * 4) + normalizeRotation(rot)) * 2 + flag;
+    return aiBotStateTableIndex(x, y, rot, rotate_flag);
 }
 
 fun botAppendSearchState(count: ptr<i32>, visited: ptr<i32>, xs: ptr<i32>, ys: ptr<i32>, rots: ptr<i32>, rotate_flags: ptr<i32>, parents: ptr<i32>, actions: ptr<i32>, depths: ptr<i32>, x: i32, y: i32, rot: i32, rotate_flag: i32, parent_idx: i32, action: i32) >> void {
@@ -2610,27 +2528,7 @@ fun botAppendSearchState(count: ptr<i32>, visited: ptr<i32>, xs: ptr<i32>, ys: p
 }
 
 fun botSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: i32, last_rotate: bool, out_board: ptr<i32>, out_final_y: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
-    i32 final_y = botTempDropY(board, kind, rot, x, y);
-    if final_y < -1000 {return false;}
-
-    arr<i32, BOARD_CELLS> temp_board = {0};
-    for i32 bi = 0; bi < BOARD_CELLS; bi++ {temp_board[bi] = board[bi];}
-    for i32 mi = 0; mi < 4; mi++ {
-        i32 px = x + minoX(kind, rot, mi);
-        i32 py = final_y + minoY(kind, rot, mi);
-        if py >= 0 {temp_board[boardIndex(px, py)] = kind + 1;}
-    }
-
-    bool spin = botTempIsTSpin(&temp_board[0], kind, x, final_y, last_rotate);
-    i32 lines = clearLinesTemp(&temp_board[0]);
-    bool all_clear = lines > 0 && boardIsEmptyTemp(&temp_board[0]);
-    for i32 bi = 0; bi < BOARD_CELLS; bi++ {out_board[bi] = temp_board[bi];}
-
-    out_final_y[0] = final_y;
-    out_lines[0] = lines;
-    if spin {out_spin[0] = 1;} else {out_spin[0] = 0;}
-    if all_clear {out_all_clear[0] = 1;} else {out_all_clear[0] = 0;}
-    return true;
+    return aiBotSimulateDropPlacement(board, kind, x, y, rot, last_rotate, out_board, out_final_y, out_lines, out_spin, out_all_clear);
 }
 
 fun botSimulateActionPlan(board: ptr<i32>, kind: i32, start_x: i32, start_y: i32, start_rot: i32, start_last_rotate: bool, actions: ptr<i32>, action_count: i32, out_board: ptr<i32>, out_final_x: ptr<i32>, out_final_y: ptr<i32>, out_final_rot: ptr<i32>, out_final_last_rotate: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
@@ -2684,7 +2582,7 @@ fun botSimulateActionPlan(board: ptr<i32>, kind: i32, start_x: i32, start_y: i32
     return false;
 }
 
-fun botPlanExactPath(lookahead_count: i32) >> bool {
+fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     for i32 i = 0; i < BOT_SEARCH_MAX; i++ {
         g_bot_search_xs[i] = 0;
         g_bot_search_ys[i] = 0;
@@ -2769,23 +2667,35 @@ fun botPlanExactPath(lookahead_count: i32) >> bool {
     i32 cur_holes = 0;
     i32 cur_garbage_rows = 0;
     i32 cur_garbage_cover = 0;
-    boardStackStats(&g_bot_board[0], &cur_max_h, &cur_holes, &cur_garbage_rows, &cur_garbage_cover);
-    i32 cur_garbage_access = boardGarbageAccessScore(&g_bot_board[0]);
-    bool dig_mode = false;
-    if cur_garbage_rows >= 2 && (cur_garbage_access >= 10 || cur_garbage_cover >= 2 || cur_holes >= 4 || cur_max_h >= 10) {
-        dig_mode = true;
-    }
-    if cur_garbage_rows >= 1 && cur_garbage_access >= 20 && (cur_holes >= 4 || cur_max_h >= 10) {
-        dig_mode = true;
-    }
-    if cur_garbage_rows >= 1 && cur_garbage_cover >= 6 {dig_mode = true;}
-    if cur_garbage_rows >= 4 || cur_garbage_cover >= 10 {dig_mode = true;}
+    aiBoardStackStats(&g_bot_board[0], &cur_max_h, &cur_holes, &cur_garbage_rows, &cur_garbage_cover);
+    i32 cur_garbage_access = aiBoardGarbageAccessScore(&g_bot_board[0]);
+    i32 cur_hole_depth = 0;
+    boardHoleStats(&g_bot_board[0], &cur_holes, &cur_hole_depth, &cur_max_h);
+    i32 before_score = evaluateBoardStructural(&g_bot_board[0]);
 
-    bool hard_dig_mode = false;
-    if cur_garbage_rows >= 3 && (cur_garbage_access >= 16 || cur_garbage_cover >= 4 || cur_holes >= 8 || cur_max_h >= 14) {
-        hard_dig_mode = true;
+    f32 apm_current = botCurrentApm();
+    f32 apm_delta_f = g_bot_setup.target_apm - apm_current;
+    i32 apm_delta = apm_delta_f as i32;
+
+    i32 action_budget = 12;
+    if g_bot_setup.target_apm <= 40.0 {
+        action_budget = 7;
+    } else if g_bot_setup.target_apm <= 70.0 {
+        action_budget = 8;
+    } else if g_bot_setup.target_apm <= 110.0 {
+        action_budget = 10;
+    } else {
+        action_budget = 12;
     }
-    if cur_garbage_rows >= 5 || cur_garbage_cover >= 12 {hard_dig_mode = true;}
+    if mode == BOT_MODE_DIG {action_budget += 1;}
+    if mode == BOT_MODE_SURVIVE {action_budget += 2;}
+    if cur_max_h >= 16 {action_budget -= 1;}
+    if cur_max_h >= 19 {action_budget -= 1;}
+    if apm_delta < -15 {action_budget -= 1;}
+    if apm_delta > 12 {action_budget += 1;}
+    if cur_max_h >= 13 && action_budget < 8 {action_budget = 8;}
+    if action_budget < 7 {action_budget = 7;}
+    if action_budget > BOT_PLAN_MAX - 1 {action_budget = BOT_PLAN_MAX - 1;}
 
     i32 best_state = -1;
     i32 best_final_y = g_bot.piece_y;
@@ -2797,71 +2707,23 @@ fun botPlanExactPath(lookahead_count: i32) >> bool {
     i32 best_target_rotation = g_bot.piece_rotation;
     bool best_target_last_rotate = false;
     bool best_all_clear = false;
-    i32 best_next_rows = cur_garbage_rows;
-    i32 best_next_cover = cur_garbage_cover;
-    i32 best_next_access = cur_garbage_access;
     i32 best_next_holes = cur_holes;
     i32 best_next_max_h = cur_max_h;
-    bool best_garbage_improved = false;
     arr<i32, BOARD_CELLS> best_board = {0};
 
-    i32 best_dig_state = -1;
-    i32 best_dig_score = -2147483647;
-    i32 best_dig_final_y = g_bot.piece_y;
-    i32 best_dig_lines = 0;
-    i32 best_dig_spin = 0;
-    i32 best_dig_action_count = 0;
-    i32 best_dig_target_x = g_bot.piece_x;
-    i32 best_dig_target_rotation = g_bot.piece_rotation;
-    bool best_dig_target_last_rotate = false;
-    bool best_dig_all_clear = false;
-    i32 best_dig_next_rows = cur_garbage_rows;
-    i32 best_dig_next_cover = cur_garbage_cover;
-    i32 best_dig_next_access = cur_garbage_access;
-    i32 best_dig_next_holes = cur_holes;
-    i32 best_dig_next_max_h = cur_max_h;
-    arr<i32, BOARD_CELLS> best_dig_board = {0};
-
-    i32 safety_state = -1;
-    i32 safety_final_y = g_bot.piece_y;
-    i32 safety_lines = 0;
-    i32 safety_spin = 0;
-    i32 safety_action_count = 0;
-    i32 safety_target_x = g_bot.piece_x;
-    i32 safety_target_rotation = g_bot.piece_rotation;
-    bool safety_target_last_rotate = false;
-    bool safety_all_clear = false;
-    i32 safety_score = -2147483647;
-    i32 safety_next_rows = 99999;
-    i32 safety_next_cover = 99999;
-    i32 safety_next_access = 99999;
-    i32 safety_next_holes = 99999;
-    i32 safety_next_max_h = 99999;
-    arr<i32, BOARD_CELLS> safety_board = {0};
-
-    i32 dirty_state = -1;
-    i32 dirty_final_y = g_bot.piece_y;
-    i32 dirty_lines = 0;
-    i32 dirty_spin = 0;
-    i32 dirty_action_count = 0;
-    i32 dirty_target_x = g_bot.piece_x;
-    i32 dirty_target_rotation = g_bot.piece_rotation;
-    bool dirty_target_last_rotate = false;
-    bool dirty_all_clear = false;
-    i32 dirty_score = -2147483647;
-    i32 dirty_next_rows = cur_garbage_rows;
-    i32 dirty_next_cover = cur_garbage_cover;
-    i32 dirty_next_access = cur_garbage_access;
-    i32 dirty_next_holes = cur_holes;
-    i32 dirty_next_max_h = cur_max_h;
-    i32 dirty_proj_rows = 99999;
-    i32 dirty_proj_cover = 99999;
-    i32 dirty_proj_access = 99999;
-    i32 dirty_proj_holes = 99999;
-    i32 dirty_proj_max_h = 99999;
-    i32 dirty_proj_lines = 0;
-    i32 dirty_proj_score = -2147483647;
-    arr<i32, BOARD_CELLS> dirty_board = {0};
+    i32 clean_state = -1;
+    i32 clean_final_y = g_bot.piece_y;
+    i32 clean_lines = 0;
+    i32 clean_spin = 0;
+    i32 clean_action_count = 0;
+    i32 clean_target_x = g_bot.piece_x;
+    i32 clean_target_rotation = g_bot.piece_rotation;
+    bool clean_target_last_rotate = false;
+    bool clean_all_clear = false;
+    i32 clean_score = -2147483647;
+    i32 clean_next_holes = 99999;
+    i32 clean_next_max_h = 99999;
+    arr<i32, BOARD_CELLS> clean_board = {0};
 
     for i32 slot = 0; slot < BOT_STATE_TABLE_SIZE; slot++ {
         if g_bot_landing_states[slot] == 0 {continue;}
@@ -2874,122 +2736,119 @@ fun botPlanExactPath(lookahead_count: i32) >> bool {
         i32 lines = 0;
         i32 spin = 0;
         i32 all_clear = 0;
-        i32 score = 0;
         arr<i32, BOARD_CELLS> temp_board = {0};
         if !botSimulateDropPlacement(&g_bot_board[0], g_bot.piece_kind, g_bot_search_xs[state_idx], g_bot_search_ys[state_idx], g_bot_search_rots[state_idx], last_rotate, &temp_board[0], &final_y, &lines, &spin, &all_clear) {continue;}
         i32 action_count = g_bot_landing_steps[slot];
+
+        if mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && g_bot_pending_garbage == 0 && action_count > action_budget + 5 {
+            continue;
+        }
 
         i32 next_max_h = 0;
         i32 next_holes = 0;
         i32 next_garbage_rows = 0;
         i32 next_garbage_cover = 0;
-        boardStackStats(&temp_board[0], &next_max_h, &next_holes, &next_garbage_rows, &next_garbage_cover);
-        i32 next_garbage_access = boardGarbageAccessScore(&temp_board[0]);
-        bool garbage_improved = next_garbage_rows < cur_garbage_rows || next_garbage_cover < cur_garbage_cover || next_garbage_access < cur_garbage_access;
-        bool garbage_worse = next_garbage_rows > cur_garbage_rows || next_garbage_cover > cur_garbage_cover || next_garbage_access > cur_garbage_access;
+        aiBoardStackStats(&temp_board[0], &next_max_h, &next_holes, &next_garbage_rows, &next_garbage_cover);
+        i32 next_garbage_access = aiBoardGarbageAccessScore(&temp_board[0]);
 
-        i32 proj_rows = next_garbage_rows;
-        i32 proj_cover = next_garbage_cover;
-        i32 proj_access = next_garbage_access;
-        i32 proj_holes = next_holes;
-        i32 proj_max_h = next_max_h;
-        i32 proj_lines = lines;
-        i32 proj_score = 0;
+        i32 rows_delta = cur_garbage_rows - next_garbage_rows;
+        i32 cover_delta = cur_garbage_cover - next_garbage_cover;
+        i32 access_delta = cur_garbage_access - next_garbage_access;
+        i32 holes_delta = cur_holes - next_holes;
+        i32 max_h_delta = cur_max_h - next_max_h;
 
-        score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel());
-        score -= action_count * 120;
+        bool no_immediate_progress = rows_delta <= 0 && cover_delta <= 0 && access_delta <= 0;
+        bool immediate_worse = next_garbage_rows > cur_garbage_rows || next_garbage_cover > cur_garbage_cover || next_garbage_access > cur_garbage_access;
 
-        if dig_mode {
-            proj_score = score;
+        i32 projected_rows = next_garbage_rows;
+        i32 projected_cover = next_garbage_cover;
+        i32 projected_access = next_garbage_access;
+        i32 projected_holes = next_holes;
+        i32 projected_max_h = next_max_h;
+        i32 projected_lines = lines;
+        i32 projected_score = 0;
+
+        i32 base_score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel(), mode, g_bot_pending_garbage);
+        base_score -= action_count * 120;
+
+        if mode != BOT_MODE_CLEAN {
+            projected_score = base_score;
             if g_bot.queue_count > 0 {
-                botProjectDirtyNext(&temp_board[0], g_bot_queue[0], &proj_rows, &proj_cover, &proj_access, &proj_holes, &proj_max_h, &proj_lines, &proj_score);
+                botProjectDirtyNext(&temp_board[0], g_bot_queue[0], &projected_rows, &projected_cover, &projected_access, &projected_holes, &projected_max_h, &projected_lines, &projected_score);
             }
         }
 
-        if cur_garbage_rows > 0 {
-            score += (cur_garbage_rows - next_garbage_rows) * 260000;
-            score += (cur_garbage_cover - next_garbage_cover) * 42000;
-            score += (cur_garbage_access - next_garbage_access) * 32000;
-            score += (cur_holes - next_holes) * 26000;
-            score += (cur_max_h - next_max_h) * 18000;
+        i32 projected_rows_delta = cur_garbage_rows - projected_rows;
+        i32 projected_cover_delta = cur_garbage_cover - projected_cover;
+        i32 projected_access_delta = cur_garbage_access - projected_access;
+        i32 projected_holes_delta = cur_holes - projected_holes;
+        i32 projected_max_h_delta = cur_max_h - projected_max_h;
+        bool no_projected_progress = projected_rows_delta <= 0 && projected_cover_delta <= 0 && projected_access_delta <= 0;
 
-            if lines == 0 && !garbage_improved {score -= 240000;}
-            if lines == 0 && garbage_worse {score -= 200000;}
-            if lines > 0 && !garbage_improved {score -= 70000;}
+        i32 attack = aiBotEstimateAttack(lines, spin != 0, all_clear != 0, g_bot.combo, g_bot.back_to_back_count);
+        i32 spawn_penalty = 0;
+        if g_bot.queue_count > 0 {
+            if !botTempPieceFits(&temp_board[0], g_bot_queue[0], 0, 3, botSpawnY()) {spawn_penalty = 600000;}
+        }
 
-            if next_holes > cur_holes {score -= (next_holes - cur_holes) * 75000;}
-            if next_max_h > cur_max_h {score -= (next_max_h - cur_max_h) * 55000;}
+        i32 score = base_score;
+        i32 over_budget = action_count - action_budget;
+        if over_budget < 0 {over_budget = 0;}
+        score -= action_count * 900;
+        score -= over_budget * 60000;
+        score -= spawn_penalty;
+        if mode == BOT_MODE_SURVIVE {score -= spawn_penalty * 2;}
+        if mode == BOT_MODE_DIG {score += projected_score / 6;}
+        if mode == BOT_MODE_SURVIVE {score += projected_score / 8;}
+        if attack > 0 && apm_delta > 0 {score += attack * 4000;}
+        if lines == 0 && mode != BOT_MODE_CLEAN && no_immediate_progress {score -= aiBotPanicPenalty(cur_garbage_access, mode);}
+        if lines == 0 && mode == BOT_MODE_CLEAN && next_holes > cur_holes {score -= (next_holes - cur_holes) * 180000;}
+        if lines == 0 && mode == BOT_MODE_CLEAN && next_max_h > cur_max_h {score -= (next_max_h - cur_max_h) * 50000;}
 
-            if hard_dig_mode && lines == 0 && !garbage_improved && next_holes >= cur_holes && next_max_h >= cur_max_h {
-                score -= 260000;
+        bool prefer_simple_plan = false;
+        if BOT_SIMPLE_PLAN && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && cur_holes == 0 && cur_max_h <= 10 && g_bot_setup.target_apm <= 45.0 {
+            prefer_simple_plan = true;
+        }
+
+        if prefer_simple_plan {
+            if spin != 0 {score -= 280000;}
+            if lines == 3 {score -= 90000;}
+            if lines >= 4 {score -= 180000;}
+
+            if g_bot_search_rotate_flags[state_idx] != 0 {score -= 28000;}
+
+            if action_count > action_budget {
+                i32 over = action_count - action_budget;
+                score -= over * 120000;
             }
         }
 
-        if dig_mode {
-            i32 dig_pick = 0;
-            dig_pick += (cur_garbage_rows - next_garbage_rows) * 900000;
-            dig_pick += (cur_garbage_cover - next_garbage_cover) * 140000;
-            dig_pick += (cur_garbage_access - next_garbage_access) * 120000;
-            dig_pick += (cur_holes - next_holes) * 90000;
-            dig_pick += (cur_max_h - next_max_h) * 70000;
-            dig_pick += lines * 50000;
-            dig_pick -= next_garbage_access * 30000;
-            dig_pick -= next_garbage_cover * 24000;
-            dig_pick -= next_garbage_rows * 18000;
-            dig_pick -= next_holes * 26000;
-            dig_pick -= next_max_h * 14000;
-            if spin != 0 && lines > 0 {dig_pick += 25000;}
-            if lines == 0 && !garbage_improved {dig_pick -= 450000;}
-            if next_holes > cur_holes {dig_pick -= (next_holes - cur_holes) * 120000;}
-            if next_max_h > cur_max_h {dig_pick -= (next_max_h - cur_max_h) * 90000;}
+        if mode == BOT_MODE_CLEAN {
+            bool clean_better = false;
+            if clean_state < 0 {
+                clean_better = true;
+            } else {
+                clean_better = aiBotCleanCandidateBetter(cur_holes, cur_max_h, next_holes, next_max_h, lines, action_count, score, clean_next_holes, clean_next_max_h, clean_lines, clean_action_count, clean_score);
+            }
 
-            if best_dig_state < 0 || dig_pick > best_dig_score {
-                best_dig_state = state_idx;
-                best_dig_score = dig_pick;
-                best_dig_final_y = final_y;
-                best_dig_lines = lines;
-                best_dig_spin = spin;
-                best_dig_action_count = action_count;
-                best_dig_target_x = g_bot_search_xs[state_idx];
-                best_dig_target_rotation = g_bot_search_rots[state_idx];
-                best_dig_target_last_rotate = last_rotate;
-                best_dig_all_clear = all_clear != 0;
-                best_dig_next_rows = next_garbage_rows;
-                best_dig_next_cover = next_garbage_cover;
-                best_dig_next_access = next_garbage_access;
-                best_dig_next_holes = next_holes;
-                best_dig_next_max_h = next_max_h;
-                for i32 i = 0; i < BOARD_CELLS; i++ {best_dig_board[i] = temp_board[i];}
+            if clean_better {
+                clean_state = state_idx;
+                clean_final_y = final_y;
+                clean_lines = lines;
+                clean_spin = spin;
+                clean_action_count = action_count;
+                clean_target_x = g_bot_search_xs[state_idx];
+                clean_target_rotation = g_bot_search_rots[state_idx];
+                clean_target_last_rotate = last_rotate;
+                clean_all_clear = all_clear != 0;
+                clean_score = score;
+                clean_next_holes = next_holes;
+                clean_next_max_h = next_max_h;
+                for i32 i = 0; i < BOARD_CELLS; i++ {clean_board[i] = temp_board[i];}
             }
         }
 
-        bool safety_better = false;
-        if safety_state < 0 {
-            safety_better = true;
-        } else {
-            safety_better = botDirtyCandidateBetter(cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_max_h, next_garbage_rows, next_garbage_cover, next_garbage_access, next_holes, next_max_h, lines, action_count, score, safety_next_rows, safety_next_cover, safety_next_access, safety_next_holes, safety_next_max_h, safety_lines, safety_action_count, safety_score);
-        }
-
-        if safety_better {
-            safety_state = state_idx;
-            safety_final_y = final_y;
-            safety_lines = lines;
-            safety_spin = spin;
-            safety_action_count = action_count;
-            safety_target_x = g_bot_search_xs[state_idx];
-            safety_target_rotation = g_bot_search_rots[state_idx];
-            safety_target_last_rotate = last_rotate;
-            safety_all_clear = all_clear != 0;
-            safety_score = score;
-            safety_next_rows = next_garbage_rows;
-            safety_next_cover = next_garbage_cover;
-            safety_next_access = next_garbage_access;
-            safety_next_holes = next_holes;
-            safety_next_max_h = next_max_h;
-            for i32 i = 0; i < BOARD_CELLS; i++ {safety_board[i] = temp_board[i];}
-        }
-
-        if best_state < 0 || score > best_score {
+        if best_state < 0 || score > best_score || (score == best_score && action_count < best_action_count) {
             best_state = state_idx;
             best_final_y = final_y;
             best_score = score;
@@ -3000,148 +2859,42 @@ fun botPlanExactPath(lookahead_count: i32) >> bool {
             best_target_rotation = g_bot_search_rots[state_idx];
             best_target_last_rotate = last_rotate;
             best_all_clear = all_clear != 0;
-            best_next_rows = next_garbage_rows;
-            best_next_cover = next_garbage_cover;
-            best_next_access = next_garbage_access;
             best_next_holes = next_holes;
             best_next_max_h = next_max_h;
-            best_garbage_improved = garbage_improved;
             for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = temp_board[i];}
-        }
-
-        if dig_mode {
-            bool dirty_better = false;
-            if dirty_state < 0 {
-                dirty_better = true;
-            } else {
-                dirty_better = botDirtyCandidateBetter(cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_max_h, proj_rows, proj_cover, proj_access, proj_holes, proj_max_h, proj_lines, action_count, proj_score, dirty_proj_rows, dirty_proj_cover, dirty_proj_access, dirty_proj_holes, dirty_proj_max_h, dirty_proj_lines, dirty_action_count, dirty_proj_score);
-            }
-
-            if dirty_better {
-                dirty_state = state_idx;
-                dirty_final_y = final_y;
-                dirty_lines = lines;
-                dirty_spin = spin;
-                dirty_action_count = action_count;
-                dirty_target_x = g_bot_search_xs[state_idx];
-                dirty_target_rotation = g_bot_search_rots[state_idx];
-                dirty_target_last_rotate = last_rotate;
-                dirty_all_clear = all_clear != 0;
-                dirty_score = score;
-                dirty_next_rows = next_garbage_rows;
-                dirty_next_cover = next_garbage_cover;
-                dirty_next_access = next_garbage_access;
-                dirty_next_holes = next_holes;
-                dirty_next_max_h = next_max_h;
-                dirty_proj_rows = proj_rows;
-                dirty_proj_cover = proj_cover;
-                dirty_proj_access = proj_access;
-                dirty_proj_holes = proj_holes;
-                dirty_proj_max_h = proj_max_h;
-                dirty_proj_lines = proj_lines;
-                dirty_proj_score = proj_score;
-                for i32 i = 0; i < BOARD_CELLS; i++ {dirty_board[i] = temp_board[i];}
-            }
         }
     }
 
     if best_state < 0 {return false;}
 
-    bool dig_fallback = false;
-    if dig_mode && best_dig_state >= 0 {
-        bool best_ok = best_garbage_improved;
-        if !best_ok && best_lines > 0 {
-            if best_next_rows <= cur_garbage_rows && best_next_cover <= cur_garbage_cover && best_next_access <= cur_garbage_access && best_next_holes <= cur_holes && best_next_max_h <= cur_max_h {
-                best_ok = true;
-            }
-        }
-        if !best_ok && (best_next_holes < cur_holes || best_next_max_h < cur_max_h) && best_next_rows <= cur_garbage_rows {best_ok = true;}
-        if hard_dig_mode && !best_garbage_improved && best_lines <= 0 {best_ok = false;}
-        if hard_dig_mode && best_next_access >= cur_garbage_access && best_next_cover >= cur_garbage_cover && best_next_holes >= cur_holes {best_ok = false;}
-        if hard_dig_mode && (best_next_holes > cur_holes || best_next_max_h > cur_max_h) {best_ok = false;}
+    bool clean_forced = false;
+    if mode == BOT_MODE_CLEAN && clean_state >= 0 {
+        bool should_force_clean = false;
+        if best_next_holes > cur_holes && clean_next_holes <= cur_holes {should_force_clean = true;}
+        if best_next_holes > clean_next_holes + 1 {should_force_clean = true;}
+        if best_next_max_h > clean_next_max_h + 2 && clean_next_holes <= best_next_holes {should_force_clean = true;}
+        if best_lines == 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 240000 {should_force_clean = true;}
+        if cur_max_h >= 14 && clean_next_max_h < best_next_max_h {should_force_clean = true;}
+        if g_bot_pending_garbage > 0 && clean_next_holes <= best_next_holes && clean_next_max_h <= best_next_max_h {should_force_clean = true;}
+        if cur_max_h >= 12 && clean_next_max_h <= cur_max_h && best_next_max_h > cur_max_h {should_force_clean = true;}
+        if cur_holes > 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 400000 {should_force_clean = true;}
 
-        if !best_ok {
-            dig_fallback = true;
-            best_state = best_dig_state;
-            best_final_y = best_dig_final_y;
-            best_lines = best_dig_lines;
-            best_spin = best_dig_spin;
-            best_action_count = best_dig_action_count;
-            best_target_x = best_dig_target_x;
-            best_target_rotation = best_dig_target_rotation;
-            best_target_last_rotate = best_dig_target_last_rotate;
-            best_all_clear = best_dig_all_clear;
-            best_next_rows = best_dig_next_rows;
-            best_next_cover = best_dig_next_cover;
-            best_next_access = best_dig_next_access;
-            best_next_holes = best_dig_next_holes;
-            best_next_max_h = best_dig_next_max_h;
-            if best_next_rows < cur_garbage_rows || best_next_cover < cur_garbage_cover || best_next_access < cur_garbage_access {
-                best_garbage_improved = true;
-            } else {
-                best_garbage_improved = false;
-            }
-            for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = best_dig_board[i];}
+        if should_force_clean {
+            clean_forced = true;
+            best_state = clean_state;
+            best_final_y = clean_final_y;
+            best_lines = clean_lines;
+            best_spin = clean_spin;
+            best_action_count = clean_action_count;
+            best_target_x = clean_target_x;
+            best_target_rotation = clean_target_rotation;
+            best_target_last_rotate = clean_target_last_rotate;
+            best_all_clear = clean_all_clear;
+            best_score = clean_score;
+            best_next_holes = clean_next_holes;
+            best_next_max_h = clean_next_max_h;
+            for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = clean_board[i];}
         }
-    }
-
-    if hard_dig_mode && safety_state >= 0 {
-        bool force_safety = false;
-        if !best_garbage_improved && best_lines <= 0 {force_safety = true;}
-        if best_next_access > cur_garbage_access {force_safety = true;}
-        if best_next_cover > cur_garbage_cover {force_safety = true;}
-        if best_next_rows > cur_garbage_rows {force_safety = true;}
-        if best_next_holes > cur_holes {force_safety = true;}
-        if best_next_max_h > cur_max_h {force_safety = true;}
-
-        if force_safety {
-            dig_fallback = true;
-            best_state = safety_state;
-            best_final_y = safety_final_y;
-            best_lines = safety_lines;
-            best_spin = safety_spin;
-            best_action_count = safety_action_count;
-            best_target_x = safety_target_x;
-            best_target_rotation = safety_target_rotation;
-            best_target_last_rotate = safety_target_last_rotate;
-            best_all_clear = safety_all_clear;
-            best_next_rows = safety_next_rows;
-            best_next_cover = safety_next_cover;
-            best_next_access = safety_next_access;
-            best_next_holes = safety_next_holes;
-            best_next_max_h = safety_next_max_h;
-            if best_next_rows < cur_garbage_rows || best_next_cover < cur_garbage_cover || best_next_access < cur_garbage_access {
-                best_garbage_improved = true;
-            } else {
-                best_garbage_improved = false;
-            }
-            for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = safety_board[i];}
-        }
-    }
-
-    if dig_mode && dirty_state >= 0 {
-        dig_fallback = true;
-        best_state = dirty_state;
-        best_final_y = dirty_final_y;
-        best_lines = dirty_lines;
-        best_spin = dirty_spin;
-        best_action_count = dirty_action_count;
-        best_target_x = dirty_target_x;
-        best_target_rotation = dirty_target_rotation;
-        best_target_last_rotate = dirty_target_last_rotate;
-        best_all_clear = dirty_all_clear;
-        best_score = dirty_score;
-        best_next_rows = dirty_next_rows;
-        best_next_cover = dirty_next_cover;
-        best_next_access = dirty_next_access;
-        best_next_holes = dirty_next_holes;
-        best_next_max_h = dirty_next_max_h;
-        if best_next_rows < cur_garbage_rows || best_next_cover < cur_garbage_cover || best_next_access < cur_garbage_access {
-            best_garbage_improved = true;
-        } else {
-            best_garbage_improved = false;
-        }
-        for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = dirty_board[i];}
     }
 
     for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_planned_board[i] = best_board[i];}
@@ -3172,53 +2925,48 @@ fun botPlanExactPath(lookahead_count: i32) >> bool {
     g_bot_plan_actions[plan_write] = BOT_ACTION_DROP;
     g_bot.target_valid = true;
     g_bot.target_tspin = best_spin != 0;
-    aiLog(TextFormat(" exact plan x=%i rot=%i y=%i steps=%i lines=%i score=%i spin=%i states=%i landings=%i dig_fallback=%i", g_bot.target_x, g_bot.target_rotation, best_final_y, g_bot_plan_len, best_lines, best_score, best_spin, count, landing_count, dig_fallback as i32));
+    g_bot_plan_pending_snapshot = g_bot_pending_garbage;
+    aiLog(TextFormat(" exact plan x=%i rot=%i y=%i steps=%i lines=%i score=%i spin=%i states=%i landings=%i mode=%i budget=%i clean_forced=%i nh=%i", g_bot.target_x, g_bot.target_rotation, best_final_y, g_bot_plan_len, best_lines, best_score, best_spin, count, landing_count, mode, action_budget, clean_forced as i32, best_next_holes));
     return true;
 }
 
 fun botPlanMove() >> bool {
+    if g_bot_pending_garbage > 0 {
+        insertGarbageIntoBot(g_bot_pending_garbage);
+        if g_bot.game_over {return false;}
+        g_bot_pending_garbage = 0;
+    }
+
     i32 max_h = 0;
     i32 holes = 0;
     i32 garbage_rows = 0;
     i32 garbage_cover = 0;
-    boardStackStats(&g_bot_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
-    i32 garbage_access = boardGarbageAccessScore(&g_bot_board[0]);
+    aiBoardStackStats(&g_bot_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_bot_board[0]);
+
+    i32 mode = aiBotChooseMode(max_h, holes, garbage_rows, garbage_cover, garbage_access, 0);
 
     i32 lookahead_count = g_bot.queue_count;
     if lookahead_count < 0 {lookahead_count = 0;}
 
-    bool emergency = max_h >= 19 || g_bot_pending_garbage >= 8;
-    if holes >= 12 && max_h >= 15 {emergency = true;}
-    if g_bot_setup.high_stack_tolerance && max_h >= 21 {emergency = true;}
-    if garbage_rows >= 5 {emergency = true;}
-    if garbage_rows >= 4 && garbage_cover >= 12 {emergency = true;}
-    if garbage_rows >= 4 && garbage_access >= 12 {emergency = true;}
-    if garbage_rows >= 3 && max_h >= 16 {emergency = true;}
-    if garbage_rows > 0 && holes >= 10 && max_h >= 14 {emergency = true;}
-    if garbage_rows > 0 && g_bot_pending_garbage > 0 && max_h >= 15 {emergency = true;}
-    bool garbage_clear_phase = garbage_rows > 0 && (garbage_access >= 10 || garbage_cover > 0 || holes >= 4);
-
-    if garbage_rows > 0 {
-        if emergency {
-            if lookahead_count > 2 {lookahead_count = 2;}
-        } else if garbage_clear_phase {
-            if lookahead_count > 4 {lookahead_count = 4;}
-        } else if lookahead_count > 3 {
-            lookahead_count = 3;
-        }
-
+    if mode == BOT_MODE_CLEAN {
+        if lookahead_count > 6 {lookahead_count = 6;}
         if lookahead_count < 2 {lookahead_count = 2;}
-
-        if max_h >= 21 || holes >= 13 {
-            if lookahead_count > 1 {lookahead_count = 1;}
-        }
+        if max_h >= 14 {lookahead_count = minI(lookahead_count, 4);}
+    } else if mode == BOT_MODE_DIG {
+        if lookahead_count > 4 {lookahead_count = 4;}
+        if lookahead_count < 2 {lookahead_count = 2;}
+        if max_h >= 18 || holes >= 11 {lookahead_count = 1;}
+    } else {
+        if lookahead_count > 2 {lookahead_count = 2;}
+        if lookahead_count < 1 {lookahead_count = 1;}
     }
 
-    if max_h >= 22 && holes >= 15 {lookahead_count = 0;}
+    if max_h >= 22 && holes >= 15 {lookahead_count = 1;}
 
-    aiLog(TextFormat("plan kind=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i pending=%i emergency=%i clear_phase=%i lookahead=%i", g_bot.piece_kind, max_h, holes, garbage_rows, garbage_cover, garbage_access, g_bot_pending_garbage, emergency as i32, garbage_clear_phase as i32, lookahead_count));
+    aiLog(TextFormat("plan kind=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i mode=%i lookahead=%i", g_bot.piece_kind, max_h, holes, garbage_rows, garbage_cover, garbage_access, mode, lookahead_count));
 
-    return botPlanExactPath(lookahead_count);
+    return botPlanExactPath(lookahead_count, mode);
 }
 
 fun botRotationDelta(target: i32) >> i32 {
@@ -3231,6 +2979,13 @@ fun botRotationDelta(target: i32) >> i32 {
 }
 
 fun botPerformPlannedAction() >> bool {
+    if g_bot.target_valid && g_bot_plan_index < g_bot_plan_len && g_bot_plan_pending_snapshot != g_bot_pending_garbage {
+        aiLog(TextFormat(" replan trigger pending changed old=%i new=%i", g_bot_plan_pending_snapshot, g_bot_pending_garbage));
+        g_bot.target_valid = false;
+        g_bot_plan_len = 0;
+        g_bot_plan_index = 0;
+    }
+
     if !g_bot.target_valid || g_bot_plan_index >= g_bot_plan_len {
         if !botPlanMove() {return false;}
     }
@@ -3462,6 +3217,15 @@ fun stepLock() >> void {
     bool mini = false;
     if spin && lines_cleared <= 1 && g_rt.last_rotate_kick_test == 0 {mini = true;}
     bool all_clear = lines_cleared > 0 && boardIsEmpty();
+    if isFreePlayMode() {
+        i32 max_h = 0;
+        i32 holes = 0;
+        i32 garbage_rows = 0;
+        i32 garbage_cover = 0;
+        aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+        i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+        aiLog(TextFormat("fp lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i total_lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_piece_x, g_piece_rotation, lines_cleared, spin as i32, all_clear as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
+    }
     if lines_cleared > 0 {kickBoardShake(lineClearShakeAmp(lines_cleared), 0.11);}
     applyLockScore(lines_cleared, spin, mini, all_clear);
     if (isFortyLinesMode() && g_play.round_state == ROUND_RUNNING && g_play.lines >= 40) {
@@ -3651,11 +3415,159 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
     drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
 }
 
+fun arenaBoardPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_board[0];}
+    return &g_bot_arena_right_board[0];
+}
+
+fun arenaQueuePtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_queue[0];}
+    return &g_bot_arena_right_queue[0];
+}
+
+fun arenaBagPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_bag[0];}
+    return &g_bot_arena_right_bag[0];
+}
+
+fun arenaPlanActionsPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_plan_actions[0];}
+    return &g_bot_arena_right_plan_actions[0];
+}
+
+fun arenaPlannedBoardPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_planned_board[0];}
+    return &g_bot_arena_right_planned_board[0];
+}
+
+fun arenaTuningPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_tuning[0];}
+    return &g_bot_arena_right_tuning[0];
+}
+
+fun arenaBoardCell(side: i32, x: i32, y: i32) >> i32 {
+    ptr<i32> board = arenaBoardPtr(side);
+    return board[boardIndex(x, y)];
+}
+
+fun arenaSideApm(side: i32) >> f32 {
+    if g_rt.run_timer <= 0.001 {return 0.0;}
+    if side == BOT_ARENA_LEFT {return ((g_bot_arena_left.runtime.attack_sent as f32) * 60.0) / g_rt.run_timer;}
+    return ((g_bot_arena_right.runtime.attack_sent as f32) * 60.0) / g_rt.run_timer;
+}
+
+fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_y: i64, label: ptr<u8>, champion: bool) >> void {
+    BotArenaSide state = g_bot_arena_left;
+    if side == BOT_ARENA_RIGHT {state = g_bot_arena_right;}
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+
+    drawHighStackSpawnZone(theme, board_x, board_y);
+    fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
+    if champion {strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, pieceColor(theme, PIECE_I));}
+    else {strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);}
+    drawTextColor(font, label, board_x + 72, board_y - 42, 16, theme.text_main);
+    drawTextColor(font, TextFormat("GEN %i", state.generation), board_x + 90, board_y - 22, 10, theme.text_muted);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i64 sx = board_x + (x as i64) * (CELL as i64);
+            i64 sy = boardScreenY(board_y, y as i64);
+            strokeRect(sx, sy, CELL, CELL, theme.board_grid);
+
+            i32 cell = arenaBoardCell(side, x, y);
+            if cell == 8 {
+                drawCell(sx, sy, garbageCellColor(theme));
+            } else if cell != 0 {
+                drawCell(sx, sy, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !state.runtime.game_over {
+        drawPieceAtBoard(state.runtime.piece_kind, state.runtime.piece_rotation, state.runtime.piece_x as i64, state.runtime.piece_y as i64, board_x, board_y, pieceColor(theme, state.runtime.piece_kind));
+    }
+
+    drawTextColor(font, TextFormat("APM %.1f / %.1f", arenaSideApm(side), state.setup.target_apm), board_x + 26, board_y + board_h + 14, 10, theme.panel_stroke);
+    drawTextColor(font, TextFormat("LINES %i", state.runtime.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+    drawTextColor(font, TextFormat("MESS %.0f%%", state.setup.garbage_messiness), board_x + 20, board_y + board_h + 34, 10, theme.text_muted);
+}
+
+fun drawBotDuelsFrame(font: Font) >> void {
+    Theme theme = currentTheme();
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBackgroundStars(theme);
+
+    if !canOpenBotSetupUi() {
+        drawBotWidthPopup(font, theme, true);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    i64 board_y = BOT_BOARD_TOP;
+    if duelShowsHighStackArea() {board_y += HIGH_STACK_BOARD_SHIFT;}
+
+    drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CHAMPION", true);
+    if g_bot_arena.compare_stock || g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);} else {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "CHALLENGER", false);}
+
+    i64 panel_x = vsBotCenterPanelX();
+    fillRect(panel_x, 120, 178, 510, theme.panel_bg);
+    strokeRect(panel_x, 120, 178, 510, theme.panel_stroke);
+    drawTextColor(font, "BOT DUELS", panel_x + 20, 150, 14, theme.text_main);
+    if g_bot_arena.compare_stock {
+        drawTextColor(font, "MODE CHAMP VS STOCK", panel_x + 20, 184, 12, theme.panel_stroke);
+    } else if g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        drawTextColor(font, TextFormat("GEN %i STOCK GATE", g_bot_arena.total_matches + 1), panel_x + 20, 184, 12, theme.panel_stroke);
+    } else {
+        drawTextColor(font, TextFormat("GEN %i CHALLENGER", g_bot_arena.total_matches + 1), panel_x + 20, 184, 12, theme.panel_stroke);
+    }
+    drawTextColor(font, TextFormat("CHAMP GEN %i", g_bot_arena.champion_generation), panel_x + 20, 216, 11, theme.text_main);
+    drawTextColor(font, TextFormat("STREAK %i", g_bot_arena.champion_wins), panel_x + 20, 238, 11, theme.text_main);
+    drawTextColor(font, "APM FIXED 300", panel_x + 20, 272, 11, theme.text_muted);
+    drawTextColor(font, "MUTATING AI WEIGHTS", panel_x + 20, 294, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("GENES %i", AI_TUNE_COUNT), panel_x + 20, 316, 11, theme.text_muted);
+
+    if g_bot_arena.compare_stock {
+        i32 stock_total = g_bot_arena.compare_stock_wins + g_bot_arena.compare_stock_losses;
+        f32 stock_wr = 0.0;
+        if stock_total > 0 {stock_wr = ((g_bot_arena.compare_stock_wins as f32) * 100.0) / (stock_total as f32);}
+        drawTextColor(font, TextFormat("WR %.1f%%", stock_wr), panel_x + 20, 360, 11, theme.text_main);
+        drawTextColor(font, TextFormat("W %i  L %i", g_bot_arena.compare_stock_wins, g_bot_arena.compare_stock_losses), panel_x + 20, 382, 11, theme.panel_stroke);
+    } else {
+        if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+            if g_bot_arena.champion_generation < 5 {
+                drawTextColor(font, TextFormat("CHAMP %i/7", g_bot_arena.generation_round + 1), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("TOTAL %i-%i", g_bot_arena.generation_right_wins, g_bot_arena.generation_left_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+            } else {
+                drawTextColor(font, TextFormat("CHAMP %i/4", g_bot_arena.generation_round + 1), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("CH %i  CL %i", g_bot_arena.generation_left_wins, g_bot_arena.generation_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+            }
+        } else {
+            drawTextColor(font, TextFormat("STOCK %i/4", g_bot_arena.stock_round + 1), panel_x + 20, 360, 11, theme.text_main);
+            drawTextColor(font, TextFormat("CH %i  CL %i", g_bot_arena.stock_left_wins, g_bot_arena.stock_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+        }
+    }
+    drawTextColor(font, TextFormat("LAST WIN %i", g_bot_arena.last_winner_generation), panel_x + 20, 414, 11, theme.text_main);
+    if g_bot_arena.last_winner_side == 1 {drawTextColor(font, "SIDE CHAMPION", panel_x + 20, 436, 11, theme.panel_stroke);}
+    else if g_bot_arena.last_winner_side == 2 {
+        if g_bot_arena.compare_stock {drawTextColor(font, "SIDE STOCK", panel_x + 20, 436, 11, theme.panel_stroke);} else {drawTextColor(font, "SIDE CLONE", panel_x + 20, 436, 11, theme.panel_stroke);}
+    }
+
+    drawTextColor(font, TextFormat("SIM x%i", BOT_DUELS_SIM_STEPS), panel_x + 20, 474, 11, theme.text_main);
+    drawTextColor(font, "Saved to bot_duels.cfg", panel_x + 20, 504, 10, theme.text_muted);
+    drawTextColor(font, "1 toggle stock test", panel_x + 20, 526, 10, theme.text_muted);
+    drawTextColor(font, "ESC menu", panel_x + 20, 580, 11, theme.text_muted);
+
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
+}
+
 fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
 
-    fillRect(126, 128, 396, 560, alphaColor(theme.bg_outer, 0.90));
-    strokeRect(126, 128, 396, 560, alphaColor(theme.panel_stroke, 0.88));
+    i64 panel_h = 560;
+    if BOTDEVMODE {panel_h = 636;}
+    fillRect(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90));
+    strokeRect(126, 128, 396, panel_h, alphaColor(theme.panel_stroke, 0.88));
     drawTextColor(font, "AGAINST BOT", 176, 164, 28, theme.text_main);
     drawTextColor(font, "Duel setup", 176, 202, 12, theme.text_muted);
 
@@ -3673,7 +3585,9 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
 
     i64 row_y0 = 270;
     i64 row_h = 76;
-    for i32 i = 0; i < 5; i++ {
+    i32 row_count = 5;
+    if BOTDEVMODE {row_count = 6;}
+    for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         u32 bg = alphaColor(theme.panel_bg, 0.88);
         u32 st = alphaColor(theme.panel_stroke, 0.55);
@@ -3703,10 +3617,18 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     fillRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
     strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
     drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
-    if g_bot_setup.high_stack_tolerance {drawTextColor(font, "ON", 440, 438, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 432, 438, 13, theme.text_muted);}
-    drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
-    drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
-    drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 634, 10, theme.text_muted);
+    drawTextColor(font, "DISABLED", 384, 438, 13, theme.text_muted);
+    if BOTDEVMODE {
+        drawTextColor(font, "Weights", 176, 514, 13, theme.text_main);
+        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
+        drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 710, 10, theme.text_muted);
+    } else {
+        drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 634, 10, theme.text_muted);
+    }
 }
 
 fun clampBotTargetApm() >> void {
@@ -3749,6 +3671,8 @@ fun pointInBaseRectLocal(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bo
 fun initBotSetupDefaults() >> void {
     if g_bot_setup.target_apm < 1.0 {g_bot_setup.target_apm = 65.0;}
     if g_bot_setup.garbage_messiness < 0.5 {g_bot_setup.garbage_messiness = 35.0;}
+    g_bot_setup.high_stack_tolerance = false;
+    g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;
     clampBotTargetApm();
     clampBotGarbageMessiness();
     g_bot_setup.index = 0;
@@ -3759,6 +3683,439 @@ fun startBotDuel() >> void {
     startGameMode(MODE_VS_BOT);
 }
 
+fun initBotArenaSide(side: i32, setup: BotSetupState, generation: i32) >> void {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    g_bot_setup = setup;
+    initBotMatch();
+
+    if side == BOT_ARENA_LEFT {
+        g_bot_arena_left.setup = setup;
+        g_bot_arena_left.generation = generation;
+        g_bot_arena_left.runtime = g_bot;
+        g_bot_arena_left.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_left.plan_len = g_bot_plan_len;
+        g_bot_arena_left.plan_index = g_bot_plan_index;
+        g_bot_arena_left.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_left.planned_lines = g_bot_planned_lines;
+        g_bot_arena_left.planned_spin = g_bot_planned_spin;
+        g_bot_arena_left.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_left.garbage_hole = g_bot_garbage_hole;
+    } else {
+        g_bot_arena_right.setup = setup;
+        g_bot_arena_right.generation = generation;
+        g_bot_arena_right.runtime = g_bot;
+        g_bot_arena_right.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_right.plan_len = g_bot_plan_len;
+        g_bot_arena_right.plan_index = g_bot_plan_index;
+        g_bot_arena_right.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_right.planned_lines = g_bot_planned_lines;
+        g_bot_arena_right.planned_spin = g_bot_planned_spin;
+        g_bot_arena_right.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_right.garbage_hole = g_bot_garbage_hole;
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        board[i] = g_bot_board[i];
+        planned_board[i] = g_bot_planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {queue[i] = g_bot_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {bag[i] = g_bot_bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {plan_actions[i] = g_bot_plan_actions[i];}
+}
+
+fun loadBotArenaSideIntoScratch(side: i32, opponent_pending: i32) >> void {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    if side == BOT_ARENA_LEFT {
+        g_bot_setup = g_bot_arena_left.setup;
+        g_bot = g_bot_arena_left.runtime;
+        g_bot.pending_garbage = g_bot_arena_left.runtime.pending_garbage;
+        g_bot_pending_garbage = g_bot_arena_left.runtime.pending_garbage;
+        g_bot_plan_len = g_bot_arena_left.plan_len;
+        g_bot_plan_index = g_bot_arena_left.plan_index;
+        g_bot_plan_pending_snapshot = g_bot_arena_left.plan_pending_snapshot;
+        g_bot_planned_lines = g_bot_arena_left.planned_lines;
+        g_bot_planned_spin = g_bot_arena_left.planned_spin;
+        g_bot_planned_all_clear = g_bot_arena_left.planned_all_clear;
+        g_bot_garbage_hole = g_bot_arena_left.garbage_hole;
+    } else {
+        g_bot_setup = g_bot_arena_right.setup;
+        g_bot = g_bot_arena_right.runtime;
+        g_bot.pending_garbage = g_bot_arena_right.runtime.pending_garbage;
+        g_bot_pending_garbage = g_bot_arena_right.runtime.pending_garbage;
+        g_bot_plan_len = g_bot_arena_right.plan_len;
+        g_bot_plan_index = g_bot_arena_right.plan_index;
+        g_bot_plan_pending_snapshot = g_bot_arena_right.plan_pending_snapshot;
+        g_bot_planned_lines = g_bot_arena_right.planned_lines;
+        g_bot_planned_spin = g_bot_arena_right.planned_spin;
+        g_bot_planned_all_clear = g_bot_arena_right.planned_all_clear;
+        g_bot_garbage_hole = g_bot_arena_right.garbage_hole;
+    }
+    g_player_pending_garbage = opponent_pending;
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        g_bot_board[i] = board[i];
+        g_bot_planned_board[i] = planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {g_bot_queue[i] = queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {g_bot_bag[i] = bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {g_bot_plan_actions[i] = plan_actions[i];}
+}
+
+fun saveScratchIntoBotArenaSide(side: i32) >> i32 {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    if side == BOT_ARENA_LEFT {
+        g_bot_arena_left.setup = g_bot_setup;
+        g_bot_arena_left.runtime = g_bot;
+        g_bot_arena_left.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_left.plan_len = g_bot_plan_len;
+        g_bot_arena_left.plan_index = g_bot_plan_index;
+        g_bot_arena_left.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_left.planned_lines = g_bot_planned_lines;
+        g_bot_arena_left.planned_spin = g_bot_planned_spin;
+        g_bot_arena_left.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_left.garbage_hole = g_bot_garbage_hole;
+    } else {
+        g_bot_arena_right.setup = g_bot_setup;
+        g_bot_arena_right.runtime = g_bot;
+        g_bot_arena_right.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_right.plan_len = g_bot_plan_len;
+        g_bot_arena_right.plan_index = g_bot_plan_index;
+        g_bot_arena_right.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_right.planned_lines = g_bot_planned_lines;
+        g_bot_arena_right.planned_spin = g_bot_planned_spin;
+        g_bot_arena_right.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_right.garbage_hole = g_bot_garbage_hole;
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        board[i] = g_bot_board[i];
+        planned_board[i] = g_bot_planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {queue[i] = g_bot_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {bag[i] = g_bot_bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {plan_actions[i] = g_bot_plan_actions[i];}
+
+    return g_player_pending_garbage;
+}
+
+fun syncBotArenaOpeningSequence(dst: i32, src: i32) >> void {
+    ptr<i32> dst_queue = arenaQueuePtr(dst);
+    ptr<i32> src_queue = arenaQueuePtr(src);
+    ptr<i32> dst_bag = arenaBagPtr(dst);
+    ptr<i32> src_bag = arenaBagPtr(src);
+    i32 src_queue_count = g_bot_arena_left.runtime.queue_count;
+    i32 src_bag_pos = g_bot_arena_left.runtime.bag_pos;
+    i32 src_piece_kind = g_bot_arena_left.runtime.piece_kind;
+    if src == BOT_ARENA_RIGHT {
+        src_queue_count = g_bot_arena_right.runtime.queue_count;
+        src_bag_pos = g_bot_arena_right.runtime.bag_pos;
+        src_piece_kind = g_bot_arena_right.runtime.piece_kind;
+    }
+
+    if dst == BOT_ARENA_LEFT {
+        g_bot_arena_left.runtime.queue_count = src_queue_count;
+        g_bot_arena_left.runtime.bag_pos = src_bag_pos;
+        g_bot_arena_left.runtime.piece_kind = src_piece_kind;
+        g_bot_arena_left.runtime.piece_rotation = 0;
+        g_bot_arena_left.runtime.piece_x = 3;
+        g_bot_arena_left.runtime.piece_y = 0;
+        g_bot_arena_left.runtime.target_x = 3;
+        g_bot_arena_left.runtime.target_y = 0;
+        g_bot_arena_left.runtime.target_rotation = 0;
+        g_bot_arena_left.runtime.target_valid = false;
+        g_bot_arena_left.runtime.target_last_rotate = false;
+        g_bot_arena_left.runtime.target_tspin = false;
+        g_bot_arena_left.plan_len = 0;
+        g_bot_arena_left.plan_index = 0;
+        g_bot_arena_left.plan_pending_snapshot = 0;
+    } else {
+        g_bot_arena_right.runtime.queue_count = src_queue_count;
+        g_bot_arena_right.runtime.bag_pos = src_bag_pos;
+        g_bot_arena_right.runtime.piece_kind = src_piece_kind;
+        g_bot_arena_right.runtime.piece_rotation = 0;
+        g_bot_arena_right.runtime.piece_x = 3;
+        g_bot_arena_right.runtime.piece_y = 0;
+        g_bot_arena_right.runtime.target_x = 3;
+        g_bot_arena_right.runtime.target_y = 0;
+        g_bot_arena_right.runtime.target_rotation = 0;
+        g_bot_arena_right.runtime.target_valid = false;
+        g_bot_arena_right.runtime.target_last_rotate = false;
+        g_bot_arena_right.runtime.target_tspin = false;
+        g_bot_arena_right.plan_len = 0;
+        g_bot_arena_right.plan_index = 0;
+        g_bot_arena_right.plan_pending_snapshot = 0;
+    }
+
+    for i32 i = 0; i < QUEUE_CAP; i++ {dst_queue[i] = src_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {dst_bag[i] = src_bag[i];}
+}
+
+fun initBotArenaRound() >> void {
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+
+    bool fresh_generation = g_bot_arena.generation_round == 0;
+    BotSetupState challenger_setup = g_bot_arena_right.setup;
+    i32 challenger_generation = g_bot_arena_right.generation;
+
+    if fresh_generation {
+        challenger_setup = mutateArenaSetup(g_bot_arena.champion_setup, g_bot_arena.total_matches);
+        challenger_generation = g_bot_arena.total_matches + 1;
+        if challenger_generation <= g_bot_arena.champion_generation {challenger_generation = g_bot_arena.champion_generation + 1;}
+
+        copyI32Array(&g_bot_arena_left_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+        if g_bot_arena.compare_stock || g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+            aiFillDefaultTuning(&g_bot_arena_right_tuning[0]);
+            challenger_setup = defaultArenaChampionSetup();
+            challenger_generation = 0;
+        } else {
+            mutateArenaTuning(&g_bot_arena_champion_tuning[0], g_bot_arena.total_matches, &g_bot_arena_right_tuning[0]);
+        }
+
+        if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+            g_bot_arena.candidate_setup = challenger_setup;
+            g_bot_arena.candidate_generation = challenger_generation;
+            copyI32Array(&g_bot_arena_candidate_tuning[0], &g_bot_arena_right_tuning[0], AI_TUNE_COUNT);
+        }
+    }
+
+    initBotArenaSide(BOT_ARENA_LEFT, g_bot_arena.champion_setup, g_bot_arena.champion_generation);
+    initBotArenaSide(BOT_ARENA_RIGHT, challenger_setup, challenger_generation);
+    syncBotArenaOpeningSequence(BOT_ARENA_RIGHT, BOT_ARENA_LEFT);
+
+    g_rt.run_timer = 0.0;
+    g_duel_running = true;
+    g_duel_result = DUEL_RESULT_PLAYING;
+}
+
+fun resolveBotArenaMatch(winner_side: i32) >> void {
+    if g_bot_arena.compare_stock {
+        g_bot_arena.last_winner_side = winner_side;
+        if winner_side == 1 {g_bot_arena.last_winner_generation = g_bot_arena_left.generation;}
+        else {g_bot_arena.last_winner_generation = 0;}
+        if winner_side == 1 {g_bot_arena.compare_stock_wins += 1;} else {g_bot_arena.compare_stock_losses += 1;}
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.generation_round += 1;
+    if winner_side == 1 {g_bot_arena.generation_left_wins += 1;} else {g_bot_arena.generation_right_wins += 1;}
+    bool early_relaxed_gate = g_bot_arena.champion_generation < 5;
+
+    if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+        bool champion_stage_done = false;
+        if early_relaxed_gate {
+            if g_bot_arena.generation_right_wins >= 5 {champion_stage_done = true;}
+            if g_bot_arena.generation_left_wins >= 2 {champion_stage_done = true;}
+            if g_bot_arena.generation_round >= 7 {champion_stage_done = true;}
+        } else {
+            if g_bot_arena.generation_right_wins >= 3 {champion_stage_done = true;}
+            if g_bot_arena.generation_left_wins >= 2 {champion_stage_done = true;}
+            if g_bot_arena.generation_round >= 4 {champion_stage_done = true;}
+        }
+
+        if !champion_stage_done {
+            initBotArenaRound();
+            return;
+        }
+
+        bool challenger_passed_champion_gate = false;
+        if early_relaxed_gate {
+            challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= 5 && g_bot_arena.generation_left_wins <= 2;
+        } else {
+            challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= 3;
+        }
+
+        if challenger_passed_champion_gate {
+            if early_relaxed_gate {
+                g_bot_arena.total_matches += 1;
+                g_bot_arena.last_winner_side = 2;
+                g_bot_arena.champion_setup = g_bot_arena.candidate_setup;
+                g_bot_arena.champion_generation = g_bot_arena.candidate_generation;
+                g_bot_arena.champion_wins = 1;
+                g_bot_arena.last_winner_generation = g_bot_arena.candidate_generation;
+                copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
+                g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+                g_bot_arena.generation_round = 0;
+                g_bot_arena.generation_left_wins = 0;
+                g_bot_arena.generation_right_wins = 0;
+                g_bot_arena.stock_round = 0;
+                g_bot_arena.stock_left_wins = 0;
+                g_bot_arena.stock_right_wins = 0;
+                g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+                saveBotDuelsFile();
+                initBotArenaRound();
+                return;
+            }
+            g_bot_arena.generation_stage = BOT_ARENA_STAGE_STOCK;
+            g_bot_arena.stock_round = 0;
+            g_bot_arena.stock_left_wins = 0;
+            g_bot_arena.stock_right_wins = 0;
+            g_bot_arena.generation_round = 0;
+            g_bot_arena.generation_left_wins = 0;
+            g_bot_arena.generation_right_wins = 0;
+            initBotArenaRound();
+            return;
+        }
+
+        g_bot_arena.total_matches += 1;
+        g_bot_arena.last_winner_side = 1;
+        g_bot_arena.champion_setup = g_bot_arena_left.setup;
+        g_bot_arena.champion_generation = g_bot_arena_left.generation;
+        g_bot_arena.champion_wins += 1;
+        g_bot_arena.last_winner_generation = g_bot_arena_left.generation;
+        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_left_tuning[0], AI_TUNE_COUNT);
+        g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        g_bot_arena.stock_round = 0;
+        g_bot_arena.stock_left_wins = 0;
+        g_bot_arena.stock_right_wins = 0;
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        saveBotDuelsFile();
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.stock_round += 1;
+    if winner_side == 1 {g_bot_arena.stock_left_wins += 1;} else {g_bot_arena.stock_right_wins += 1;}
+
+    bool stock_stage_done = false;
+    if g_bot_arena.stock_right_wins >= 3 {stock_stage_done = true;}
+    if g_bot_arena.stock_left_wins >= 2 {stock_stage_done = true;}
+    if g_bot_arena.stock_round >= 4 {stock_stage_done = true;}
+
+    if !stock_stage_done {
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.total_matches += 1;
+    bool challenger_passed_stock_gate = false;
+    if early_relaxed_gate {
+        i32 total_left_wins = g_bot_arena.generation_left_wins + g_bot_arena.stock_left_wins;
+        i32 total_right_wins = g_bot_arena.generation_right_wins + g_bot_arena.stock_right_wins;
+        challenger_passed_stock_gate = total_right_wins >= 5 && total_left_wins <= 2;
+    } else {
+        challenger_passed_stock_gate = g_bot_arena.stock_right_wins >= 3;
+    }
+
+    if challenger_passed_stock_gate {
+        g_bot_arena.last_winner_side = 2;
+        g_bot_arena.champion_setup = g_bot_arena.candidate_setup;
+        g_bot_arena.champion_generation = g_bot_arena.candidate_generation;
+        g_bot_arena.champion_wins = 1;
+        g_bot_arena.last_winner_generation = g_bot_arena.candidate_generation;
+        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
+    } else {
+        g_bot_arena.last_winner_side = 1;
+        g_bot_arena.champion_setup = g_bot_arena_left.setup;
+        g_bot_arena.champion_generation = g_bot_arena_left.generation;
+        g_bot_arena.champion_wins += 1;
+        g_bot_arena.last_winner_generation = g_bot_arena_left.generation;
+        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_left_tuning[0], AI_TUNE_COUNT);
+    }
+
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+    saveBotDuelsFile();
+    initBotArenaRound();
+}
+
+fun startBotDuelsMode() >> void {
+    if !BOTDEVMODE {return;}
+    g_game = g_game.with_screen(SCREEN_GAME);
+    startGameMode(MODE_BOT_DUELS);
+}
+
+fun updateBotArenaSide(side: i32, opponent: i32, dt: f32) >> void {
+    i32 opponent_pending = g_bot_arena_left.runtime.pending_garbage;
+    if opponent == BOT_ARENA_RIGHT {opponent_pending = g_bot_arena_right.runtime.pending_garbage;}
+    applyAiTuning(arenaTuningPtr(side));
+    loadBotArenaSideIntoScratch(side, opponent_pending);
+
+    g_bot.place_meter += dt * botActionRate();
+    if g_bot.place_meter > 12.0 {g_bot.place_meter = 12.0;}
+
+    for (g_bot.place_meter >= 1.0) {
+        g_bot.place_meter -= 1.0;
+
+        if !botPerformPlannedAction() {
+            g_bot.game_over = true;
+            break;
+        }
+        g_bot.actions_taken += 1;
+        if g_bot.game_over {break;}
+    }
+
+    if opponent == BOT_ARENA_LEFT {g_bot_arena_left.runtime.pending_garbage = saveScratchIntoBotArenaSide(side);}
+    else {g_bot_arena_right.runtime.pending_garbage = saveScratchIntoBotArenaSide(side);}
+}
+
+fun updateBotDuelsMode(dt: f32) >> void {
+    if IsKeyPressed(KEY_ONE) {
+        g_bot_arena.compare_stock = !g_bot_arena.compare_stock;
+        g_bot_arena.last_winner_side = 0;
+        g_bot_arena.last_winner_generation = 0;
+        g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        g_bot_arena.stock_round = 0;
+        g_bot_arena.stock_left_wins = 0;
+        g_bot_arena.stock_right_wins = 0;
+        if g_bot_arena.compare_stock {
+            g_bot_arena.compare_stock_wins = 0;
+            g_bot_arena.compare_stock_losses = 0;
+        }
+        initBotArenaRound();
+        return;
+    }
+
+    if !g_duel_running {return;}
+
+    for i32 step = 0; step < BOT_DUELS_SIM_STEPS; step++ {
+        if !g_duel_running {break;}
+
+        g_rt.run_timer += dt;
+
+        if !g_bot_arena_left.runtime.game_over {updateBotArenaSide(BOT_ARENA_LEFT, BOT_ARENA_RIGHT, dt);}
+        if g_bot_arena_right.runtime.game_over {
+            g_duel_running = false;
+            resolveBotArenaMatch(1);
+            break;
+        }
+
+        if !g_bot_arena_right.runtime.game_over {updateBotArenaSide(BOT_ARENA_RIGHT, BOT_ARENA_LEFT, dt);}
+        if g_bot_arena_left.runtime.game_over {
+            g_duel_running = false;
+            resolveBotArenaMatch(2);
+            break;
+        }
+    }
+}
+
 fun updateBotSetupScreen() >> void {
     if IsKeyPressed(KEY_ESCAPE) {
         g_game = g_game.with_screen(SCREEN_MENU);
@@ -3767,13 +4124,16 @@ fun updateBotSetupScreen() >> void {
 
     if !canOpenBotSetupUi() {return;}
 
+    i32 max_index = 4;
+    if BOTDEVMODE {max_index = 5;}
+
     if IsKeyPressed(KEY_UP) {
         g_bot_setup.index -= 1;
-        if g_bot_setup.index < 0 {g_bot_setup.index = 4;}
+        if g_bot_setup.index < 0 {g_bot_setup.index = max_index;}
     }
     if IsKeyPressed(KEY_DOWN) {
         g_bot_setup.index += 1;
-        if g_bot_setup.index > 4 {g_bot_setup.index = 0;}
+        if g_bot_setup.index > max_index {g_bot_setup.index = 0;}
     }
 
     i64 slider_x = 176;
@@ -3785,7 +4145,9 @@ fun updateBotSetupScreen() >> void {
     i64 row_h = 76;
     f32 mx = mouseBaseX();
     f32 my = mouseBaseY();
-    for i32 i = 0; i < 5; i++ {
+    i32 row_count = 5;
+    if BOTDEVMODE {row_count = 6;}
+    for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         if pointInBaseRectLocal(mx, my, row_x, y, row_w, 58) {g_bot_setup.index = i;}
     }
@@ -3801,9 +4163,18 @@ fun updateBotSetupScreen() >> void {
         g_bot_setup.garbage_messiness = ((mx - (slider_x as f32)) / (slider_w as f32)) * 100.0;
         clampBotGarbageMessiness();
     }
-    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * 2, row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_bot_setup.high_stack_tolerance = !g_bot_setup.high_stack_tolerance;}
-    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * 3, row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {startBotDuel(); return;}
-    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * 4, row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_game = g_game.with_screen(SCREEN_MENU); return;}
+    i32 start_row = 3;
+    i32 back_row = 4;
+    if BOTDEVMODE {
+        start_row = 4;
+        back_row = 5;
+        if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (3 as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
+    }
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (start_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {startBotDuel(); return;}
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (back_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_game = g_game.with_screen(SCREEN_MENU); return;}
+    g_bot_setup.high_stack_tolerance = false;
 
     if g_bot_setup.index == 0 {
         if IsKeyPressed(KEY_LEFT) {g_bot_setup.target_apm -= 5.0;}
@@ -3813,14 +4184,18 @@ fun updateBotSetupScreen() >> void {
         if IsKeyPressed(KEY_LEFT) {g_bot_setup.garbage_messiness -= 5.0;}
         if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_messiness += 5.0;}
         clampBotGarbageMessiness();
-    } else if g_bot_setup.index == 2 {
-        if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {g_bot_setup.high_stack_tolerance = !g_bot_setup.high_stack_tolerance;}
+    } else if BOTDEVMODE && g_bot_setup.index == 3 {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-        if g_bot_setup.index == 2 {g_bot_setup.high_stack_tolerance = !g_bot_setup.high_stack_tolerance;}
-        if g_bot_setup.index == 3 {startBotDuel();}
-        if g_bot_setup.index == 4 {g_game = g_game.with_screen(SCREEN_MENU);}
+        if BOTDEVMODE && g_bot_setup.index == 3 {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
+        if g_bot_setup.index == start_row {startBotDuel();}
+        if g_bot_setup.index == back_row {g_game = g_game.with_screen(SCREEN_MENU);}
     }
 }
 
@@ -4010,7 +4385,7 @@ fun drawApp(font: Font) >> void {
         shake_x = boardShakeX();
         shake_y = boardShakeY();
     }
-    if (g_game.screen == SCREEN_GAME && isVsBotMode()) {
+    if (g_game.screen == SCREEN_GAME && (isVsBotMode() || isBotDuelsMode())) {
         setScaleExtraX(vsBotLayoutExtraX() + shake_x);
     } else if (g_game.screen == SCREEN_GAME && canUseDoubleRowLayout()) {
         setScaleExtraX(uiS(131) + shake_x);
@@ -4044,7 +4419,7 @@ fun drawApp(font: Font) >> void {
         return;
     }
 
-    drawGameFrame(font);
+    if isBotDuelsMode() {drawBotDuelsFrame(font);} else {drawGameFrame(font);}
     EndDrawing();
 }
 
@@ -4089,6 +4464,8 @@ fun updateApp() >> void {
         } else if (action == menuActionOpenBotSetup()) {
             initBotSetupDefaults();
             g_game = g_game.with_screen(SCREEN_BOT_SETUP);
+        } else if (action == menuActionStartBotDuels()) {
+            if BOTDEVMODE {startBotDuelsMode();}
         } else if (action == menuActionOpenSettings()) {
             g_game = g_game.with_settings_return_screen(SCREEN_MENU);
             settingsInit();
@@ -4146,7 +4523,7 @@ fun drawGameFrame(font: Font) >> void {
     if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawBackgroundStars(theme);
-    if isVsBotMode() && !canOpenBotSetupUi() {
+    if (isVsBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi() {
         drawBotWidthPopup(font, theme, false);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
@@ -4310,55 +4687,19 @@ fun botLevel() >> i32 {
 }
 
 fun botCurrentApm() >> f32 {
-    if g_rt.run_timer <= 0.001 {return 0.0;}
-    return ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;
+    return aiBotCurrentApm(g_bot.attack_sent, g_rt.run_timer);
 }
 
 fun botAttackPerPiece() >> f32 {
-    if g_bot.pieces_placed <= 0 {return 0.35;}
-    f32 value = (g_bot.attack_sent as f32) / (g_bot.pieces_placed as f32);
-    if value < 0.20 {value = 0.20;}
-    if value > 8.0 {value = 8.0;}
-    return value;
+    return aiBotAttackPerPiece(g_bot.attack_sent, g_bot.pieces_placed);
 }
 
 fun botActionsPerPiece() >> f32 {
-    if g_bot.pieces_placed <= 0 {return 5.0;}
-    f32 value = (g_bot.actions_taken as f32) / (g_bot.pieces_placed as f32);
-    if value < 3.0 {value = 3.0;}
-    if value > 12.0 {value = 12.0;}
-    return value;
+    return aiBotActionsPerPiece(g_bot.actions_taken, g_bot.pieces_placed);
 }
 
 fun botActionRate() >> f32 {
-    f32 current_apm = botCurrentApm();
-    f32 target_apm = g_bot_setup.target_apm;
-    i32 max_h = 0;
-    i32 garbage_rows = 0;
-    i32 holes = 0;
-    i32 garbage_cover = 0;
-    boardStackStats(&g_bot_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
-    i32 garbage_access = boardGarbageAccessScore(&g_bot_board[0]);
-    f32 desired_pps = (target_apm / 60.0) / botAttackPerPiece();
-    f32 desired_actions = desired_pps * botActionsPerPiece();
-    f32 rate = desired_actions + (target_apm - current_apm) * 0.60;
-    if max_h >= 13 {rate += 4.0 + ((max_h - 13) as f32) * 1.0;}
-    if g_bot_pending_garbage >= 3 {rate += (g_bot_pending_garbage as f32) * 1.0;}
-    if garbage_rows > 0 && max_h >= 12 {rate += (garbage_rows as f32) * 0.4;}
-    if garbage_cover > 0 {
-        f32 cover_boost = (garbage_cover as f32) * 0.35;
-        if cover_boost > 6.0 {cover_boost = 6.0;}
-        rate += cover_boost;
-    }
-    if garbage_access > 0 {
-        f32 access_boost = (garbage_access as f32) * 0.08;
-        if access_boost > 4.0 {access_boost = 4.0;}
-        rate += access_boost;
-    }
-    if holes > 6 {rate += ((holes - 6) as f32) * 0.4;}
-    if rate < 2.0 {rate = 2.0;}
-    if rate > 40.0 {rate = 40.0;}
-    return rate;
+    return aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer);
 }
 
 fun botLockCurrentPiece() >> void {
@@ -4429,12 +4770,6 @@ fun botApplyPlannedLock() >> void {
     aiLog(TextFormat(" lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i attack_before=%i", g_bot.piece_kind, g_bot.target_x, g_bot.target_rotation, g_bot_planned_lines, g_bot_planned_spin as i32, g_bot_planned_all_clear as i32, g_bot.attack_sent));
     botApplyLockScore(g_bot_planned_lines, g_bot_planned_spin, false, g_bot_planned_all_clear);
 
-    if g_bot_pending_garbage > 0 {
-        insertGarbageIntoBot(g_bot_pending_garbage);
-        g_bot_pending_garbage = 0;
-        if g_bot.game_over {return;}
-    }
-
     botSpawnNextPiece();
 }
 
@@ -4465,12 +4800,23 @@ fun updateAiBot() >> void {
     bool b2b = g_rt.back_to_back_count > 0;
     i32 lookahead_count = g_play.queue_count;
     if lookahead_count < 0 {lookahead_count = 0;}
-    AiMove move = findBestMove(&g_board[0], g_piece_kind, g_piece_y, &g_queue[0], lookahead_count, g_rt.combo, b2b, level);
+
+    i32 max_h = 0;
+    i32 holes = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+
+    AiMove move = findBestMove(&g_board[0], g_piece_kind, g_piece_y, &g_queue[0], lookahead_count, g_rt.combo, b2b, level, 0, 0, 0);
 
     if !move.valid {
+        aiLog(TextFormat("fp plan invalid kind=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
         hardDrop();
         return;
     }
+
+    aiLog(TextFormat("fp plan kind=%i x=%i rot=%i tspin=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i lookahead=%i", g_piece_kind, move.x, move.rotation, move.tspin as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access, lookahead_count));
 
     g_piece_rotation = move.rotation;
     g_piece_x = move.x;
@@ -4559,8 +4905,13 @@ fun updateGameScreen() >> void {
         }
     }
 
-    if (!g_play.game_over) {
+    if (!g_play.game_over && !isBotDuelsMode()) {
         if !modeUsesRoundState() || g_play.round_state == ROUND_RUNNING {g_rt.run_timer += dt;}
+    }
+
+    if isBotDuelsMode() {
+        updateBotDuelsMode(dt);
+        return;
     }
 
     if isVsBotMode() && g_duel_running {updateDuelBot(dt);}
@@ -4582,6 +4933,11 @@ fun updateGameScreen() >> void {
     if (g_play.game_over) {
         if IsKeyPressed(KEY_R) {restartCurrentModeWithShake();}
         return;
+    }
+
+    if isFreePlayMode() && IsKeyPressed(KEY_L) {
+        addFreePlayGarbageLine();
+        if g_play.game_over {return;}
     }
 
     if g_ai_enabled {
@@ -4625,6 +4981,8 @@ fun main() >> i32 {
     g_game.theme_index = 0;
     initAiLogFile();
     loadSettingsFile();
+    loadBotDuelsFile();
+    applyChampionAiTuning();
     clampSettings();
     startGameMode(MODE_FREE_PLAY);
     initBotSetupDefaults();
