@@ -1,12 +1,14 @@
 module zltris.menu;
 use raylib
 
+#define BOTDEVMODE false
+
 #define MENU_BTN_FREE_PLAY 0
 #define MENU_BTN_40_LINES 1
 #define MENU_BTN_BLITZ 2
 #define MENU_BTN_AGAINST_BOT 3
-#define MENU_BTN_SETTINGS 4
-#define MENU_BTN_COUNT 5
+#define MENU_BTN_BOT_DUELS 4
+#define MENU_BTN_SETTINGS 5
 
 #define MENU_ACTION_NONE 0
 #define MENU_ACTION_START_FREE_PLAY 1
@@ -14,6 +16,7 @@ use raylib
 #define MENU_ACTION_START_40_LINES 3
 #define MENU_ACTION_START_BLITZ 4
 #define MENU_ACTION_OPEN_BOT_SETUP 5
+#define MENU_ACTION_START_BOT_DUELS 6
 
 struct MenuState {
     index i32,
@@ -44,8 +47,9 @@ fun tick_notice(self: MenuState, dt: f32) >> MenuState {
 fun move_index(self: MenuState, delta: i32) >> MenuState {
     MenuState next = self;
     next.index += delta;
-    if next.index < 0 {next.index = (MENU_BTN_COUNT as i32) - 1;}
-    if next.index >= (MENU_BTN_COUNT as i32) {next.index = 0;}
+    i32 count = menuButtonCount();
+    if next.index < 0 {next.index = count - 1;}
+    if next.index >= count {next.index = 0;}
     return next;
 }
 
@@ -68,6 +72,17 @@ fun menuActionOpenSettings() >> i32 { return MENU_ACTION_OPEN_SETTINGS; }
 fun menuActionStart40Lines() >> i32 { return MENU_ACTION_START_40_LINES; }
 fun menuActionStartBlitz() >> i32 { return MENU_ACTION_START_BLITZ; }
 fun menuActionOpenBotSetup() >> i32 { return MENU_ACTION_OPEN_BOT_SETUP; }
+fun menuActionStartBotDuels() >> i32 { return MENU_ACTION_START_BOT_DUELS; }
+
+fun menuButtonCount() >> i32 {
+    if BOTDEVMODE {return 6;}
+    return 5;
+}
+
+fun menuSettingsIndex() >> i32 {
+    if BOTDEVMODE {return MENU_BTN_SETTINGS;}
+    return MENU_BTN_BOT_DUELS;
+}
 
 fun toColor(color_rgba: u32) >> Color {
     return Color{
@@ -130,12 +145,15 @@ fun menuLabel(index: i32) >> ptr<u8> {
     if index == MENU_BTN_40_LINES {return "40 LINES";}
     if index == MENU_BTN_BLITZ {return "BLITZ";}
     if index == MENU_BTN_AGAINST_BOT {return "AGAINST BOT";}
-    if index == MENU_BTN_SETTINGS {return "SETTINGS";}
+    if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return "BOT DUELS";}
+    if index == menuSettingsIndex() {return "SETTINGS";}
     return "FREE PLAY";
 }
 
 fun menuEnabled(index: i32) >> bool {
-    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_AGAINST_BOT || index == MENU_BTN_SETTINGS;
+    if index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_AGAINST_BOT {return true;}
+    if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return true;}
+    return index == menuSettingsIndex();
 }
 
 fun menuButtonY(index: i32) >> i64 {
@@ -226,7 +244,8 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     drawTextColor(font, "ZLTRIS", 220, 156, 36, theme.text_main);
     drawTextColor(font, "Modern handling, classic pleasure.", 138, 212, 11, theme.text_muted);
 
-    for i32 i = 0; i < MENU_BTN_COUNT; i++ {
+    i32 count = menuButtonCount();
+    for i32 i = 0; i < count; i++ {
         drawMenuButton(font, theme, i);
     }
 
@@ -248,7 +267,8 @@ fun menuUpdate() >> i32 {
     if IsKeyPressed(KEY_DOWN) {g_menu = g_menu.move_index(1);}
 
     Vector2 mouse = GetMousePosition();
-    for i32 i = 0; i < MENU_BTN_COUNT; i++ {
+    i32 count = menuButtonCount();
+    for i32 i = 0; i < count; i++ {
         if (pointInBaseRect(mouse.x, mouse.y, 148, menuButtonY(i), 352, 72)) {
             g_menu.index = i;
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
@@ -256,7 +276,8 @@ fun menuUpdate() >> i32 {
                 if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
                 if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
                 if i == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
-                if i == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
+                if BOTDEVMODE && i == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
+                if i == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
                 g_menu = g_menu.show_notice(i);
             }
         }
@@ -267,7 +288,8 @@ fun menuUpdate() >> i32 {
         if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
         if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
         if g_menu.index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
-        if g_menu.index == MENU_BTN_SETTINGS {return MENU_ACTION_OPEN_SETTINGS;}
+        if BOTDEVMODE && g_menu.index == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
+        if g_menu.index == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
         g_menu = g_menu.show_notice(g_menu.index);
     }
 
