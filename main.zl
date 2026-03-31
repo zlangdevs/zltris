@@ -107,6 +107,9 @@ use zltris.theme
 #define BOT_ARENA_RIGHT 1
 #define BOT_WEIGHTS_STOCK 0
 #define BOT_WEIGHTS_CHAMPION 1
+#define BOT_ARENA_SAVED_CHAMPIONS 3
+#define BOT_ARENA_HISTORY_STORAGE 8
+#define BOT_ARENA_HISTORY_TUNING_CELLS 1232
 
 struct Game {
     theme_index i32,
@@ -208,6 +211,7 @@ struct BotArenaState {
     champion_generation i32,
     candidate_setup BotSetupState,
     candidate_generation i32,
+    history_size i32,
     champion_wins i32,
     total_matches i32,
     last_winner_generation i32,
@@ -219,6 +223,7 @@ struct BotArenaState {
     generation_left_wins i32,
     generation_right_wins i32,
     generation_stage i32,
+    gauntlet_target_index i32,
     stock_round i32,
     stock_left_wins i32,
     stock_right_wins i32,
@@ -226,6 +231,13 @@ struct BotArenaState {
 
 #define BOT_ARENA_STAGE_CHAMPION 0
 #define BOT_ARENA_STAGE_STOCK 1
+#define BOT_ARENA_EARLY_REQUIRED_WINS 5
+#define BOT_ARENA_EARLY_MAX_LOSSES 2
+#define BOT_ARENA_EARLY_MAX_ROUNDS 7
+#define BOT_ARENA_CHAMP_MAX_LOSSES 1
+#define BOT_ARENA_CHAMP_MAX_ROUNDS 4
+#define BOT_ARENA_STOCK_MAX_LOSSES 1
+#define BOT_ARENA_STOCK_MAX_ROUNDS 4
 
 struct GameplayState {
     queue_count i32,
@@ -290,6 +302,8 @@ arr<i32, BOARD_CELLS> g_bot_arena_left_planned_board = {0};
 arr<i32, BOARD_CELLS> g_bot_arena_right_planned_board = {0};
 arr<i32, AI_TUNE_COUNT> g_bot_arena_champion_tuning = {0};
 arr<i32, AI_TUNE_COUNT> g_bot_arena_candidate_tuning = {0};
+arr<i32, BOT_ARENA_HISTORY_STORAGE> g_bot_arena_history_generations = {0};
+arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> g_bot_arena_history_tuning = {0};
 arr<i32, AI_TUNE_COUNT> g_bot_arena_left_tuning = {0};
 arr<i32, AI_TUNE_COUNT> g_bot_arena_right_tuning = {0};
 arr<i32, BOT_SEARCH_MAX> g_bot_search_xs = {0};
@@ -598,6 +612,7 @@ fun loadDefaultArenaTuning() >> void {
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
     }
+    normalizeChampionHistory();
 }
 
 fun applyAiTuning(values: ptr<i32>) >> void {
@@ -617,6 +632,105 @@ fun applyStockAiTuning() >> void {
 fun applyBotSetupWeights() >> void {
     if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {applyStockAiTuning();}
     else {applyChampionAiTuning();}
+}
+
+fun arenaRequiredWins(max_rounds: i32, max_losses: i32) >> i32 {
+    i32 wins = max_rounds - max_losses;
+    if wins < 1 {wins = 1;}
+    return wins;
+}
+
+fun arenaHistorySlotCount() >> i32 {
+    i32 count = BOT_ARENA_SAVED_CHAMPIONS - 1;
+    if count < 0 {count = 0;}
+    if count > BOT_ARENA_HISTORY_STORAGE {count = BOT_ARENA_HISTORY_STORAGE;}
+    return count;
+}
+
+fun arenaHistoryTuningPtr(slot: i32) >> ptr<i32> {
+    ptr<i32> base = &g_bot_arena_history_tuning[0];
+    return base + slot * AI_TUNE_COUNT;
+}
+
+fun arenaGauntletChampionCount() >> i32 {
+    i32 count = 1 + g_bot_arena.history_size;
+    if count > BOT_ARENA_SAVED_CHAMPIONS {count = BOT_ARENA_SAVED_CHAMPIONS;}
+    return count;
+}
+
+fun arenaTargetSetup(index: i32) >> BotSetupState {
+    return g_bot_arena.champion_setup;
+}
+
+fun arenaTargetGeneration(index: i32) >> i32 {
+    if index == 0 {return g_bot_arena.champion_generation;}
+    return g_bot_arena_history_generations[index - 1];
+}
+
+fun copyArenaTargetTuning(index: i32, out_values: ptr<i32>) >> void {
+    if index == 0 {
+        copyI32Array(out_values, &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+        return;
+    }
+    copyI32Array(out_values, arenaHistoryTuningPtr(index - 1), AI_TUNE_COUNT);
+}
+
+fun pushChampionToHistory() >> void {
+    i32 history_slots = arenaHistorySlotCount();
+    if history_slots <= 0 {return;}
+
+    i32 existing = -1;
+    for i32 slot = 0; slot < g_bot_arena.history_size; slot++ {
+        if g_bot_arena_history_generations[slot] == g_bot_arena.champion_generation {existing = slot;}
+    }
+    if existing >= 0 {
+        for i32 slot = existing; slot < g_bot_arena.history_size - 1; slot++ {
+            g_bot_arena_history_generations[slot] = g_bot_arena_history_generations[slot + 1];
+            copyI32Array(arenaHistoryTuningPtr(slot), arenaHistoryTuningPtr(slot + 1), AI_TUNE_COUNT);
+        }
+        if g_bot_arena.history_size > 0 {g_bot_arena.history_size -= 1;}
+    }
+
+    for i32 slot = history_slots - 1; slot > 0; slot-- {
+        g_bot_arena_history_generations[slot] = g_bot_arena_history_generations[slot - 1];
+        copyI32Array(arenaHistoryTuningPtr(slot), arenaHistoryTuningPtr(slot - 1), AI_TUNE_COUNT);
+    }
+    g_bot_arena_history_generations[0] = g_bot_arena.champion_generation;
+    copyI32Array(arenaHistoryTuningPtr(0), &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+    g_bot_arena.history_size += 1;
+    if g_bot_arena.history_size > history_slots {g_bot_arena.history_size = history_slots;}
+}
+
+fun normalizeChampionHistory() >> void {
+    i32 history_slots = arenaHistorySlotCount();
+    arr<i32, BOT_ARENA_HISTORY_STORAGE> kept_generations = {0};
+    arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> kept_tuning = {0};
+    i32 kept = 0;
+
+    for i32 slot = 0; slot < g_bot_arena.history_size; slot++ {
+        i32 gen = g_bot_arena_history_generations[slot];
+        if gen <= 0 {continue;}
+        if gen == g_bot_arena.champion_generation {continue;}
+
+        bool duplicate = false;
+        for i32 k = 0; k < kept; k++ {
+            if kept_generations[k] == gen {duplicate = true;}
+        }
+        if duplicate {continue;}
+        if kept >= history_slots {continue;}
+
+        kept_generations[kept] = gen;
+        ptr<i32> dst = &kept_tuning[kept * AI_TUNE_COUNT];
+        copyI32Array(dst, arenaHistoryTuningPtr(slot), AI_TUNE_COUNT);
+        kept += 1;
+    }
+
+    g_bot_arena.history_size = kept;
+    for i32 slot = 0; slot < BOT_ARENA_HISTORY_STORAGE; slot++ {g_bot_arena_history_generations[slot] = 0;}
+    for i32 slot = 0; slot < kept; slot++ {
+        g_bot_arena_history_generations[slot] = kept_generations[slot];
+        copyI32Array(arenaHistoryTuningPtr(slot), &kept_tuning[slot * AI_TUNE_COUNT], AI_TUNE_COUNT);
+    }
 }
 
 fun parseArenaTuneKey(key: ptr<u8>) >> i32 {
@@ -659,6 +773,7 @@ fun saveBotDuelsFile() >> void {
     if fd < 0 {return;}
 
     writeLineFd(fd, TextFormat("champion_generation=%i", g_bot_arena.champion_generation));
+    writeLineFd(fd, TextFormat("history_size=%i", g_bot_arena.history_size));
     writeLineFd(fd, TextFormat("champion_wins=%i", g_bot_arena.champion_wins));
     writeLineFd(fd, TextFormat("total_matches=%i", g_bot_arena.total_matches));
     writeLineFd(fd, TextFormat("target_apm=%.2f", g_bot_arena.champion_setup.target_apm));
@@ -668,6 +783,14 @@ fun saveBotDuelsFile() >> void {
     writeLineFd(fd, TextFormat("high_stack_tolerance=%i", high_stack_flag));
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         writeLineFd(fd, TextFormat("t%i=%i", i, g_bot_arena_champion_tuning[i]));
+    }
+    i32 history_slots = arenaHistorySlotCount();
+    for i32 slot = 0; slot < history_slots; slot++ {
+        writeLineFd(fd, TextFormat("h%i_generation=%i", slot, g_bot_arena_history_generations[slot]));
+        ptr<i32> hist = arenaHistoryTuningPtr(slot);
+        for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+            writeLineFd(fd, TextFormat("h%i_t%i=%i", slot, i, hist[i]));
+        }
     }
 
     close(fd);
@@ -680,6 +803,7 @@ fun loadBotDuelsFile() >> void {
     copyI32Array(&g_bot_arena_candidate_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
     g_bot_arena.champion_generation = 0;
     g_bot_arena.candidate_generation = 0;
+    g_bot_arena.history_size = 0;
     g_bot_arena.champion_wins = 0;
     g_bot_arena.total_matches = 0;
     g_bot_arena.last_winner_generation = 0;
@@ -691,9 +815,12 @@ fun loadBotDuelsFile() >> void {
     g_bot_arena.generation_left_wins = 0;
     g_bot_arena.generation_right_wins = 0;
     g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
     g_bot_arena.stock_round = 0;
     g_bot_arena.stock_left_wins = 0;
     g_bot_arena.stock_right_wins = 0;
+    for i32 slot = 0; slot < BOT_ARENA_HISTORY_STORAGE; slot++ {g_bot_arena_history_generations[slot] = 0;}
+    for i32 i = 0; i < BOT_ARENA_HISTORY_TUNING_CELLS; i++ {g_bot_arena_history_tuning[i] = 0;}
 
     i32 fd = openForRead(BOT_DUELS_FILE_PATH);
     if fd < 0 {
@@ -738,6 +865,8 @@ fun loadBotDuelsFile() >> void {
 
                 if (strEq(key, "champion_generation")) {
                     g_bot_arena.champion_generation = atoi(value);
+                } else if (strEq(key, "history_size")) {
+                    g_bot_arena.history_size = atoi(value);
                 } else if (strEq(key, "champion_wins")) {
                     g_bot_arena.champion_wins = atoi(value);
                 } else if (strEq(key, "total_matches")) {
@@ -749,6 +878,21 @@ fun loadBotDuelsFile() >> void {
                 } else if (strEq(key, "high_stack_tolerance")) {
                     g_bot_arena.champion_setup.high_stack_tolerance = parseBoolValue(value, g_bot_arena.champion_setup.high_stack_tolerance);
                 } else {
+                    if key[0] == ('h' as u8) && key[1] >= ('0' as u8) && key[1] <= ('9' as u8) && key[2] == ('_' as u8) {
+                        i32 slot = atoi(key + 1);
+                        if slot >= 0 && slot < BOT_ARENA_HISTORY_STORAGE {
+                            ptr<u8> hist_key = key + 3;
+                            if strEq(hist_key, "generation") {
+                                g_bot_arena_history_generations[slot] = atoi(value);
+                            } else if hist_key[0] == ('t' as u8) {
+                                i32 tune_index = atoi(hist_key + 1);
+                                if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
+                                    ptr<i32> hist = arenaHistoryTuningPtr(slot);
+                                    hist[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                                }
+                            }
+                        }
+                    }
                     i32 tune_index = parseArenaTuneKey(key);
                     if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
                         g_bot_arena_champion_tuning[tune_index] = aiClampTuningValue(tune_index, atoi(value));
@@ -763,6 +907,8 @@ fun loadBotDuelsFile() >> void {
     g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
     if g_bot_arena.champion_generation < 0 {g_bot_arena.champion_generation = 0;}
     if g_bot_arena.candidate_generation < 0 {g_bot_arena.candidate_generation = 0;}
+    if g_bot_arena.history_size < 0 {g_bot_arena.history_size = 0;}
+    if g_bot_arena.history_size > arenaHistorySlotCount() {g_bot_arena.history_size = arenaHistorySlotCount();}
     if g_bot_arena.champion_wins < 0 {g_bot_arena.champion_wins = 0;}
     if g_bot_arena.total_matches < 0 {g_bot_arena.total_matches = 0;}
     g_bot_arena.compare_stock_wins = 0;
@@ -771,12 +917,14 @@ fun loadBotDuelsFile() >> void {
     g_bot_arena.generation_left_wins = 0;
     g_bot_arena.generation_right_wins = 0;
     g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
     g_bot_arena.stock_round = 0;
     g_bot_arena.stock_left_wins = 0;
     g_bot_arena.stock_right_wins = 0;
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
     }
+    normalizeChampionHistory();
 }
 
 fun mutateArenaSetup(base: BotSetupState, generation: i32) >> BotSetupState {
@@ -3507,8 +3655,13 @@ fun drawBotDuelsFrame(font: Font) >> void {
     i64 board_y = BOT_BOARD_TOP;
     if duelShowsHighStackArea() {board_y += HIGH_STACK_BOARD_SHIFT;}
 
-    drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CHAMPION", true);
-    if g_bot_arena.compare_stock || g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);} else {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "CHALLENGER", false);}
+    if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CANDIDATE", true);
+        drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);
+    } else {
+        drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CHAMPION", true);
+        if g_bot_arena.compare_stock {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);} else {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "CHALLENGER", false);}
+    }
 
     i64 panel_x = vsBotCenterPanelX();
     fillRect(panel_x, 120, 178, 510, theme.panel_bg);
@@ -3536,15 +3689,15 @@ fun drawBotDuelsFrame(font: Font) >> void {
     } else {
         if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
             if g_bot_arena.champion_generation < 5 {
-                drawTextColor(font, TextFormat("CHAMP %i/7", g_bot_arena.generation_round + 1), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("CHAMP %i/%i", g_bot_arena.generation_round + 1, BOT_ARENA_EARLY_MAX_ROUNDS), panel_x + 20, 360, 11, theme.text_main);
                 drawTextColor(font, TextFormat("TOTAL %i-%i", g_bot_arena.generation_right_wins, g_bot_arena.generation_left_wins), panel_x + 20, 382, 11, theme.panel_stroke);
             } else {
-                drawTextColor(font, TextFormat("CHAMP %i/4", g_bot_arena.generation_round + 1), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("GAUNTLET %i/%i", g_bot_arena.gauntlet_target_index + 1, arenaGauntletChampionCount()), panel_x + 20, 360, 11, theme.text_main);
                 drawTextColor(font, TextFormat("CH %i  CL %i", g_bot_arena.generation_left_wins, g_bot_arena.generation_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
             }
         } else {
-            drawTextColor(font, TextFormat("STOCK %i/4", g_bot_arena.stock_round + 1), panel_x + 20, 360, 11, theme.text_main);
-            drawTextColor(font, TextFormat("CH %i  CL %i", g_bot_arena.stock_left_wins, g_bot_arena.stock_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+            drawTextColor(font, TextFormat("STOCK %i/%i", g_bot_arena.stock_round + 1, BOT_ARENA_STOCK_MAX_ROUNDS), panel_x + 20, 360, 11, theme.text_main);
+            drawTextColor(font, TextFormat("CAND %i  STOCK %i", g_bot_arena.stock_left_wins, g_bot_arena.stock_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
         }
     }
     drawTextColor(font, TextFormat("LAST WIN %i", g_bot_arena.last_winner_generation), panel_x + 20, 414, 11, theme.text_main);
@@ -3865,7 +4018,9 @@ fun syncBotArenaOpeningSequence(dst: i32, src: i32) >> void {
 fun initBotArenaRound() >> void {
     g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
 
-    bool fresh_generation = g_bot_arena.generation_round == 0;
+    bool fresh_generation = false;
+    if g_bot_arena.compare_stock {fresh_generation = true;}
+    else if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION && g_bot_arena.generation_round == 0 && g_bot_arena.gauntlet_target_index == 0 {fresh_generation = true;}
     BotSetupState challenger_setup = g_bot_arena_right.setup;
     i32 challenger_generation = g_bot_arena_right.generation;
 
@@ -3875,7 +4030,7 @@ fun initBotArenaRound() >> void {
         if challenger_generation <= g_bot_arena.champion_generation {challenger_generation = g_bot_arena.champion_generation + 1;}
 
         copyI32Array(&g_bot_arena_left_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
-        if g_bot_arena.compare_stock || g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        if g_bot_arena.compare_stock {
             aiFillDefaultTuning(&g_bot_arena_right_tuning[0]);
             challenger_setup = defaultArenaChampionSetup();
             challenger_generation = 0;
@@ -3890,8 +4045,29 @@ fun initBotArenaRound() >> void {
         }
     }
 
-    initBotArenaSide(BOT_ARENA_LEFT, g_bot_arena.champion_setup, g_bot_arena.champion_generation);
-    initBotArenaSide(BOT_ARENA_RIGHT, challenger_setup, challenger_generation);
+    BotSetupState left_setup = arenaTargetSetup(g_bot_arena.gauntlet_target_index);
+    i32 left_generation = arenaTargetGeneration(g_bot_arena.gauntlet_target_index);
+    ptr<i32> left_tuning = &g_bot_arena_left_tuning[0];
+    BotSetupState right_setup = challenger_setup;
+    i32 right_generation = challenger_generation;
+    ptr<i32> right_tuning = &g_bot_arena_right_tuning[0];
+
+    copyArenaTargetTuning(g_bot_arena.gauntlet_target_index, left_tuning);
+
+    if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        left_setup = g_bot_arena.candidate_setup;
+        left_generation = g_bot_arena.candidate_generation;
+        copyI32Array(left_tuning, &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
+        right_setup = defaultArenaChampionSetup();
+        right_generation = 0;
+        right_tuning = &g_bot_arena_right_tuning[0];
+        aiFillDefaultTuning(right_tuning);
+    }
+
+    copyI32Array(&g_bot_arena_right_tuning[0], right_tuning, AI_TUNE_COUNT);
+
+    initBotArenaSide(BOT_ARENA_LEFT, left_setup, left_generation);
+    initBotArenaSide(BOT_ARENA_RIGHT, right_setup, right_generation);
     syncBotArenaOpeningSequence(BOT_ARENA_RIGHT, BOT_ARENA_LEFT);
 
     g_rt.run_timer = 0.0;
@@ -3914,57 +4090,28 @@ fun resolveBotArenaMatch(winner_side: i32) >> void {
 
     g_bot_arena.generation_round += 1;
     if winner_side == 1 {g_bot_arena.generation_left_wins += 1;} else {g_bot_arena.generation_right_wins += 1;}
-    bool early_relaxed_gate = g_bot_arena.champion_generation < 5;
 
     if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
         bool champion_stage_done = false;
-        if early_relaxed_gate {
-            if g_bot_arena.generation_right_wins >= 5 {champion_stage_done = true;}
-            if g_bot_arena.generation_left_wins >= 2 {champion_stage_done = true;}
-            if g_bot_arena.generation_round >= 7 {champion_stage_done = true;}
-        } else {
-            if g_bot_arena.generation_right_wins >= 3 {champion_stage_done = true;}
-            if g_bot_arena.generation_left_wins >= 2 {champion_stage_done = true;}
-            if g_bot_arena.generation_round >= 4 {champion_stage_done = true;}
-        }
+        if g_bot_arena.generation_right_wins >= arenaRequiredWins(BOT_ARENA_CHAMP_MAX_ROUNDS, BOT_ARENA_CHAMP_MAX_LOSSES) {champion_stage_done = true;}
+        if g_bot_arena.generation_left_wins >= (BOT_ARENA_CHAMP_MAX_LOSSES + 1) {champion_stage_done = true;}
+        if g_bot_arena.generation_round >= BOT_ARENA_CHAMP_MAX_ROUNDS {champion_stage_done = true;}
 
         if !champion_stage_done {
             initBotArenaRound();
             return;
         }
 
-        bool challenger_passed_champion_gate = false;
-        if early_relaxed_gate {
-            challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= 5 && g_bot_arena.generation_left_wins <= 2;
-        } else {
-            challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= 3;
-        }
+        bool challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= arenaRequiredWins(BOT_ARENA_CHAMP_MAX_ROUNDS, BOT_ARENA_CHAMP_MAX_LOSSES);
 
         if challenger_passed_champion_gate {
-            if early_relaxed_gate {
-                g_bot_arena.total_matches += 1;
-                g_bot_arena.last_winner_side = 2;
-                g_bot_arena.champion_setup = g_bot_arena.candidate_setup;
-                g_bot_arena.champion_generation = g_bot_arena.candidate_generation;
-                g_bot_arena.champion_wins = 1;
-                g_bot_arena.last_winner_generation = g_bot_arena.candidate_generation;
-                copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
-                g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
-                g_bot_arena.generation_round = 0;
-                g_bot_arena.generation_left_wins = 0;
-                g_bot_arena.generation_right_wins = 0;
+            g_bot_arena.gauntlet_target_index += 1;
+            if g_bot_arena.gauntlet_target_index >= arenaGauntletChampionCount() {
+                g_bot_arena.generation_stage = BOT_ARENA_STAGE_STOCK;
                 g_bot_arena.stock_round = 0;
                 g_bot_arena.stock_left_wins = 0;
                 g_bot_arena.stock_right_wins = 0;
-                g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
-                saveBotDuelsFile();
-                initBotArenaRound();
-                return;
             }
-            g_bot_arena.generation_stage = BOT_ARENA_STAGE_STOCK;
-            g_bot_arena.stock_round = 0;
-            g_bot_arena.stock_left_wins = 0;
-            g_bot_arena.stock_right_wins = 0;
             g_bot_arena.generation_round = 0;
             g_bot_arena.generation_left_wins = 0;
             g_bot_arena.generation_right_wins = 0;
@@ -3974,19 +4121,17 @@ fun resolveBotArenaMatch(winner_side: i32) >> void {
 
         g_bot_arena.total_matches += 1;
         g_bot_arena.last_winner_side = 1;
-        g_bot_arena.champion_setup = g_bot_arena_left.setup;
-        g_bot_arena.champion_generation = g_bot_arena_left.generation;
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
         g_bot_arena.champion_wins += 1;
-        g_bot_arena.last_winner_generation = g_bot_arena_left.generation;
-        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_left_tuning[0], AI_TUNE_COUNT);
+        g_bot_arena.last_winner_generation = g_bot_arena.champion_generation;
         g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.gauntlet_target_index = 0;
         g_bot_arena.generation_round = 0;
         g_bot_arena.generation_left_wins = 0;
         g_bot_arena.generation_right_wins = 0;
         g_bot_arena.stock_round = 0;
         g_bot_arena.stock_left_wins = 0;
         g_bot_arena.stock_right_wins = 0;
-        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
         saveBotDuelsFile();
         initBotArenaRound();
         return;
@@ -3996,9 +4141,9 @@ fun resolveBotArenaMatch(winner_side: i32) >> void {
     if winner_side == 1 {g_bot_arena.stock_left_wins += 1;} else {g_bot_arena.stock_right_wins += 1;}
 
     bool stock_stage_done = false;
-    if g_bot_arena.stock_right_wins >= 3 {stock_stage_done = true;}
-    if g_bot_arena.stock_left_wins >= 2 {stock_stage_done = true;}
-    if g_bot_arena.stock_round >= 4 {stock_stage_done = true;}
+    if g_bot_arena.stock_left_wins >= arenaRequiredWins(BOT_ARENA_STOCK_MAX_ROUNDS, BOT_ARENA_STOCK_MAX_LOSSES) {stock_stage_done = true;}
+    if g_bot_arena.stock_right_wins >= (BOT_ARENA_STOCK_MAX_LOSSES + 1) {stock_stage_done = true;}
+    if g_bot_arena.stock_round >= BOT_ARENA_STOCK_MAX_ROUNDS {stock_stage_done = true;}
 
     if !stock_stage_done {
         initBotArenaRound();
@@ -4007,31 +4152,25 @@ fun resolveBotArenaMatch(winner_side: i32) >> void {
 
     g_bot_arena.total_matches += 1;
     bool challenger_passed_stock_gate = false;
-    if early_relaxed_gate {
-        i32 total_left_wins = g_bot_arena.generation_left_wins + g_bot_arena.stock_left_wins;
-        i32 total_right_wins = g_bot_arena.generation_right_wins + g_bot_arena.stock_right_wins;
-        challenger_passed_stock_gate = total_right_wins >= 5 && total_left_wins <= 2;
-    } else {
-        challenger_passed_stock_gate = g_bot_arena.stock_right_wins >= 3;
-    }
+    challenger_passed_stock_gate = g_bot_arena.stock_left_wins >= arenaRequiredWins(BOT_ARENA_STOCK_MAX_ROUNDS, BOT_ARENA_STOCK_MAX_LOSSES);
 
     if challenger_passed_stock_gate {
         g_bot_arena.last_winner_side = 2;
+        pushChampionToHistory();
         g_bot_arena.champion_setup = g_bot_arena.candidate_setup;
         g_bot_arena.champion_generation = g_bot_arena.candidate_generation;
         g_bot_arena.champion_wins = 1;
         g_bot_arena.last_winner_generation = g_bot_arena.candidate_generation;
         copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
     } else {
-        g_bot_arena.last_winner_side = 1;
-        g_bot_arena.champion_setup = g_bot_arena_left.setup;
-        g_bot_arena.champion_generation = g_bot_arena_left.generation;
+        g_bot_arena.last_winner_side = 2;
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
         g_bot_arena.champion_wins += 1;
-        g_bot_arena.last_winner_generation = g_bot_arena_left.generation;
-        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_left_tuning[0], AI_TUNE_COUNT);
+        g_bot_arena.last_winner_generation = g_bot_arena.champion_generation;
     }
 
     g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
     g_bot_arena.generation_round = 0;
     g_bot_arena.generation_left_wins = 0;
     g_bot_arena.generation_right_wins = 0;
@@ -4079,6 +4218,7 @@ fun updateBotDuelsMode(dt: f32) >> void {
         g_bot_arena.last_winner_side = 0;
         g_bot_arena.last_winner_generation = 0;
         g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.gauntlet_target_index = 0;
         g_bot_arena.generation_round = 0;
         g_bot_arena.generation_left_wins = 0;
         g_bot_arena.generation_right_wins = 0;
