@@ -769,6 +769,7 @@ fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> 
 }
 
 fun saveBotDuelsFile() >> void {
+    if !BOTDEVMODE {return;}
     i32 fd = openForWrite(BOT_DUELS_FILE_PATH);
     if fd < 0 {return;}
 
@@ -821,6 +822,12 @@ fun loadBotDuelsFile() >> void {
     g_bot_arena.stock_right_wins = 0;
     for i32 slot = 0; slot < BOT_ARENA_HISTORY_STORAGE; slot++ {g_bot_arena_history_generations[slot] = 0;}
     for i32 i = 0; i < BOT_ARENA_HISTORY_TUNING_CELLS; i++ {g_bot_arena_history_tuning[i] = 0;}
+
+    if !BOTDEVMODE {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        normalizeChampionHistory();
+        return;
+    }
 
     i32 fd = openForRead(BOT_DUELS_FILE_PATH);
     if fd < 0 {
@@ -1350,7 +1357,7 @@ fun isVsBotMode() >> bool {
 }
 
 fun isBotDuelsMode() >> bool {
-    return g_play.is_mode(MODE_BOT_DUELS);
+    return BOTDEVMODE && g_play.is_mode(MODE_BOT_DUELS);
 }
 
 fun modeUsesRoundState() >> bool {
@@ -1421,9 +1428,11 @@ fun drawBotWidthPopup(font: Font, theme: Theme, show_back_hint: bool) >> void {
 }
 
 fun startGameMode(mode: i32) >> void {
-    g_play = g_play.with_mode(mode);
-    if mode == MODE_VS_BOT {applyBotSetupWeights();}
-    else if mode != MODE_BOT_DUELS {applyChampionAiTuning();}
+    i32 selected_mode = mode;
+    if !BOTDEVMODE && selected_mode == MODE_BOT_DUELS {selected_mode = MODE_FREE_PLAY;}
+    g_play = g_play.with_mode(selected_mode);
+    if selected_mode == MODE_VS_BOT {applyBotSetupWeights();}
+    else if selected_mode != MODE_BOT_DUELS {applyChampionAiTuning();}
     g_ai_enabled = false;
     g_ai_armed = false;
     g_duel_running = false;
@@ -3642,6 +3651,7 @@ fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_
 }
 
 fun drawBotDuelsFrame(font: Font) >> void {
+    if !BOTDEVMODE {return;}
     Theme theme = currentTheme();
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawBackgroundStars(theme);
@@ -4016,6 +4026,10 @@ fun syncBotArenaOpeningSequence(dst: i32, src: i32) >> void {
 }
 
 fun initBotArenaRound() >> void {
+    if !BOTDEVMODE {
+        g_duel_running = false;
+        return;
+    }
     g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
 
     bool fresh_generation = false;
@@ -4076,6 +4090,7 @@ fun initBotArenaRound() >> void {
 }
 
 fun resolveBotArenaMatch(winner_side: i32) >> void {
+    if !BOTDEVMODE {return;}
     if g_bot_arena.compare_stock {
         g_bot_arena.last_winner_side = winner_side;
         if winner_side == 1 {g_bot_arena.last_winner_generation = g_bot_arena_left.generation;}
@@ -4213,6 +4228,7 @@ fun updateBotArenaSide(side: i32, opponent: i32, dt: f32) >> void {
 }
 
 fun updateBotDuelsMode(dt: f32) >> void {
+    if !BOTDEVMODE {return;}
     if IsKeyPressed(KEY_ONE) {
         g_bot_arena.compare_stock = !g_bot_arena.compare_stock;
         g_bot_arena.last_winner_side = 0;
