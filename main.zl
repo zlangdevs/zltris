@@ -163,6 +163,7 @@ struct BotSetupState {
     target_apm f32,
     garbage_messiness f32,
     high_stack_tolerance bool,
+    panic_burst_enabled bool,
     weights_mode i32,
     index i32,
 }
@@ -590,6 +591,7 @@ fun defaultArenaChampionSetup() >> BotSetupState {
     setup.target_apm = BOT_DUELS_FIXED_APM;
     setup.garbage_messiness = 35.0;
     setup.high_stack_tolerance = false;
+    setup.panic_burst_enabled = true;
     setup.index = 0;
     return setup;
 }
@@ -599,6 +601,7 @@ fun clampArenaSetup(setup: BotSetupState) >> BotSetupState {
     next.target_apm = BOT_DUELS_FIXED_APM;
     next.garbage_messiness = 35.0;
     next.high_stack_tolerance = false;
+    next.panic_burst_enabled = true;
     next.index = 0;
     return next;
 }
@@ -3727,8 +3730,8 @@ fun drawBotDuelsFrame(font: Font) >> void {
 fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
 
-    i64 panel_h = 560;
-    if BOTDEVMODE {panel_h = 636;}
+    i64 panel_h = 636;
+    if BOTDEVMODE {panel_h = 712;}
     fillRect(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90));
     strokeRect(126, 128, 396, panel_h, alphaColor(theme.panel_stroke, 0.88));
     drawTextColor(font, "AGAINST BOT", 176, 164, 28, theme.text_main);
@@ -3748,8 +3751,8 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
 
     i64 row_y0 = 270;
     i64 row_h = 76;
-    i32 row_count = 5;
-    if BOTDEVMODE {row_count = 6;}
+    i32 row_count = 6;
+    if BOTDEVMODE {row_count = 7;}
     for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         u32 bg = alphaColor(theme.panel_bg, 0.88);
@@ -3781,16 +3784,18 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
     drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
     drawTextColor(font, "DISABLED", 384, 438, 13, theme.text_muted);
+    drawTextColor(font, "Panic burst", 176, 514, 13, theme.text_main);
+    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 514, 13, theme.text_muted);}
     if BOTDEVMODE {
-        drawTextColor(font, "Weights", 176, 514, 13, theme.text_main);
-        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
+        drawTextColor(font, "Weights", 176, 590, 13, theme.text_main);
+        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 590, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 590, 13, theme.panel_stroke);}
+        drawTextColor(font, "START DUEL", 176, 666, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 742, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 786, 10, theme.text_muted);
+    } else {
         drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
         drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
         drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 710, 10, theme.text_muted);
-    } else {
-        drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
-        drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 634, 10, theme.text_muted);
     }
 }
 
@@ -3835,6 +3840,7 @@ fun initBotSetupDefaults() >> void {
     if g_bot_setup.target_apm < 1.0 {g_bot_setup.target_apm = 65.0;}
     if g_bot_setup.garbage_messiness < 0.5 {g_bot_setup.garbage_messiness = 35.0;}
     g_bot_setup.high_stack_tolerance = false;
+    g_bot_setup.panic_burst_enabled = false;
     g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;
     clampBotTargetApm();
     clampBotGarbageMessiness();
@@ -4280,8 +4286,8 @@ fun updateBotSetupScreen() >> void {
 
     if !canOpenBotSetupUi() {return;}
 
-    i32 max_index = 4;
-    if BOTDEVMODE {max_index = 5;}
+    i32 max_index = 5;
+    if BOTDEVMODE {max_index = 6;}
 
     if IsKeyPressed(KEY_UP) {
         g_bot_setup.index -= 1;
@@ -4301,8 +4307,8 @@ fun updateBotSetupScreen() >> void {
     i64 row_h = 76;
     f32 mx = mouseBaseX();
     f32 my = mouseBaseY();
-    i32 row_count = 5;
-    if BOTDEVMODE {row_count = 6;}
+    i32 row_count = 6;
+    if BOTDEVMODE {row_count = 7;}
     for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         if pointInBaseRectLocal(mx, my, row_x, y, row_w, 58) {g_bot_setup.index = i;}
@@ -4319,12 +4325,17 @@ fun updateBotSetupScreen() >> void {
         g_bot_setup.garbage_messiness = ((mx - (slider_x as f32)) / (slider_w as f32)) * 100.0;
         clampBotGarbageMessiness();
     }
-    i32 start_row = 3;
-    i32 back_row = 4;
+    i32 burst_row = 3;
+    i32 start_row = 4;
+    i32 back_row = 5;
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (burst_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+    }
     if BOTDEVMODE {
-        start_row = 4;
-        back_row = 5;
-        if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (3 as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        i32 weights_row = 4;
+        start_row = 5;
+        back_row = 6;
+        if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (weights_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
     }
@@ -4340,14 +4351,21 @@ fun updateBotSetupScreen() >> void {
         if IsKeyPressed(KEY_LEFT) {g_bot_setup.garbage_messiness -= 5.0;}
         if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_messiness += 5.0;}
         clampBotGarbageMessiness();
-    } else if BOTDEVMODE && g_bot_setup.index == 3 {
+    } else if g_bot_setup.index == 3 {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
+            g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+        }
+    } else if BOTDEVMODE && g_bot_setup.index == 4 {
         if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-        if BOTDEVMODE && g_bot_setup.index == 3 {
+        if g_bot_setup.index == 3 {
+            g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+        }
+        if BOTDEVMODE && g_bot_setup.index == 4 {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
         if g_bot_setup.index == start_row {startBotDuel();}
@@ -4855,7 +4873,7 @@ fun botActionsPerPiece() >> f32 {
 }
 
 fun botActionRate() >> f32 {
-    return aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer);
+    return aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer, g_bot_setup.panic_burst_enabled);
 }
 
 fun botLockCurrentPiece() >> void {

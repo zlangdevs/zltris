@@ -69,6 +69,7 @@ fun clampI(v: i32, lo: i64, hi: i64) >> i32 {
 fun aiEnsureTuningDefaults() >> void {
     if g_ai_tuning_ready {return;}
 
+    ... Old manually written weights (kept for reference).
     g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 0] = 20;
     g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 1] = 14;
     g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 2] = 16;
@@ -230,6 +231,163 @@ fun aiEnsureTuningDefaults() >> void {
     g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 16] = 14000;
     g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 17] = 12000;
     g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 18] = 80;
+    ...
+
+    ?? ML weights from bot_duels.cfg champion_generation=3755.
+    g_ai_tuning_defaults[0] = 20;
+    g_ai_tuning_defaults[1] = 7;
+    g_ai_tuning_defaults[2] = 25;
+    g_ai_tuning_defaults[3] = 6;
+    g_ai_tuning_defaults[4] = 20;
+    g_ai_tuning_defaults[5] = 7;
+    g_ai_tuning_defaults[6] = 30;
+    g_ai_tuning_defaults[7] = 19;
+    g_ai_tuning_defaults[8] = 40;
+    g_ai_tuning_defaults[9] = 0;
+    g_ai_tuning_defaults[10] = 15;
+    g_ai_tuning_defaults[11] = 5;
+    g_ai_tuning_defaults[12] = 8;
+    g_ai_tuning_defaults[13] = 9;
+    g_ai_tuning_defaults[14] = 25;
+    g_ai_tuning_defaults[15] = 17;
+    g_ai_tuning_defaults[16] = 1;
+    g_ai_tuning_defaults[17] = 16;
+    g_ai_tuning_defaults[18] = 9;
+    g_ai_tuning_defaults[19] = 1;
+    g_ai_tuning_defaults[20] = 3;
+    g_ai_tuning_defaults[21] = 11;
+    g_ai_tuning_defaults[22] = 5;
+    g_ai_tuning_defaults[23] = 36;
+    g_ai_tuning_defaults[24] = 2;
+    g_ai_tuning_defaults[25] = 16;
+    g_ai_tuning_defaults[26] = 0;
+    g_ai_tuning_defaults[27] = 89809;
+    g_ai_tuning_defaults[28] = 225850;
+    g_ai_tuning_defaults[29] = 358087;
+    g_ai_tuning_defaults[30] = 10;
+    g_ai_tuning_defaults[31] = 0;
+    g_ai_tuning_defaults[32] = 11;
+    g_ai_tuning_defaults[33] = 93;
+    g_ai_tuning_defaults[34] = 23;
+    g_ai_tuning_defaults[35] = 14;
+    g_ai_tuning_defaults[36] = 5774;
+    g_ai_tuning_defaults[37] = 67;
+    g_ai_tuning_defaults[38] = 293;
+    g_ai_tuning_defaults[39] = 81;
+    g_ai_tuning_defaults[40] = 3;
+    g_ai_tuning_defaults[41] = 7;
+    g_ai_tuning_defaults[42] = 404;
+    g_ai_tuning_defaults[43] = 1;
+    g_ai_tuning_defaults[44] = 5;
+    g_ai_tuning_defaults[45] = 20;
+    g_ai_tuning_defaults[46] = 347;
+    g_ai_tuning_defaults[47] = 22;
+    g_ai_tuning_defaults[48] = 7;
+    g_ai_tuning_defaults[49] = 1630;
+    g_ai_tuning_defaults[50] = 27;
+    g_ai_tuning_defaults[51] = 13;
+    g_ai_tuning_defaults[52] = 6525;
+    g_ai_tuning_defaults[53] = 27;
+    g_ai_tuning_defaults[54] = 13703;
+    g_ai_tuning_defaults[55] = 7;
+    g_ai_tuning_defaults[56] = 9239;
+    g_ai_tuning_defaults[57] = 22;
+    g_ai_tuning_defaults[58] = 2169;
+    g_ai_tuning_defaults[59] = 435;
+    g_ai_tuning_defaults[60] = 282;
+    g_ai_tuning_defaults[61] = 873;
+    g_ai_tuning_defaults[62] = 7181;
+    g_ai_tuning_defaults[63] = 2424;
+    g_ai_tuning_defaults[64] = 201;
+    g_ai_tuning_defaults[65] = 173;
+    g_ai_tuning_defaults[66] = 474;
+    g_ai_tuning_defaults[67] = 275600;
+    g_ai_tuning_defaults[68] = 3;
+    g_ai_tuning_defaults[69] = 78538;
+    g_ai_tuning_defaults[70] = 25;
+    g_ai_tuning_defaults[71] = 20341;
+    g_ai_tuning_defaults[72] = 31;
+    g_ai_tuning_defaults[73] = 5354;
+    g_ai_tuning_defaults[74] = 764;
+    g_ai_tuning_defaults[75] = 178;
+    g_ai_tuning_defaults[76] = 19;
+    g_ai_tuning_defaults[77] = 11;
+    g_ai_tuning_defaults[78] = 7004;
+    g_ai_tuning_defaults[79] = 13347;
+    g_ai_tuning_defaults[80] = 3623;
+    g_ai_tuning_defaults[81] = 14616;
+    g_ai_tuning_defaults[82] = 237;
+    g_ai_tuning_defaults[83] = 1926;
+    g_ai_tuning_defaults[84] = 27;
+    g_ai_tuning_defaults[85] = 463;
+    g_ai_tuning_defaults[86] = 1425;
+    g_ai_tuning_defaults[87] = 7063;
+    g_ai_tuning_defaults[88] = 31141;
+    g_ai_tuning_defaults[89] = 437;
+    g_ai_tuning_defaults[90] = 2289;
+    g_ai_tuning_defaults[91] = 186980;
+    g_ai_tuning_defaults[92] = 10181;
+    g_ai_tuning_defaults[93] = 21133;
+    g_ai_tuning_defaults[94] = 13572;
+    g_ai_tuning_defaults[95] = 15406;
+    g_ai_tuning_defaults[96] = 154649;
+    g_ai_tuning_defaults[97] = 16198;
+    g_ai_tuning_defaults[98] = 12811;
+    g_ai_tuning_defaults[99] = 57908;
+    g_ai_tuning_defaults[100] = 4202;
+    g_ai_tuning_defaults[101] = 12219;
+    g_ai_tuning_defaults[102] = 33393;
+    g_ai_tuning_defaults[103] = 59361;
+    g_ai_tuning_defaults[104] = 6261;
+    g_ai_tuning_defaults[105] = 1266;
+    g_ai_tuning_defaults[106] = 1553;
+    g_ai_tuning_defaults[107] = 14041;
+    g_ai_tuning_defaults[108] = 4528;
+    g_ai_tuning_defaults[109] = 96;
+    g_ai_tuning_defaults[110] = 38;
+    g_ai_tuning_defaults[111] = 0;
+    g_ai_tuning_defaults[112] = 7;
+    g_ai_tuning_defaults[113] = 11;
+    g_ai_tuning_defaults[114] = 10;
+    g_ai_tuning_defaults[115] = 19;
+    g_ai_tuning_defaults[116] = 22;
+    g_ai_tuning_defaults[117] = 17;
+    g_ai_tuning_defaults[118] = 7;
+    g_ai_tuning_defaults[119] = 33;
+    g_ai_tuning_defaults[120] = 13;
+    g_ai_tuning_defaults[121] = 18;
+    g_ai_tuning_defaults[122] = 3;
+    g_ai_tuning_defaults[123] = 31;
+    g_ai_tuning_defaults[124] = 17;
+    g_ai_tuning_defaults[125] = 26;
+    g_ai_tuning_defaults[126] = 7;
+    g_ai_tuning_defaults[127] = 0;
+    g_ai_tuning_defaults[128] = 3010;
+    g_ai_tuning_defaults[129] = 15;
+    g_ai_tuning_defaults[130] = 5;
+    g_ai_tuning_defaults[131] = 2847;
+    g_ai_tuning_defaults[132] = 116;
+    g_ai_tuning_defaults[133] = 2078;
+    g_ai_tuning_defaults[134] = 399651;
+    g_ai_tuning_defaults[135] = 1;
+    g_ai_tuning_defaults[136] = 213254;
+    g_ai_tuning_defaults[137] = 433;
+    g_ai_tuning_defaults[138] = 292330;
+    g_ai_tuning_defaults[139] = 113045;
+    g_ai_tuning_defaults[140] = 64951;
+    g_ai_tuning_defaults[141] = 135444;
+    g_ai_tuning_defaults[142] = 21970;
+    g_ai_tuning_defaults[143] = 2441;
+    g_ai_tuning_defaults[144] = 8429;
+    g_ai_tuning_defaults[145] = 11906;
+    g_ai_tuning_defaults[146] = 23186;
+    g_ai_tuning_defaults[147] = 15791;
+    g_ai_tuning_defaults[148] = 110668;
+    g_ai_tuning_defaults[149] = 20043;
+    g_ai_tuning_defaults[150] = 28989;
+    g_ai_tuning_defaults[151] = 13166;
+    g_ai_tuning_defaults[152] = 7362;
+    g_ai_tuning_defaults[153] = 1;
 
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         g_ai_tuning[i] = g_ai_tuning_defaults[i];
@@ -2000,7 +2158,7 @@ fun aiBotActionsPerPiece(actions_taken: i32, pieces_placed: i32) >> f32 {
     return value;
 }
 
-fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, attack_sent: i32, pieces_placed: i32, actions_taken: i32, run_timer: f32) >> f32 {
+fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, attack_sent: i32, pieces_placed: i32, actions_taken: i32, run_timer: f32, panic_burst_enabled: bool) >> f32 {
     f32 current_apm = aiBotCurrentApm(attack_sent, run_timer);
     i32 max_h = 0;
     i32 garbage_rows = 0;
@@ -2009,6 +2167,8 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     aiBoardStackStats(board, &max_h, &holes, &garbage_rows, &garbage_cover);
     i32 garbage_access = aiBoardGarbageAccessScore(board);
     i32 mode = aiBotChooseMode(max_h, holes, garbage_rows, garbage_cover, garbage_access, pending_garbage);
+    i32 speed_mode = mode;
+    if !panic_burst_enabled {speed_mode = BOT_MODE_CLEAN;}
 
     f32 attack_per_piece = aiBotAttackPerPiece(attack_sent, pieces_placed);
     if attack_per_piece < 0.25 {attack_per_piece = 0.25;}
@@ -2016,18 +2176,19 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     if desired_pps > 5.0 {desired_pps = 5.0;}
     f32 desired_actions = desired_pps * aiBotActionsPerPiece(actions_taken, pieces_placed);
     f32 apm_error = target_apm - current_apm;
+    f32 target_ppm = desired_pps * 60.0;
 
     f32 rate = desired_actions;
     rate += apm_error * 0.24;
     if apm_error > 20.0 {rate += (apm_error - 20.0) * 0.06;}
     if apm_error < -20.0 {rate += (apm_error + 20.0) * 0.10;}
 
-    if mode == BOT_MODE_DIG {
+    if speed_mode == BOT_MODE_DIG {
         rate += 1.8;
         rate += (garbage_rows as f32) * 0.35;
         rate += (garbage_cover as f32) * 0.12;
         rate += (garbage_access as f32) * 0.04;
-    } else if mode == BOT_MODE_SURVIVE {
+    } else if speed_mode == BOT_MODE_SURVIVE {
         rate += 4.8;
         rate += (max_h as f32 - 15.0) * 0.9;
         if rate < 8.0 {rate = 8.0;}
@@ -2043,9 +2204,11 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
         }
     }
 
-    if max_h >= 13 {rate += 2.5 + ((max_h - 13) as f32) * 0.8;}
-    if pending_garbage >= 3 {rate += (pending_garbage as f32) * 0.9;}
-    if holes > 6 {rate += ((holes - 6) as f32) * 0.35;}
+    if panic_burst_enabled {
+        if max_h >= 13 {rate += 2.5 + ((max_h - 13) as f32) * 0.8;}
+        if pending_garbage >= 3 {rate += (pending_garbage as f32) * 0.9;}
+        if holes > 6 {rate += ((holes - 6) as f32) * 0.35;}
+    }
 
     i32 rhythm = (pieces_placed + actions_taken) % 8;
     if rhythm == 0 {rate *= 0.93;}
@@ -2056,11 +2219,33 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     if rhythm == 5 {rate *= 0.95;}
     if rhythm == 6 {rate *= 1.02;}
 
+    if !panic_burst_enabled {
+        if run_timer > 0.5 {
+            f32 current_ppm = (pieces_placed as f32) * 60.0 / run_timer;
+            f32 ppm_error = target_ppm - current_ppm;
+            if ppm_error < 0.0 {rate += ppm_error * 0.35;}
+            if current_ppm > target_ppm * 1.06 {
+                f32 cap = desired_actions * 0.75;
+                if rate > cap {rate = cap;}
+            }
+            if current_ppm > target_ppm * 1.12 {
+                f32 cap = desired_actions * 0.45;
+                if rate > cap {rate = cap;}
+            }
+            if current_ppm > target_ppm * 1.20 {
+                f32 cap = desired_actions * 0.30;
+                if rate > cap {rate = cap;}
+            }
+        }
+        f32 soft_cap = desired_actions * 1.02;
+        if rate > soft_cap {rate = soft_cap;}
+    }
+
     f32 min_rate = 2.0;
     f32 max_rate = 16.0;
-    if mode == BOT_MODE_CLEAN && target_apm >= 55.0 {max_rate = 20.0;}
-    if mode == BOT_MODE_SURVIVE {max_rate = 48.0;}
-    if mode == BOT_MODE_DIG {max_rate = 42.0;}
+    if speed_mode == BOT_MODE_CLEAN && target_apm >= 55.0 {max_rate = 20.0;}
+    if speed_mode == BOT_MODE_SURVIVE {max_rate = 48.0;}
+    if speed_mode == BOT_MODE_DIG {max_rate = 42.0;}
     if rate < min_rate {rate = min_rate;}
     if rate > max_rate {rate = max_rate;}
 
