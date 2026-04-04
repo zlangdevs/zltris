@@ -29,7 +29,7 @@ use zltris.theme
 #define BOT_BOARD_LEFT 706
 #define BOT_BOARD_TOP 82
 #define BOT_APM_MIN 10.0
-#define BOT_APM_MAX 400.0
+#define BOT_APM_MAX 200.0
 #define HIGH_STACK_SPAWN_ROWS 6
 #define HIGH_STACK_BOARD_SHIFT 64
 #define LOGMODE false
@@ -102,14 +102,16 @@ use zltris.theme
 #define BOT_DUELS_FILE_PATH "bot_duels.cfg"
 #define BOT_DUELS_SIM_STEPS 6
 #define BOT_DUELS_FIXED_APM 300.0
-#define AI_TUNE_COUNT 154
+#define AI_TUNE_COUNT 221
+#define AI_TUNE_RATE_BASE 154
+#define AI_TUNE_PLAN_BASE 187
 #define BOT_ARENA_LEFT 0
 #define BOT_ARENA_RIGHT 1
 #define BOT_WEIGHTS_STOCK 0
 #define BOT_WEIGHTS_CHAMPION 1
 #define BOT_ARENA_SAVED_CHAMPIONS 3
 #define BOT_ARENA_HISTORY_STORAGE 8
-#define BOT_ARENA_HISTORY_TUNING_CELLS 1232
+#define BOT_ARENA_HISTORY_TUNING_CELLS 1768
 
 struct Game {
     theme_index i32,
@@ -192,6 +194,7 @@ struct BotRuntime {
     game_over bool,
     pending_garbage i32,
     place_meter f32,
+    rate_smooth f32,
 }
 
 struct BotArenaSide {
@@ -521,8 +524,8 @@ fun loadSettingsFile() >> void {
     i32 fd = openForRead(SETTINGS_FILE_PATH);
     if fd < 0 {return;}
 
-    arr<u8, 4096> data = {0};
-    i64 bytes_read = readAll(fd, &data[0], 4095);
+    arr<u8, 262144> data = {0};
+    i64 bytes_read = readAll(fd, &data[0], 262143);
     close(fd);
     if bytes_read <= 0 {return;}
     data[bytes_read as i32] = 0;
@@ -742,6 +745,10 @@ fun parseArenaTuneKey(key: ptr<u8>) >> i32 {
     return atoi(key + 1);
 }
 
+fun planTune(offset: i32) >> i32 {
+    return aiGetTuningValue((AI_TUNE_PLAN_BASE as i32) + offset);
+}
+
 fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> void {
     i32 changed = 0;
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
@@ -847,6 +854,9 @@ fun loadBotDuelsFile() >> void {
     }
     data[bytes_read as i32] = 0;
 
+    arr<i32, AI_TUNE_COUNT> champion_tune_seen = {0};
+    arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> history_tune_seen = {0};
+
     ptr<u8> line = &data[0];
     for (line[0] != 0) {
         ptr<u8> next = line;
@@ -899,6 +909,7 @@ fun loadBotDuelsFile() >> void {
                                 if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
                                     ptr<i32> hist = arenaHistoryTuningPtr(slot);
                                     hist[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                                    history_tune_seen[slot * AI_TUNE_COUNT + tune_index] = 1;
                                 }
                             }
                         }
@@ -906,6 +917,7 @@ fun loadBotDuelsFile() >> void {
                     i32 tune_index = parseArenaTuneKey(key);
                     if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
                         g_bot_arena_champion_tuning[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                        champion_tune_seen[tune_index] = 1;
                     }
                 }
             }
@@ -931,8 +943,19 @@ fun loadBotDuelsFile() >> void {
     g_bot_arena.stock_round = 0;
     g_bot_arena.stock_left_wins = 0;
     g_bot_arena.stock_right_wins = 0;
+    arr<i32, AI_TUNE_COUNT> stock_defaults = {0};
+    aiFillDefaultTuning(&stock_defaults[0]);
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        if champion_tune_seen[i] == 0 {g_bot_arena_champion_tuning[i] = stock_defaults[i];}
         g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
+    }
+    i32 history_slots = arenaHistorySlotCount();
+    for i32 slot = 0; slot < history_slots; slot++ {
+        ptr<i32> hist = arenaHistoryTuningPtr(slot);
+        for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+            if history_tune_seen[slot * AI_TUNE_COUNT + i] == 0 {hist[i] = stock_defaults[i];}
+            hist[i] = aiClampTuningValue(i, hist[i]);
+        }
     }
     normalizeChampionHistory();
 }
@@ -2492,6 +2515,7 @@ fun initBotMatch() >> void {
     g_bot.target_tspin = false;
     g_bot.pending_garbage = 0;
     g_bot.place_meter = 0.0;
+    g_bot.rate_smooth = 0.0;
     g_bot.attack_sent = 0;
     g_bot.pieces_placed = 0;
     g_bot.actions_taken = 0;
@@ -2837,6 +2861,12 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     f32 apm_delta_f = g_bot_setup.target_apm - apm_current;
     i32 apm_delta = apm_delta_f as i32;
 
+    i32 speed_tier = 0;
+    if g_bot_setup.target_apm >= (planTune(0) as f32) {speed_tier = 1;}
+    if g_bot_setup.target_apm >= (planTune(1) as f32) {speed_tier = 2;}
+    if g_bot_setup.target_apm >= (planTune(2) as f32) {speed_tier = 3;}
+    bool unrestricted_speed = g_bot_setup.target_apm >= (planTune(3) as f32);
+
     i32 action_budget = 12;
     if g_bot_setup.target_apm <= 40.0 {
         action_budget = 7;
@@ -2847,12 +2877,20 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     } else {
         action_budget = 12;
     }
+    if speed_tier == 1 {action_budget += planTune(4);}
+    if speed_tier == 2 {action_budget += planTune(5);}
+    if speed_tier == 3 {action_budget += planTune(6);}
     if mode == BOT_MODE_DIG {action_budget += 1;}
     if mode == BOT_MODE_SURVIVE {action_budget += 2;}
     if cur_max_h >= 16 {action_budget -= 1;}
     if cur_max_h >= 19 {action_budget -= 1;}
     if apm_delta < -15 {action_budget -= 1;}
     if apm_delta > 12 {action_budget += 1;}
+    if apm_delta > planTune(7) {action_budget += planTune(9);}
+    if apm_delta > planTune(8) {action_budget += planTune(10);}
+    if unrestricted_speed {
+        action_budget = BOT_PLAN_MAX - 1;
+    }
     if cur_max_h >= 13 && action_budget < 8 {action_budget = 8;}
     if action_budget < 7 {action_budget = 7;}
     if action_budget > BOT_PLAN_MAX - 1 {action_budget = BOT_PLAN_MAX - 1;}
@@ -2900,7 +2938,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         if !botSimulateDropPlacement(&g_bot_board[0], g_bot.piece_kind, g_bot_search_xs[state_idx], g_bot_search_ys[state_idx], g_bot_search_rots[state_idx], last_rotate, &temp_board[0], &final_y, &lines, &spin, &all_clear) {continue;}
         i32 action_count = g_bot_landing_steps[slot];
 
-        if mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && g_bot_pending_garbage == 0 && action_count > action_budget + 5 {
+        if !unrestricted_speed && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && g_bot_pending_garbage == 0 && action_count > action_budget + 5 {
             continue;
         }
 
@@ -2929,7 +2967,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         i32 projected_score = 0;
 
         i32 base_score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel(), mode, g_bot_pending_garbage);
-        base_score -= action_count * 120;
+        if unrestricted_speed {base_score -= action_count * planTune(30);} else {base_score -= action_count * planTune(29);}
 
         if mode != BOT_MODE_CLEAN {
             projected_score = base_score;
@@ -2954,13 +2992,43 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         i32 score = base_score;
         i32 over_budget = action_count - action_budget;
         if over_budget < 0 {over_budget = 0;}
-        score -= action_count * 900;
-        score -= over_budget * 60000;
+        i32 action_step_penalty = planTune(11);
+        i32 over_budget_penalty = planTune(16);
+        if speed_tier == 1 {
+            action_step_penalty = planTune(12);
+            over_budget_penalty = planTune(17);
+        }
+        if speed_tier == 2 {
+            action_step_penalty = planTune(13);
+            over_budget_penalty = planTune(18);
+        }
+        if speed_tier == 3 {
+            action_step_penalty = planTune(14);
+            over_budget_penalty = planTune(19);
+        }
+        if unrestricted_speed {
+            action_step_penalty = planTune(15);
+            over_budget_penalty = planTune(20);
+        }
+        score -= action_count * action_step_penalty;
+        score -= over_budget * over_budget_penalty;
         score -= spawn_penalty;
         if mode == BOT_MODE_SURVIVE {score -= spawn_penalty * 2;}
         if mode == BOT_MODE_DIG {score += projected_score / 6;}
         if mode == BOT_MODE_SURVIVE {score += projected_score / 8;}
-        if attack > 0 && apm_delta > 0 {score += attack * 4000;}
+        if attack > 0 && apm_delta > 0 {
+            i32 attack_bonus = planTune(21);
+            if speed_tier == 1 {attack_bonus = planTune(22);}
+            if speed_tier == 2 {attack_bonus = planTune(23);}
+            if speed_tier == 3 {attack_bonus = planTune(24);}
+            if apm_delta > planTune(7) {attack_bonus += planTune(25);}
+            if apm_delta > planTune(8) {attack_bonus += planTune(26);}
+            score += attack * attack_bonus;
+        }
+        if unrestricted_speed && attack > 0 {
+            score += attack * planTune(27);
+            if spin != 0 {score += planTune(28);}
+        }
         if lines == 0 && mode != BOT_MODE_CLEAN && no_immediate_progress {score -= aiBotPanicPenalty(cur_garbage_access, mode);}
         if lines == 0 && mode == BOT_MODE_CLEAN && next_holes > cur_holes {score -= (next_holes - cur_holes) * 180000;}
         if lines == 0 && mode == BOT_MODE_CLEAN && next_max_h > cur_max_h {score -= (next_max_h - cur_max_h) * 50000;}
@@ -3727,11 +3795,39 @@ fun drawBotDuelsFrame(font: Font) >> void {
     if g_debug_colors {drawColorDebugOverlay(font, theme);}
 }
 
+fun botSetupPanelHeight() >> i64 {
+    if BOTDEVMODE {return 636;}
+    return 560;
+}
+
+fun botSetupRowCount() >> i32 {
+    if BOTDEVMODE {return 6;}
+    return 5;
+}
+
+fun botSetupPanicRow() >> i32 {
+    return 2;
+}
+
+fun botSetupWeightsRow() >> i32 {
+    if BOTDEVMODE {return 3;}
+    return -1;
+}
+
+fun botSetupStartRow() >> i32 {
+    if BOTDEVMODE {return 4;}
+    return 3;
+}
+
+fun botSetupBackRow() >> i32 {
+    if BOTDEVMODE {return 5;}
+    return 4;
+}
+
 fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
 
-    i64 panel_h = 636;
-    if BOTDEVMODE {panel_h = 712;}
+    i64 panel_h = botSetupPanelHeight();
     fillRect(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90));
     strokeRect(126, 128, 396, panel_h, alphaColor(theme.panel_stroke, 0.88));
     drawTextColor(font, "AGAINST BOT", 176, 164, 28, theme.text_main);
@@ -3751,8 +3847,7 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
 
     i64 row_y0 = 270;
     i64 row_h = 76;
-    i32 row_count = 6;
-    if BOTDEVMODE {row_count = 7;}
+    i32 row_count = botSetupRowCount();
     for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         u32 bg = alphaColor(theme.panel_bg, 0.88);
@@ -3782,20 +3877,22 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     i64 messiness_knob_x = slider_x + (((slider_w - 14) as f32) * messiness_norm) as i64;
     fillRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
     strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
+    ... Hidden temporarily.
     drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
     drawTextColor(font, "DISABLED", 384, 438, 13, theme.text_muted);
-    drawTextColor(font, "Panic burst", 176, 514, 13, theme.text_main);
-    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 514, 13, theme.text_muted);}
+    ...
+    drawTextColor(font, "Panic burst", 176, 438, 13, theme.text_main);
+    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 438, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 438, 13, theme.text_muted);}
     if BOTDEVMODE {
-        drawTextColor(font, "Weights", 176, 590, 13, theme.text_main);
-        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 590, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 590, 13, theme.panel_stroke);}
-        drawTextColor(font, "START DUEL", 176, 666, 13, theme.text_main);
-        drawTextColor(font, "BACK", 176, 742, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 786, 10, theme.text_muted);
-    } else {
+        drawTextColor(font, "Weights", 176, 514, 13, theme.text_main);
+        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
         drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
         drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
         drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 710, 10, theme.text_muted);
+    } else {
+        drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 634, 10, theme.text_muted);
     }
 }
 
@@ -4215,7 +4312,7 @@ fun updateBotArenaSide(side: i32, opponent: i32, dt: f32) >> void {
     applyAiTuning(arenaTuningPtr(side));
     loadBotArenaSideIntoScratch(side, opponent_pending);
 
-    g_bot.place_meter += dt * botActionRate();
+    g_bot.place_meter += dt * botActionRate(dt);
     if g_bot.place_meter > 12.0 {g_bot.place_meter = 12.0;}
 
     for (g_bot.place_meter >= 1.0) {
@@ -4286,8 +4383,8 @@ fun updateBotSetupScreen() >> void {
 
     if !canOpenBotSetupUi() {return;}
 
-    i32 max_index = 5;
-    if BOTDEVMODE {max_index = 6;}
+    i32 max_index = botSetupRowCount() - 1;
+    if g_bot_setup.index > max_index {g_bot_setup.index = max_index;}
 
     if IsKeyPressed(KEY_UP) {
         g_bot_setup.index -= 1;
@@ -4307,8 +4404,7 @@ fun updateBotSetupScreen() >> void {
     i64 row_h = 76;
     f32 mx = mouseBaseX();
     f32 my = mouseBaseY();
-    i32 row_count = 6;
-    if BOTDEVMODE {row_count = 7;}
+    i32 row_count = botSetupRowCount();
     for i32 i = 0; i < row_count; i++ {
         i64 y = row_y0 + (i as i64) * row_h;
         if pointInBaseRectLocal(mx, my, row_x, y, row_w, 58) {g_bot_setup.index = i;}
@@ -4325,16 +4421,14 @@ fun updateBotSetupScreen() >> void {
         g_bot_setup.garbage_messiness = ((mx - (slider_x as f32)) / (slider_w as f32)) * 100.0;
         clampBotGarbageMessiness();
     }
-    i32 burst_row = 3;
-    i32 start_row = 4;
-    i32 back_row = 5;
+    i32 burst_row = botSetupPanicRow();
+    i32 start_row = botSetupStartRow();
+    i32 back_row = botSetupBackRow();
     if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (burst_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
         g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
     }
+    i32 weights_row = botSetupWeightsRow();
     if BOTDEVMODE {
-        i32 weights_row = 4;
-        start_row = 5;
-        back_row = 6;
         if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (weights_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
@@ -4351,21 +4445,21 @@ fun updateBotSetupScreen() >> void {
         if IsKeyPressed(KEY_LEFT) {g_bot_setup.garbage_messiness -= 5.0;}
         if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_messiness += 5.0;}
         clampBotGarbageMessiness();
-    } else if g_bot_setup.index == 3 {
+    } else if g_bot_setup.index == 2 {
         if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
             g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
         }
-    } else if BOTDEVMODE && g_bot_setup.index == 4 {
+    } else if BOTDEVMODE && g_bot_setup.index == weights_row {
         if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-        if g_bot_setup.index == 3 {
+        if g_bot_setup.index == 2 {
             g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
         }
-        if BOTDEVMODE && g_bot_setup.index == 4 {
+        if BOTDEVMODE && g_bot_setup.index == weights_row {
             if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
         }
         if g_bot_setup.index == start_row {startBotDuel();}
@@ -4872,8 +4966,18 @@ fun botActionsPerPiece() >> f32 {
     return aiBotActionsPerPiece(g_bot.actions_taken, g_bot.pieces_placed);
 }
 
-fun botActionRate() >> f32 {
-    return aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer, g_bot_setup.panic_burst_enabled);
+fun botActionRate(dt: f32) >> f32 {
+    f32 raw_rate = aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer, g_bot_setup.panic_burst_enabled);
+    if g_bot.rate_smooth <= 0.01 {g_bot.rate_smooth = raw_rate;}
+
+    f32 smooth_gain = planTune(31) as f32;
+    if !g_bot_setup.panic_burst_enabled {smooth_gain = planTune(32) as f32;}
+    f32 smooth_alpha = dt * smooth_gain;
+    f32 smooth_min = (planTune(33) as f32) * 0.01;
+    if smooth_alpha < smooth_min {smooth_alpha = smooth_min;}
+    if smooth_alpha > 0.40 {smooth_alpha = 0.40;}
+    g_bot.rate_smooth += (raw_rate - g_bot.rate_smooth) * smooth_alpha;
+    return g_bot.rate_smooth;
 }
 
 fun botLockCurrentPiece() >> void {
@@ -4952,7 +5056,7 @@ fun updateDuelBot(dt: f32) >> void {
     if !g_duel_running {return;}
     if g_bot.game_over || g_play.game_over {return;}
 
-    g_bot.place_meter += dt * botActionRate();
+    g_bot.place_meter += dt * botActionRate(dt);
     if g_bot.place_meter > 12.0 {g_bot.place_meter = 12.0;}
 
     for (g_bot.place_meter >= 1.0) {
