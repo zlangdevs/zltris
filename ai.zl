@@ -38,7 +38,21 @@ module zltris.ai;
 #define AI_TUNE_EXACT_BASE 109
 #define AI_TUNE_GREEDY_BASE 134
 #define AI_TUNE_MOVE_BASE 135
-#define AI_TUNE_COUNT 154
+#define AI_TUNE_RATE_BASE 154
+#define AI_TUNE_PLAN_BASE 187
+#define AI_TUNE_COUNT 221
+
+fun aiRateI(offset: i32) >> i32 {
+    return aiTune((AI_TUNE_RATE_BASE + offset) as i64);
+}
+
+fun aiRateF100(offset: i32) >> f32 {
+    return (aiRateI(offset) as f32) * 0.01;
+}
+
+fun aiRateF10(offset: i32) >> f32 {
+    return (aiRateI(offset) as f32) * 0.1;
+}
 
 struct AiMove {
     valid bool,
@@ -389,6 +403,75 @@ fun aiEnsureTuningDefaults() >> void {
     g_ai_tuning_defaults[152] = 7362;
     g_ai_tuning_defaults[153] = 1;
 
+    g_ai_tuning_defaults[154] = 90;
+    g_ai_tuning_defaults[155] = 130;
+    g_ai_tuning_defaults[156] = 170;
+    g_ai_tuning_defaults[157] = 190;
+    g_ai_tuning_defaults[158] = 150;
+    g_ai_tuning_defaults[159] = 500;
+    g_ai_tuning_defaults[160] = 650;
+    g_ai_tuning_defaults[161] = 750;
+    g_ai_tuning_defaults[162] = 850;
+    g_ai_tuning_defaults[163] = 1200;
+    g_ai_tuning_defaults[164] = 24;
+    g_ai_tuning_defaults[165] = 34;
+    g_ai_tuning_defaults[166] = 45;
+    g_ai_tuning_defaults[167] = 58;
+    g_ai_tuning_defaults[168] = 35;
+    g_ai_tuning_defaults[169] = 70;
+    g_ai_tuning_defaults[170] = 55;
+    g_ai_tuning_defaults[171] = 70;
+    g_ai_tuning_defaults[172] = 92;
+    g_ai_tuning_defaults[173] = 85;
+    g_ai_tuning_defaults[174] = 95;
+    g_ai_tuning_defaults[175] = 90;
+    g_ai_tuning_defaults[176] = 8;
+    g_ai_tuning_defaults[177] = 11;
+    g_ai_tuning_defaults[178] = 14;
+    g_ai_tuning_defaults[179] = 115;
+    g_ai_tuning_defaults[180] = 125;
+    g_ai_tuning_defaults[181] = 150;
+    g_ai_tuning_defaults[182] = 190;
+    g_ai_tuning_defaults[183] = 240;
+    g_ai_tuning_defaults[184] = 480;
+    g_ai_tuning_defaults[185] = 680;
+    g_ai_tuning_defaults[186] = 1200;
+
+    g_ai_tuning_defaults[187] = 90;
+    g_ai_tuning_defaults[188] = 130;
+    g_ai_tuning_defaults[189] = 170;
+    g_ai_tuning_defaults[190] = 150;
+    g_ai_tuning_defaults[191] = 2;
+    g_ai_tuning_defaults[192] = 4;
+    g_ai_tuning_defaults[193] = 6;
+    g_ai_tuning_defaults[194] = 35;
+    g_ai_tuning_defaults[195] = 70;
+    g_ai_tuning_defaults[196] = 2;
+    g_ai_tuning_defaults[197] = 2;
+    g_ai_tuning_defaults[198] = 900;
+    g_ai_tuning_defaults[199] = 700;
+    g_ai_tuning_defaults[200] = 520;
+    g_ai_tuning_defaults[201] = 380;
+    g_ai_tuning_defaults[202] = 0;
+    g_ai_tuning_defaults[203] = 60000;
+    g_ai_tuning_defaults[204] = 36000;
+    g_ai_tuning_defaults[205] = 18000;
+    g_ai_tuning_defaults[206] = 9000;
+    g_ai_tuning_defaults[207] = 0;
+    g_ai_tuning_defaults[208] = 4000;
+    g_ai_tuning_defaults[209] = 7000;
+    g_ai_tuning_defaults[210] = 11000;
+    g_ai_tuning_defaults[211] = 16000;
+    g_ai_tuning_defaults[212] = 5000;
+    g_ai_tuning_defaults[213] = 7000;
+    g_ai_tuning_defaults[214] = 26000;
+    g_ai_tuning_defaults[215] = 24000;
+    g_ai_tuning_defaults[216] = 120;
+    g_ai_tuning_defaults[217] = 0;
+    g_ai_tuning_defaults[218] = 6;
+    g_ai_tuning_defaults[219] = 4;
+    g_ai_tuning_defaults[220] = 6;
+
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         g_ai_tuning[i] = g_ai_tuning_defaults[i];
     }
@@ -470,6 +553,8 @@ fun aiClampTuningValue(index: i32, value: i32) >> i32 {
     }
 
     if index == AI_TUNE_GREEDY_BASE {return clampI(value, 1000, 2000000);}
+
+    if index >= AI_TUNE_RATE_BASE {return clampI(value, 0, 2000000);}
 
     i32 move_off = index - AI_TUNE_MOVE_BASE;
     if move_off == 0 {return clampI(value, 0, 10);}
@@ -2169,11 +2254,24 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     i32 mode = aiBotChooseMode(max_h, holes, garbage_rows, garbage_cover, garbage_access, pending_garbage);
     i32 speed_mode = mode;
     if !panic_burst_enabled {speed_mode = BOT_MODE_CLEAN;}
+    f32 rate_apm_t1 = aiRateI(0) as f32;
+    f32 rate_apm_t2 = aiRateI(1) as f32;
+    f32 rate_apm_t3 = aiRateI(2) as f32;
+    f32 rate_apm_t4 = aiRateI(3) as f32;
+    f32 unrestricted_apm = aiRateI(4) as f32;
+    bool unrestricted_target = !panic_burst_enabled && target_apm >= unrestricted_apm;
 
     f32 attack_per_piece = aiBotAttackPerPiece(attack_sent, pieces_placed);
     if attack_per_piece < 0.25 {attack_per_piece = 0.25;}
+    if !panic_burst_enabled && attack_per_piece > 0.95 {attack_per_piece = 0.95;}
+    if unrestricted_target && attack_per_piece > 1.00 {attack_per_piece = 1.00;}
     f32 desired_pps = (target_apm / 60.0) / attack_per_piece;
-    if desired_pps > 5.0 {desired_pps = 5.0;}
+    f32 max_desired_pps = aiRateF100(5);
+    if target_apm >= rate_apm_t1 {max_desired_pps = aiRateF100(6);}
+    if target_apm >= rate_apm_t2 {max_desired_pps = aiRateF100(7);}
+    if target_apm >= rate_apm_t3 {max_desired_pps = aiRateF100(8);}
+    if target_apm >= rate_apm_t4 {max_desired_pps = aiRateF100(9);}
+    if desired_pps > max_desired_pps {desired_pps = max_desired_pps;}
     f32 desired_actions = desired_pps * aiBotActionsPerPiece(actions_taken, pieces_placed);
     f32 apm_error = target_apm - current_apm;
     f32 target_ppm = desired_pps * 60.0;
@@ -2182,6 +2280,17 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     rate += apm_error * 0.24;
     if apm_error > 20.0 {rate += (apm_error - 20.0) * 0.06;}
     if apm_error < -20.0 {rate += (apm_error + 20.0) * 0.10;}
+    if apm_error > 0.0 {
+        f32 chase_gain = aiRateF100(10);
+        if target_apm >= rate_apm_t1 {chase_gain = aiRateF100(11);}
+        if target_apm >= rate_apm_t2 {chase_gain = aiRateF100(12);}
+        if target_apm >= rate_apm_t3 {chase_gain = aiRateF100(13);}
+        rate += apm_error * chase_gain;
+        f32 chase_step_1 = aiRateI(14) as f32;
+        f32 chase_step_2 = aiRateI(15) as f32;
+        if apm_error > chase_step_1 {rate += (apm_error - chase_step_1) * (chase_gain * aiRateF100(16));}
+        if apm_error > chase_step_2 {rate += (apm_error - chase_step_2) * (chase_gain * aiRateF100(17));}
+    }
 
     if speed_mode == BOT_MODE_DIG {
         rate += 1.8;
@@ -2193,14 +2302,26 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
         rate += (max_h as f32 - 15.0) * 0.9;
         if rate < 8.0 {rate = 8.0;}
     } else {
-        if current_apm > target_apm * 1.05 && max_h <= 10 && garbage_rows == 0 {rate *= 0.78;}
-        if current_apm > target_apm * 1.15 && max_h <= 8 {rate *= 0.65;}
+        if current_apm > target_apm * 1.05 && max_h <= 10 && garbage_rows == 0 {
+            if !panic_burst_enabled {rate *= aiRateF100(18);} else {rate *= 0.78;}
+        }
+        if current_apm > target_apm * 1.15 && max_h <= 8 {
+            if !panic_burst_enabled {rate *= aiRateF100(19);} else {rate *= 0.65;}
+        }
         if apm_error > 12.0 && target_apm >= 55.0 && max_h <= 10 && holes <= 1 {rate *= 1.10;}
         if max_h >= 12 {
-            if target_apm >= 55.0 {rate *= 0.88;} else {rate *= 0.75;}
+            if !panic_burst_enabled {
+                if target_apm >= 55.0 {rate *= aiRateF100(20);} else {rate *= 0.90;}
+            } else {
+                if target_apm >= 55.0 {rate *= 0.88;} else {rate *= 0.75;}
+            }
         }
         if max_h >= 14 {
-            if target_apm >= 55.0 {rate *= 0.72;} else {rate *= 0.55;}
+            if !panic_burst_enabled {
+                if target_apm >= 55.0 {rate *= aiRateF100(21);} else {rate *= 0.82;}
+            } else {
+                if target_apm >= 55.0 {rate *= 0.72;} else {rate *= 0.55;}
+            }
         }
     }
 
@@ -2211,41 +2332,68 @@ fun aiBotActionRate(board: ptr<i32>, target_apm: f32, pending_garbage: i32, atta
     }
 
     i32 rhythm = (pieces_placed + actions_taken) % 8;
-    if rhythm == 0 {rate *= 0.93;}
-    if rhythm == 1 {rate *= 0.98;}
-    if rhythm == 2 {rate *= 1.04;}
-    if rhythm == 3 {rate *= 0.97;}
-    if rhythm == 4 {rate *= 1.03;}
-    if rhythm == 5 {rate *= 0.95;}
-    if rhythm == 6 {rate *= 1.02;}
+    if rhythm == 0 {rate *= 0.99;}
+    if rhythm == 1 {rate *= 0.995;}
+    if rhythm == 2 {rate *= 1.01;}
+    if rhythm == 3 {rate *= 0.995;}
+    if rhythm == 4 {rate *= 1.01;}
+    if rhythm == 5 {rate *= 0.99;}
+    if rhythm == 6 {rate *= 1.005;}
 
     if !panic_burst_enabled {
         if run_timer > 0.5 {
             f32 current_ppm = (pieces_placed as f32) * 60.0 / run_timer;
             f32 ppm_error = target_ppm - current_ppm;
+            f32 ppm_gain = aiRateF100(22);
+            if target_apm >= rate_apm_t1 {ppm_gain = aiRateF100(23);}
+            if target_apm >= rate_apm_t2 {ppm_gain = aiRateF100(24);}
+            rate += ppm_error * ppm_gain;
             if ppm_error < 0.0 {rate += ppm_error * 0.35;}
-            if current_ppm > target_ppm * 1.06 {
+            f32 cap_gate_1 = 1.06;
+            f32 cap_gate_2 = 1.12;
+            f32 cap_gate_3 = 1.20;
+            if target_apm >= rate_apm_t2 {
+                cap_gate_1 = 1.12;
+                cap_gate_2 = 1.24;
+                cap_gate_3 = 1.40;
+            }
+            if target_apm >= rate_apm_t3 {
+                cap_gate_1 = 1.18;
+                cap_gate_2 = 1.34;
+                cap_gate_3 = 1.55;
+            }
+            if !unrestricted_target && current_ppm > target_ppm * cap_gate_1 {
                 f32 cap = desired_actions * 0.75;
                 if rate > cap {rate = cap;}
             }
-            if current_ppm > target_ppm * 1.12 {
+            if !unrestricted_target && current_ppm > target_ppm * cap_gate_2 {
                 f32 cap = desired_actions * 0.45;
                 if rate > cap {rate = cap;}
             }
-            if current_ppm > target_ppm * 1.20 {
+            if !unrestricted_target && current_ppm > target_ppm * cap_gate_3 {
                 f32 cap = desired_actions * 0.30;
                 if rate > cap {rate = cap;}
             }
         }
-        f32 soft_cap = desired_actions * 1.02;
-        if rate > soft_cap {rate = soft_cap;}
+        f32 cap_mult = aiRateF100(25);
+        if target_apm >= rate_apm_t1 {cap_mult = aiRateF100(26);}
+        if target_apm >= rate_apm_t2 {cap_mult = aiRateF100(27);}
+        if target_apm >= rate_apm_t3 {cap_mult = aiRateF100(28);}
+        if target_apm >= rate_apm_t4 {cap_mult = aiRateF100(29);}
+        f32 soft_cap = desired_actions * cap_mult;
+        if !unrestricted_target && rate > soft_cap {rate = soft_cap;}
     }
 
     f32 min_rate = 2.0;
     f32 max_rate = 16.0;
     if speed_mode == BOT_MODE_CLEAN && target_apm >= 55.0 {max_rate = 20.0;}
-    if speed_mode == BOT_MODE_SURVIVE {max_rate = 48.0;}
-    if speed_mode == BOT_MODE_DIG {max_rate = 42.0;}
+    if speed_mode == BOT_MODE_CLEAN && target_apm >= 90.0 {max_rate = 24.0;}
+    if speed_mode == BOT_MODE_CLEAN && target_apm >= 130.0 {max_rate = 28.0;}
+    if speed_mode == BOT_MODE_CLEAN && target_apm >= rate_apm_t3 {max_rate = aiRateF10(30);}
+    if speed_mode == BOT_MODE_CLEAN && target_apm >= rate_apm_t4 {max_rate = aiRateF10(31);}
+    if speed_mode == BOT_MODE_SURVIVE {max_rate = 64.0;}
+    if speed_mode == BOT_MODE_DIG {max_rate = 58.0;}
+    if unrestricted_target {max_rate = aiRateF10(32);}
     if rate < min_rate {rate = min_rate;}
     if rate > max_rate {rate = max_rate;}
 
