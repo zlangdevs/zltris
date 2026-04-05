@@ -182,14 +182,19 @@ fun drawRetroGrid(theme: Theme) >> void {
     i64 bottom_half_span = (top_half_span * 557) / 100;
     f32 t = GetTime() as f32;
 
-    drawFloorTintFullWidth(horizon, alphaColor(theme.bg_outer, 0.22));
-    drawHorizontalFullWidth(horizon, alphaColor(theme.panel_stroke, 0.58));
+    f32 line_brightness = 1.0 as f32;
+    if theme.panel_bg == 0xFF121212 && theme.piece_t == 0xFFA755B7 {
+        line_brightness = 1.45 as f32;
+    }
+
+    drawFloorTintFullWidth(horizon, alphaColor(theme.bg_outer, (0.22 as f32) * line_brightness));
+    drawHorizontalFullWidth(horizon, alphaColor(theme.panel_stroke, (0.58 as f32) * line_brightness));
 
     for i32 i = -23; i <= 23; i++ {
         f32 n = (i as f32) / 23.0;
         i64 xh = center + ((top_half_span as f32) * n) as i64;
         i64 xb = center + ((bottom_half_span as f32) * n) as i64;
-        drawLineBase(xh, horizon, xb, bottom, alphaColor(theme.panel_stroke, 0.30));
+        drawLineBase(xh, horizon, xb, bottom, alphaColor(theme.panel_stroke, (0.30 as f32) * line_brightness));
     }
 
     for i32 i = 0; i < 16; i++ {
@@ -199,7 +204,7 @@ fun drawRetroGrid(theme: Theme) >> void {
         if frac < 0.0 {frac += 1.0;}
         f32 depth = frac * frac;
         i64 y = horizon + (((bottom - horizon) as f32) * depth) as i64;
-        f32 alpha = 0.18 + depth * 0.44;
+        f32 alpha = ((0.18 as f32) + depth * (0.44 as f32)) * line_brightness;
         drawHorizontalFullWidth(y, alphaColor(theme.panel_stroke, alpha));
     }
 }
