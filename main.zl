@@ -98,6 +98,8 @@ use zltris.theme
 #define STAR_MODE_DROPS 1
 #define STAR_MODE_MUSIC 2
 
+#define THEME_COMPETITIVE_INDEX 5
+
 #define SETTINGS_FILE_PATH "zltris.cfg"
 #define BOT_DUELS_FILE_PATH "bot_duels.cfg"
 #define BOT_DUELS_SIM_STEPS 6
@@ -344,6 +346,7 @@ i32 g_player_pending_garbage = 0;
 i32 g_bot_pending_garbage = 0;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
+bool g_restart_hold_blocked = false;
 i32 g_bg_stars_amount = 50;
 i32 g_bg_star_react_mode = STAR_MODE_DROPS;
 f32 g_star_peak_target_dps = 1.5;
@@ -1357,12 +1360,27 @@ fun drawBackgroundStars(theme: Theme) >> void {
         i64 glow_radius = ((s * 5) as f32 * spread_mul) as i64;
         if g_bg_star_react_mode == STAR_MODE_DROPS {glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;}
 
-        u32 outer = alphaColor(theme.panel_stroke, alpha * 0.34);
-        u32 inner = alphaColor(theme.panel_stroke, alpha * 0.72);
+        u32 star_color = theme.panel_stroke;
+        f32 star_alpha_mul = 1.0;
+        if g_game.theme_index == THEME_COMPETITIVE_INDEX {
+            f32 cycle = fractf(g_star_phase[i] * 1.93 + t * (0.055 + g_star_speed[i] * 0.24));
+            f32 scaled = cycle * 7.0;
+            i32 p0 = scaled as i32;
+            f32 blend = scaled - (p0 as f32);
+            i32 p1 = (p0 + 1) % 7;
+            u32 c0 = competitiveStarPalette(theme, p0 + i + g_star_style[i]);
+            u32 c1 = competitiveStarPalette(theme, p1 + i + g_star_style[i]);
+            star_color = colorLerpRgb(c0, c1, blend);
+            star_alpha_mul = 1.28;
+            glow_radius += 1;
+        }
+
+        u32 outer = alphaColor(star_color, alpha * 0.34 * star_alpha_mul);
+        u32 inner = alphaColor(star_color, alpha * 0.78 * star_alpha_mul);
         DrawCircleGradient(uiX(x), uiY(y), uiS(glow_radius) as f32, toColor(outer), toColor(alphaColor(theme.bg_outer, 0.0)));
         DrawCircleGradient(uiX(x), uiY(y), uiS((glow_radius * 2) / 3) as f32, toColor(inner), toColor(alphaColor(theme.bg_outer, 0.0)));
-        drawStarArms(x, y, s, g_star_style[i], alphaColor(theme.panel_stroke, alpha));
-        fillRect(x - 1, y - 1, 3, 3, alphaColor(theme.text_main, alpha * 0.84 + react_boost * (0.24 + norm * 0.10)));
+        drawStarArms(x, y, s, g_star_style[i], alphaColor(star_color, alpha * star_alpha_mul));
+        fillRect(x - 1, y - 1, 3, 3, alphaColor(theme.text_main, (alpha * 0.84 + react_boost * (0.24 + norm * 0.10)) * star_alpha_mul));
     }
 }
 
@@ -1567,6 +1585,17 @@ fun updateRestartCharge(dt: f32) >> bool {
     bool r_down = IsKeyDown(KEY_R);
     if g_instant_restart {r_down = false;}
 
+    if g_restart_hold_blocked {
+        if !esc_down && !r_down {
+            g_restart_hold_blocked = false;
+        } else {
+            g_rt.restart_charge = 0.0;
+            g_rt.hold_action = HOLD_ACTION_NONE;
+            g_rt.restart_hold_latched = false;
+            return false;
+        }
+    }
+
     i32 action = HOLD_ACTION_NONE;
     if esc_down {
         action = HOLD_ACTION_MENU;
@@ -1593,6 +1622,7 @@ fun updateRestartCharge(dt: f32) >> bool {
             g_rt.restart_charge = 1.0;
             g_rt.restart_hold_latched = true;
             if action == HOLD_ACTION_RESTART {
+                g_restart_hold_blocked = true;
                 restartCurrentModeWithShake();
                 g_rt.restart_afterglow = 0.24 as f32;
                 return true;
@@ -1618,6 +1648,7 @@ fun updateRestartCharge(dt: f32) >> bool {
 }
 
 fun canShowHoldRestartEffect() >> bool {
+    if isVsBotMode() && !g_duel_running {return false;}
     if g_play.game_over {return false;}
     if modeUsesRoundState() && g_play.round_state != ROUND_RUNNING {return false;}
     return true;
@@ -1657,6 +1688,35 @@ fun shadeColor(base: u32, factor: f32) >> u32 {
 fun colorR(color: u32) >> i32 { return (color & 255) as i32; }
 fun colorG(color: u32) >> i32 { return ((color >> 8) & 255) as i32; }
 fun colorB(color: u32) >> i32 { return ((color >> 16) & 255) as i32; }
+
+fun colorLerpRgb(a: u32, b: u32, t: f32) >> u32 {
+    f32 tt = clamp01(t);
+    i32 r = (colorR(a) as f32 + ((colorR(b) - colorR(a)) as f32) * tt) as i32;
+    i32 g = (colorG(a) as f32 + ((colorG(b) - colorG(a)) as f32) * tt) as i32;
+    i32 bb = (colorB(a) as f32 + ((colorB(b) - colorB(a)) as f32) * tt) as i32;
+    if r < 0 {r = 0;}
+    if g < 0 {g = 0;}
+    if bb < 0 {bb = 0;}
+    if r > 255 {r = 255;}
+    if g > 255 {g = 255;}
+    if bb > 255 {bb = 255;}
+    return ((r as u32) & 255) |
+           (((g as u32) & 255) << 8) |
+           (((bb as u32) & 255) << 16) |
+           (255 as u32) << 24;
+}
+
+fun competitiveStarPalette(theme: Theme, index: i32) >> u32 {
+    i32 slot = index % 7;
+    if slot < 0 {slot += 7;}
+    if slot == 0 {return theme.piece_i;}
+    if slot == 1 {return theme.piece_o;}
+    if slot == 2 {return theme.piece_t;}
+    if slot == 3 {return theme.piece_j;}
+    if slot == 4 {return theme.piece_l;}
+    if slot == 5 {return theme.piece_s;}
+    return theme.piece_z;
+}
 
 fun printColorDebug(theme: Theme) >> void {
     printf("[zltris] color debug theme=%s index=%d\n", themeName(g_game.theme_index), g_game.theme_index);
@@ -3879,7 +3939,7 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
     ... Hidden temporarily.
     drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
-    drawTextColor(font, "DISABLED", 384, 438, 13, theme.text_muted);
+    drawTextColor(font, "OFF", 384, 438, 13, theme.text_muted);
     ...
     drawTextColor(font, "Panic burst", 176, 438, 13, theme.text_main);
     if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 438, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 438, 13, theme.text_muted);}
@@ -3888,11 +3948,13 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
         if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
         drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
         drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 710, 10, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 718, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 733, 10, theme.text_muted);
     } else {
         drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
         drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse  ENTER confirm", 156, 634, 10, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 643, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 658, 10, theme.text_muted);
     }
 }
 
@@ -4810,7 +4872,7 @@ fun drawGameFrame(font: Font) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
     
-    if (g_play.game_over) {
+    if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
         fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
         strokeRect(board_left + 24, board_top + 224, 272, 140, pieceColor(theme, PIECE_Z));
         drawTextColor(font, "GAME OVER", board_left + 50, board_top + 256, 24, theme.text_main);

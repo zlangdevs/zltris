@@ -26,7 +26,7 @@ fun themeRgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
            ((a as u32) << 24);
 }
 
-arr<Theme, 5> g_themes = {
+arr<Theme, 6> g_themes = {
     Theme{
         name = "ZLang Neon",
         bg_outer = 0xFF180105,
@@ -117,9 +117,27 @@ arr<Theme, 5> g_themes = {
         piece_s = 0xFF2E95D6,
         piece_z = 0xFF36B6F8,
     },
+    Theme{
+        name = "Competitive",
+        bg_outer = 0xFF070707,
+        bg_inner = 0xFF101010,
+        panel_bg = 0xFF121212,
+        panel_stroke = 0xFF8C8C8C,
+        board_bg = 0xFF0C0C0C,
+        board_grid = 0x3A6E6E6E,
+        text_main = 0xFFF2F2F2,
+        text_muted = 0xFFBFBFBF,
+        piece_i = 0xFF9DCF4B,
+        piece_o = 0xFF60C8E2,
+        piece_t = 0xFFA755B7,
+        piece_j = 0xFFA64756,
+        piece_l = 0xFF4D7ECF,
+        piece_s = 0xFF46C695,
+        piece_z = 0xFF4641BC,
+    },
 };
 
-fun themeCount() >> i32 {return 5;}
+fun themeCount() >> i32 {return 6;}
 
 fun clampThemeIndex(index: i32) >> i32 {
     i32 idx = index;
