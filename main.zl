@@ -7,6 +7,7 @@ use zltris.ai
 use zltris.menu
 use zltris.scale
 use zltris.settings
+use zltris.sound
 use zltris.theme
 
 #define BOARD_W 10
@@ -97,6 +98,9 @@ use zltris.theme
 #define STAR_MODE_NONE 0
 #define STAR_MODE_DROPS 1
 #define STAR_MODE_MUSIC 2
+#define STAR_MUSIC_STYLE_PULSE 0
+#define STAR_MUSIC_STYLE_WAVE 1
+#define STAR_MUSIC_STYLE_AGGRO 2
 
 #define THEME_COMPETITIVE_INDEX 5
 
@@ -494,6 +498,7 @@ fun clampSettings() >> void {
     if g_star_peak_target_dps > 3.5 {g_star_peak_target_dps = 3.5;}
     if g_star_intensity < 0.1 {g_star_intensity = 0.1;}
     if g_star_intensity > 1.0 {g_star_intensity = 1.0;}
+    clampSoundSettings();
     if g_board_bounciness < 0 {g_board_bounciness = 0;}
     if g_board_bounciness > 100 {g_board_bounciness = 100;}
 }
@@ -518,6 +523,8 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
     writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
     writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
+    writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
+    writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
     writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
 
     close(fd);
@@ -580,6 +587,10 @@ fun loadSettingsFile() >> void {
                     g_star_peak_target_dps = parseFloatValue(value, g_star_peak_target_dps);
                 } else if (strEq(key, "star_intensity")) {
                     g_star_intensity = parseFloatValue(value, g_star_intensity);
+                } else if (strEq(key, "star_music_intensity")) {
+                    g_star_music_intensity = parseFloatValue(value, g_star_music_intensity);
+                } else if (strEq(key, "star_music_style")) {
+                    g_star_music_style = atoi(value);
                 } else if (strEq(key, "board_bounciness")) {
                     g_board_bounciness = atoi(value);
                 }
@@ -1249,11 +1260,97 @@ fun aiLog(text: ptr<u8>) >> void {
 }
 
 fun updateBackgroundStarReaction(dt: f32) >> void {
-    if (g_bg_star_react_mode != STAR_MODE_DROPS) {
+    if g_bg_star_react_mode == STAR_MODE_NONE {
         g_rt.star_soft_glow = 0.0;
         g_rt.star_hard_burst = 0.0;
         g_rt.star_hard_target = 0.0;
         g_rt.star_pps_meter = 0.0;
+        return;
+    }
+
+    if g_bg_star_react_mode == STAR_MODE_MUSIC {
+        f32 norm = starMusicIntensityNorm();
+        f32 proximity = currentMusicBeatProximity();
+
+        f32 interval = currentMusicBeatInterval();
+        f32 phase = currentMusicBeatPhase();
+        f32 tempo_factor = clamp01(((0.72 as f32) - interval) / (0.54 as f32));
+
+        f32 style_attack_mul = 1.0 as f32;
+        f32 style_decay_mul = 1.0 as f32;
+        f32 style_burst_mul = 1.0 as f32;
+        f32 style_shape_mul = 1.0 as f32;
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {
+            style_attack_mul = 0.74 as f32;
+            style_decay_mul = 1.32 as f32;
+            style_burst_mul = 0.70 as f32;
+            style_shape_mul = 0.78 as f32;
+        } else if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {
+            style_attack_mul = 1.42 as f32;
+            style_decay_mul = 0.92 as f32;
+            style_burst_mul = 1.45 as f32;
+            style_shape_mul = 1.24 as f32;
+        }
+
+        f32 post_beat = 0.0 as f32;
+        if phase <= 0.62 as f32 {post_beat = 1.0 as f32 - phase / (0.62 as f32);}
+
+        f32 pre_beat = 0.0 as f32;
+        if phase >= 0.82 as f32 {pre_beat = (phase - (0.82 as f32)) / (0.18 as f32);}
+
+        f32 offbeat = 0.0 as f32;
+        f32 offbeat_dist = absf(phase - (0.5 as f32));
+        if offbeat_dist < 0.16 as f32 {
+            offbeat = (1.0 as f32 - offbeat_dist / (0.16 as f32)) * (0.10 as f32 + tempo_factor * (0.26 as f32));
+        }
+
+        f32 shape = post_beat * (0.55 as f32 + norm * (0.35 as f32)) + pre_beat * (0.22 as f32 + norm * (0.20 as f32)) + offbeat;
+        shape *= style_shape_mul;
+
+        f32 soft_target = proximity * (0.22 as f32 + norm * (0.52 as f32)) + shape;
+        f32 soft_cap = (0.74 as f32) + norm * (0.32 as f32);
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {soft_cap -= 0.06 as f32;}
+        if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {soft_cap += 0.10 as f32;}
+        if soft_target > soft_cap {soft_target = soft_cap;}
+
+        f32 attack = ((4.4 as f32) + norm * (5.2 as f32) + tempo_factor * (8.5 as f32)) * style_attack_mul * g_star_music_attack_speed;
+        f32 decay = ((1.4 as f32) + (1.0 as f32 - tempo_factor) * (2.7 as f32) + (1.0 as f32 - norm) * (1.6 as f32)) * style_decay_mul * g_star_music_decay_speed;
+        f32 soft_mix = clamp01(dt * decay);
+        if soft_target > g_rt.star_soft_glow {soft_mix = clamp01(dt * attack);}
+        g_rt.star_soft_glow += (soft_target - g_rt.star_soft_glow) * soft_mix;
+
+        if g_rt.star_soft_glow > soft_cap * (0.90 as f32) {
+            g_rt.star_soft_glow -= dt * (((1.6 as f32) + norm * (2.4 as f32)) * g_star_music_decay_speed);
+            if g_rt.star_soft_glow < 0.0 as f32 {g_rt.star_soft_glow = 0.0 as f32;}
+        }
+
+        f32 loudness = g_star_music_hit_strength;
+        if loudness < 0.0 as f32 {loudness = 0.0 as f32;}
+        if loudness > 1.0 as f32 {loudness = 1.0 as f32;}
+        f32 burst_gain = ((0.26 as f32) + norm * (0.82 as f32) + tempo_factor * (0.76 as f32)) * style_burst_mul;
+        burst_gain *= (0.34 as f32) + loudness * (1.06 as f32);
+        if g_star_music_hits_frame > 0 {
+            g_rt.star_hard_target += (g_star_music_hits_frame as f32) * burst_gain;
+            f32 hard_cap = (1.00 as f32) + norm * (0.42 as f32);
+            if g_star_music_style == STAR_MUSIC_STYLE_WAVE {hard_cap -= 0.12 as f32;}
+            if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {hard_cap += 0.28 as f32;}
+            hard_cap *= (0.62 as f32) + loudness * (0.60 as f32);
+            if g_rt.star_hard_target > hard_cap {g_rt.star_hard_target = hard_cap;}
+        }
+
+        g_rt.star_hard_target -= dt * (((1.0 as f32) + (1.0 as f32 - tempo_factor) * (1.3 as f32) + norm * (0.9 as f32)) * style_decay_mul * g_star_music_decay_speed);
+        if g_rt.star_hard_target < 0.0 as f32 {g_rt.star_hard_target = 0.0 as f32;}
+
+        f32 rise = clamp01(dt * (((5.2 as f32) + norm * (9.0 as f32) + tempo_factor * (6.0 as f32)) * style_attack_mul * g_star_music_attack_speed));
+        f32 fall = clamp01(dt * (((2.4 as f32) + norm * (3.5 as f32) + (1.0 as f32 - tempo_factor) * (2.5 as f32)) * style_decay_mul * g_star_music_decay_speed));
+        if g_rt.star_hard_burst < g_rt.star_hard_target {
+            g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * rise;
+        } else {
+            g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * fall;
+        }
+
+        g_rt.star_hard_burst *= 0.997 as f32;
+        g_rt.star_pps_meter = proximity;
         return;
     }
 
@@ -1334,6 +1431,16 @@ fun drawBackgroundStars(theme: Theme) >> void {
         f32 pulse_boost = g_rt.star_hard_burst * (0.25 + norm * 1.35) * pulse_weight;
         react_boost = base_boost + pulse_boost;
         if react_boost > 2.0 {react_boost = 2.0;}
+    } else if g_bg_star_react_mode == STAR_MODE_MUSIC {
+        norm = starMusicIntensityNorm();
+        spread_mul = 1.0 + norm * 0.22;
+        f32 base_boost = 0.04 + g_rt.star_soft_glow * (0.55 + norm * 0.35);
+        f32 pulse_boost = g_rt.star_hard_burst * (0.45 + norm * 1.20);
+        react_boost = (base_boost + pulse_boost) * (0.55 + norm * 0.45);
+        f32 music_cap = 1.25;
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {music_cap = 1.05;}
+        if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {music_cap = 1.55;}
+        if react_boost > music_cap {react_boost = music_cap;}
     }
 
     for i32 i = 0; i < count; i++ {
@@ -1355,10 +1462,14 @@ fun drawBackgroundStars(theme: Theme) >> void {
         if (g_bg_star_react_mode == STAR_MODE_DROPS) {
             alpha += react_boost * (0.55 + norm * 0.55);
             if alpha > 1.00 {alpha = 1.00;}
+        } else if g_bg_star_react_mode == STAR_MODE_MUSIC {
+            alpha += react_boost * (0.22 + norm * 0.38);
+            if alpha > 0.92 {alpha = 0.92;}
         }
 
         i64 glow_radius = ((s * 5) as f32 * spread_mul) as i64;
         if g_bg_star_react_mode == STAR_MODE_DROPS {glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;}
+        if g_bg_star_react_mode == STAR_MODE_MUSIC {glow_radius += (react_boost * ((12.0 + norm * 8.0) * spread_mul)) as i64;}
 
         u32 star_color = theme.panel_stroke;
         f32 star_alpha_mul = 1.0;
@@ -4736,7 +4847,7 @@ fun drawApp(font: Font) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_double_row_ui, g_instant_restart);
+        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         EndDrawing();
         return;
@@ -4755,6 +4866,7 @@ fun drawApp(font: Font) >> void {
 
 fun updateApp() >> void {
     g_game = g_game.refresh_screen_size();
+    updateStarMusicPlayback();
 
     if (g_debug_colors && IsKeyPressed(KEY_G)) {
         g_ai_armed = true;
@@ -4815,10 +4927,12 @@ fun updateApp() >> void {
         i32 prev_bg_mode = g_bg_star_react_mode;
         f32 prev_peak = g_star_peak_target_dps;
         f32 prev_intensity = g_star_intensity;
+        f32 prev_music_intensity = g_star_music_intensity;
+        i32 prev_music_style = g_star_music_style;
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_double_row_ui, &g_instant_restart);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart);
         if (prev_theme != g_game.theme_index ||
             prev_arr != g_arr_frames ||
             prev_das != g_das_frames ||
@@ -4829,6 +4943,8 @@ fun updateApp() >> void {
             prev_bg_mode != g_bg_star_react_mode ||
             prev_peak != g_star_peak_target_dps ||
             prev_intensity != g_star_intensity ||
+            prev_music_intensity != g_star_music_intensity ||
+            prev_music_style != g_star_music_style ||
             prev_double_row != g_double_row_ui ||
             prev_instant_restart != g_instant_restart) {
             clampSettings();
@@ -5324,6 +5440,7 @@ fun main() >> i32 {
     loadBotDuelsFile();
     applyChampionAiTuning();
     clampSettings();
+    loadStarMusic();
     startGameMode(MODE_FREE_PLAY);
     initBotSetupDefaults();
     initBackgroundStars();
@@ -5339,6 +5456,7 @@ fun main() >> i32 {
     }
 
     if custom_font_loaded {UnloadFont(ui_font);}
+    unloadStarMusic();
     CloseWindow();
     return 0;
 }

@@ -1,0 +1,383 @@
+module zltris.aubio;
+#flag -L../bin
+#flag -laubio
+#flag -lm
+
+struct _aubio_resampler_t {
+}
+
+struct _aubio_filter_t {
+}
+
+struct _aubio_fft_t {
+}
+
+struct _aubio_dct_t {
+}
+
+struct _aubio_pvoc_t {
+}
+
+struct _aubio_filterbank_t {
+}
+
+struct _aubio_mfcc_t {
+}
+
+struct _aubio_specdesc_t {
+}
+
+struct _aubio_spectral_whitening_t {
+}
+
+struct _aubio_tss_t {
+}
+
+struct _aubio_pitch_t {
+}
+
+struct _aubio_onset_t {
+}
+
+struct _aubio_tempo_t {
+}
+
+struct _aubio_notes_t {
+}
+
+struct _aubio_source_t {
+}
+
+struct _aubio_sink_t {
+}
+
+struct _aubio_sampler_t {
+}
+
+struct _aubio_wavetable_t {
+}
+
+struct _aubio_parameter_t {
+}
+
+struct fvec_t {
+    length i32,
+    data ptr<f32>,
+}
+
+struct cvec_t {
+    length i32,
+    norm ptr<f32>,
+    phas ptr<f32>,
+}
+
+struct lvec_t {
+    length i32,
+    data ptr<f64>,
+}
+
+struct fmat_t {
+    length i32,
+    height i32,
+    data ptr<ptr<f32>>,
+}
+
+const i32 unix = 1;
+const i32 linux = 1;
+const i32 HAVE_AUBIO_DOUBLE = 0;
+
+wrap @new_fvec(p0: i32) >> ptr<fvec_t>;
+wrap @del_fvec(p0: ptr<fvec_t>) >> void;
+wrap @fvec_get_sample(p0: ptr<fvec_t>, p1: i32) >> f32;
+wrap @fvec_set_sample(p0: ptr<fvec_t>, p1: f32, p2: i32) >> void;
+wrap @fvec_get_data(p0: ptr<fvec_t>) >> ptr<f32>;
+wrap @fvec_print(p0: ptr<fvec_t>) >> void;
+wrap @fvec_set_all(p0: ptr<fvec_t>, p1: f32) >> void;
+wrap @fvec_zeros(p0: ptr<fvec_t>) >> void;
+wrap @fvec_ones(p0: ptr<fvec_t>) >> void;
+wrap @fvec_rev(p0: ptr<fvec_t>) >> void;
+wrap @fvec_weight(p0: ptr<fvec_t>, p1: ptr<fvec_t>) >> void;
+wrap @fvec_copy(p0: ptr<fvec_t>, p1: ptr<fvec_t>) >> void;
+wrap @fvec_weighted_copy(p0: ptr<fvec_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @new_cvec(p0: i32) >> ptr<cvec_t>;
+wrap @del_cvec(p0: ptr<cvec_t>) >> void;
+wrap @cvec_norm_set_sample(p0: ptr<cvec_t>, p1: f32, p2: i32) >> void;
+wrap @cvec_phas_set_sample(p0: ptr<cvec_t>, p1: f32, p2: i32) >> void;
+wrap @cvec_norm_get_sample(p0: ptr<cvec_t>, p1: i32) >> f32;
+wrap @cvec_phas_get_sample(p0: ptr<cvec_t>, p1: i32) >> f32;
+wrap @cvec_norm_get_data(p0: ptr<cvec_t>) >> ptr<f32>;
+wrap @cvec_phas_get_data(p0: ptr<cvec_t>) >> ptr<f32>;
+wrap @cvec_print(p0: ptr<cvec_t>) >> void;
+wrap @cvec_copy(p0: ptr<cvec_t>, p1: ptr<cvec_t>) >> void;
+wrap @cvec_norm_set_all(p0: ptr<cvec_t>, p1: f32) >> void;
+wrap @cvec_norm_zeros(p0: ptr<cvec_t>) >> void;
+wrap @cvec_norm_ones(p0: ptr<cvec_t>) >> void;
+wrap @cvec_phas_set_all(p0: ptr<cvec_t>, p1: f32) >> void;
+wrap @cvec_phas_zeros(p0: ptr<cvec_t>) >> void;
+wrap @cvec_phas_ones(p0: ptr<cvec_t>) >> void;
+wrap @cvec_zeros(p0: ptr<cvec_t>) >> void;
+wrap @cvec_logmag(p0: ptr<cvec_t>, p1: f32) >> void;
+wrap @new_lvec(p0: i32) >> ptr<lvec_t>;
+wrap @del_lvec(p0: ptr<lvec_t>) >> void;
+wrap @lvec_get_sample(p0: ptr<lvec_t>, p1: i32) >> f64;
+wrap @lvec_set_sample(p0: ptr<lvec_t>, p1: f64, p2: i32) >> void;
+wrap @lvec_get_data(p0: ptr<lvec_t>) >> ptr<f64>;
+wrap @lvec_print(p0: ptr<lvec_t>) >> void;
+wrap @lvec_set_all(p0: ptr<lvec_t>, p1: f32) >> void;
+wrap @lvec_zeros(p0: ptr<lvec_t>) >> void;
+wrap @lvec_ones(p0: ptr<lvec_t>) >> void;
+wrap @new_fmat(p0: i32, p1: i32) >> ptr<fmat_t>;
+wrap @del_fmat(p0: ptr<fmat_t>) >> void;
+wrap @fmat_get_sample(p0: ptr<fmat_t>, p1: i32, p2: i32) >> f32;
+wrap @fmat_set_sample(p0: ptr<fmat_t>, p1: f32, p2: i32, p3: i32) >> void;
+wrap @fmat_get_channel(p0: ptr<fmat_t>, p1: i32, p2: ptr<fvec_t>) >> void;
+wrap @fmat_get_channel_data(p0: ptr<fmat_t>, p1: i32) >> ptr<f32>;
+wrap @fmat_get_data(p0: ptr<fmat_t>) >> ptr<ptr<f32>>;
+wrap @fmat_print(p0: ptr<fmat_t>) >> void;
+wrap @fmat_set(p0: ptr<fmat_t>, p1: f32) >> void;
+wrap @fmat_zeros(p0: ptr<fmat_t>) >> void;
+wrap @fmat_ones(p0: ptr<fmat_t>) >> void;
+wrap @fmat_rev(p0: ptr<fmat_t>) >> void;
+wrap @fmat_weight(p0: ptr<fmat_t>, p1: ptr<fmat_t>) >> void;
+wrap @fmat_copy(p0: ptr<fmat_t>, p1: ptr<fmat_t>) >> void;
+wrap @fmat_vecmul(p0: ptr<fmat_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @new_aubio_window(p0: ptr<u8>, p1: i32) >> ptr<fvec_t>;
+wrap @fvec_set_window(p0: ptr<fvec_t>, p1: ptr<u8>) >> i32;
+wrap @aubio_unwrap2pi(p0: f32) >> f32;
+wrap @aubio_bintomidi(p0: f32, p1: f32, p2: f32) >> f32;
+wrap @aubio_miditobin(p0: f32, p1: f32, p2: f32) >> f32;
+wrap @aubio_bintofreq(p0: f32, p1: f32, p2: f32) >> f32;
+wrap @aubio_freqtobin(p0: f32, p1: f32, p2: f32) >> f32;
+wrap @aubio_hztomel(p0: f32) >> f32;
+wrap @aubio_meltohz(p0: f32) >> f32;
+wrap @aubio_hztomel_htk(p0: f32) >> f32;
+wrap @aubio_meltohz_htk(p0: f32) >> f32;
+wrap @aubio_freqtomidi(p0: f32) >> f32;
+wrap @aubio_miditofreq(p0: f32) >> f32;
+wrap @aubio_cleanup() >> void;
+wrap @aubio_zero_crossing_rate(p0: ptr<fvec_t>) >> f32;
+wrap @aubio_level_lin(p0: ptr<fvec_t>) >> f32;
+wrap @aubio_db_spl(p0: ptr<fvec_t>) >> f32;
+wrap @aubio_silence_detection(p0: ptr<fvec_t>, p1: f32) >> i32;
+wrap @aubio_level_detection(p0: ptr<fvec_t>, p1: f32) >> f32;
+wrap @fvec_clamp(p0: ptr<fvec_t>, p1: f32) >> void;
+wrap @fvec_exp(p0: ptr<fvec_t>) >> void;
+wrap @fvec_cos(p0: ptr<fvec_t>) >> void;
+wrap @fvec_sin(p0: ptr<fvec_t>) >> void;
+wrap @fvec_abs(p0: ptr<fvec_t>) >> void;
+wrap @fvec_sqrt(p0: ptr<fvec_t>) >> void;
+wrap @fvec_log10(p0: ptr<fvec_t>) >> void;
+wrap @fvec_log(p0: ptr<fvec_t>) >> void;
+wrap @fvec_floor(p0: ptr<fvec_t>) >> void;
+wrap @fvec_ceil(p0: ptr<fvec_t>) >> void;
+wrap @fvec_round(p0: ptr<fvec_t>) >> void;
+wrap @fvec_pow(p0: ptr<fvec_t>, p1: f32) >> void;
+wrap @new_aubio_resampler(p0: f32, p1: i32) >> ptr<_aubio_resampler_t>;
+wrap @del_aubio_resampler(p0: ptr<_aubio_resampler_t>) >> void;
+wrap @aubio_resampler_do(p0: ptr<_aubio_resampler_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_filter_do(p0: ptr<_aubio_filter_t>, p1: ptr<fvec_t>) >> void;
+wrap @aubio_filter_do_outplace(p0: ptr<_aubio_filter_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_filter_do_filtfilt(p0: ptr<_aubio_filter_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_filter_get_feedback(p0: ptr<_aubio_filter_t>) >> ptr<lvec_t>;
+wrap @aubio_filter_get_feedforward(p0: ptr<_aubio_filter_t>) >> ptr<lvec_t>;
+wrap @aubio_filter_get_order(p0: ptr<_aubio_filter_t>) >> i32;
+wrap @aubio_filter_get_samplerate(p0: ptr<_aubio_filter_t>) >> i32;
+wrap @aubio_filter_set_samplerate(p0: ptr<_aubio_filter_t>, p1: i32) >> i32;
+wrap @aubio_filter_do_reset(p0: ptr<_aubio_filter_t>) >> void;
+wrap @new_aubio_filter(p0: i32) >> ptr<_aubio_filter_t>;
+wrap @del_aubio_filter(p0: ptr<_aubio_filter_t>) >> void;
+wrap @aubio_filter_set_biquad(p0: ptr<_aubio_filter_t>, p1: f64, p2: f64, p3: f64, p4: f64, p5: f64) >> i32;
+wrap @new_aubio_filter_biquad(p0: f64, p1: f64, p2: f64, p3: f64, p4: f64) >> ptr<_aubio_filter_t>;
+wrap @new_aubio_filter_a_weighting(p0: i32) >> ptr<_aubio_filter_t>;
+wrap @aubio_filter_set_a_weighting(p0: ptr<_aubio_filter_t>, p1: i32) >> i32;
+wrap @new_aubio_filter_c_weighting(p0: i32) >> ptr<_aubio_filter_t>;
+wrap @aubio_filter_set_c_weighting(p0: ptr<_aubio_filter_t>, p1: i32) >> i32;
+wrap @new_aubio_fft(p0: i32) >> ptr<_aubio_fft_t>;
+wrap @del_aubio_fft(p0: ptr<_aubio_fft_t>) >> void;
+wrap @aubio_fft_do(p0: ptr<_aubio_fft_t>, p1: ptr<fvec_t>, p2: ptr<cvec_t>) >> void;
+wrap @aubio_fft_rdo(p0: ptr<_aubio_fft_t>, p1: ptr<cvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_fft_do_complex(p0: ptr<_aubio_fft_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_fft_rdo_complex(p0: ptr<_aubio_fft_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_fft_get_spectrum(p0: ptr<fvec_t>, p1: ptr<cvec_t>) >> void;
+wrap @aubio_fft_get_realimag(p0: ptr<cvec_t>, p1: ptr<fvec_t>) >> void;
+wrap @aubio_fft_get_phas(p0: ptr<fvec_t>, p1: ptr<cvec_t>) >> void;
+wrap @aubio_fft_get_imag(p0: ptr<cvec_t>, p1: ptr<fvec_t>) >> void;
+wrap @aubio_fft_get_norm(p0: ptr<fvec_t>, p1: ptr<cvec_t>) >> void;
+wrap @aubio_fft_get_real(p0: ptr<cvec_t>, p1: ptr<fvec_t>) >> void;
+wrap @new_aubio_dct(p0: i32) >> ptr<_aubio_dct_t>;
+wrap @aubio_dct_do(p0: ptr<_aubio_dct_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_dct_rdo(p0: ptr<_aubio_dct_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @del_aubio_dct(p0: ptr<_aubio_dct_t>) >> void;
+wrap @new_aubio_pvoc(p0: i32, p1: i32) >> ptr<_aubio_pvoc_t>;
+wrap @del_aubio_pvoc(p0: ptr<_aubio_pvoc_t>) >> void;
+wrap @aubio_pvoc_do(p0: ptr<_aubio_pvoc_t>, p1: ptr<fvec_t>, p2: ptr<cvec_t>) >> void;
+wrap @aubio_pvoc_rdo(p0: ptr<_aubio_pvoc_t>, p1: ptr<cvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_pvoc_get_win(p0: ptr<_aubio_pvoc_t>) >> i32;
+wrap @aubio_pvoc_get_hop(p0: ptr<_aubio_pvoc_t>) >> i32;
+wrap @aubio_pvoc_set_window(p0: ptr<_aubio_pvoc_t>, p1: ptr<u8>) >> i32;
+wrap @new_aubio_filterbank(p0: i32, p1: i32) >> ptr<_aubio_filterbank_t>;
+wrap @del_aubio_filterbank(p0: ptr<_aubio_filterbank_t>) >> void;
+wrap @aubio_filterbank_do(p0: ptr<_aubio_filterbank_t>, p1: ptr<cvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_filterbank_get_coeffs(p0: ptr<_aubio_filterbank_t>) >> ptr<fmat_t>;
+wrap @aubio_filterbank_set_coeffs(p0: ptr<_aubio_filterbank_t>, p1: ptr<fmat_t>) >> i32;
+wrap @aubio_filterbank_set_norm(p0: ptr<_aubio_filterbank_t>, p1: f32) >> i32;
+wrap @aubio_filterbank_get_norm(p0: ptr<_aubio_filterbank_t>) >> f32;
+wrap @aubio_filterbank_set_power(p0: ptr<_aubio_filterbank_t>, p1: f32) >> i32;
+wrap @aubio_filterbank_get_power(p0: ptr<_aubio_filterbank_t>) >> f32;
+wrap @aubio_filterbank_set_triangle_bands(p0: ptr<_aubio_filterbank_t>, p1: ptr<fvec_t>, p2: f32) >> i32;
+wrap @aubio_filterbank_set_mel_coeffs_slaney(p0: ptr<_aubio_filterbank_t>, p1: f32) >> i32;
+wrap @aubio_filterbank_set_mel_coeffs(p0: ptr<_aubio_filterbank_t>, p1: f32, p2: f32, p3: f32) >> i32;
+wrap @aubio_filterbank_set_mel_coeffs_htk(p0: ptr<_aubio_filterbank_t>, p1: f32, p2: f32, p3: f32) >> i32;
+wrap @new_aubio_mfcc(p0: i32, p1: i32, p2: i32, p3: i32) >> ptr<_aubio_mfcc_t>;
+wrap @del_aubio_mfcc(p0: ptr<_aubio_mfcc_t>) >> void;
+wrap @aubio_mfcc_do(p0: ptr<_aubio_mfcc_t>, p1: ptr<cvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_mfcc_set_power(p0: ptr<_aubio_mfcc_t>, p1: f32) >> i32;
+wrap @aubio_mfcc_get_power(p0: ptr<_aubio_mfcc_t>) >> f32;
+wrap @aubio_mfcc_set_scale(p0: ptr<_aubio_mfcc_t>, p1: f32) >> i32;
+wrap @aubio_mfcc_get_scale(p0: ptr<_aubio_mfcc_t>) >> f32;
+wrap @aubio_mfcc_set_mel_coeffs(p0: ptr<_aubio_mfcc_t>, p1: f32, p2: f32) >> i32;
+wrap @aubio_mfcc_set_mel_coeffs_htk(p0: ptr<_aubio_mfcc_t>, p1: f32, p2: f32) >> i32;
+wrap @aubio_mfcc_set_mel_coeffs_slaney(p0: ptr<_aubio_mfcc_t>) >> i32;
+wrap @aubio_specdesc_do(p0: ptr<_aubio_specdesc_t>, p1: ptr<cvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @new_aubio_specdesc(p0: ptr<u8>, p1: i32) >> ptr<_aubio_specdesc_t>;
+wrap @del_aubio_specdesc(p0: ptr<_aubio_specdesc_t>) >> void;
+wrap @aubio_spectral_whitening_do(p0: ptr<_aubio_spectral_whitening_t>, p1: ptr<cvec_t>) >> void;
+wrap @new_aubio_spectral_whitening(p0: i32, p1: i32, p2: i32) >> ptr<_aubio_spectral_whitening_t>;
+wrap @aubio_spectral_whitening_reset(p0: ptr<_aubio_spectral_whitening_t>) >> void;
+wrap @aubio_spectral_whitening_set_relax_time(p0: ptr<_aubio_spectral_whitening_t>, p1: f32) >> i32;
+wrap @aubio_spectral_whitening_get_relax_time(p0: ptr<_aubio_spectral_whitening_t>) >> f32;
+wrap @aubio_spectral_whitening_set_floor(p0: ptr<_aubio_spectral_whitening_t>, p1: f32) >> i32;
+wrap @aubio_spectral_whitening_get_floor(p0: ptr<_aubio_spectral_whitening_t>) >> f32;
+wrap @del_aubio_spectral_whitening(p0: ptr<_aubio_spectral_whitening_t>) >> void;
+wrap @new_aubio_tss(p0: i32, p1: i32) >> ptr<_aubio_tss_t>;
+wrap @del_aubio_tss(p0: ptr<_aubio_tss_t>) >> void;
+wrap @aubio_tss_do(p0: ptr<_aubio_tss_t>, p1: ptr<cvec_t>, p2: ptr<cvec_t>, p3: ptr<cvec_t>) >> void;
+wrap @aubio_tss_set_threshold(p0: ptr<_aubio_tss_t>, p1: f32) >> i32;
+wrap @aubio_tss_set_alpha(p0: ptr<_aubio_tss_t>, p1: f32) >> i32;
+wrap @aubio_tss_set_beta(p0: ptr<_aubio_tss_t>, p1: f32) >> i32;
+wrap @aubio_pitch_do(p0: ptr<_aubio_pitch_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_pitch_set_tolerance(p0: ptr<_aubio_pitch_t>, p1: f32) >> i32;
+wrap @aubio_pitch_get_tolerance(p0: ptr<_aubio_pitch_t>) >> f32;
+wrap @del_aubio_pitch(p0: ptr<_aubio_pitch_t>) >> void;
+wrap @new_aubio_pitch(p0: ptr<u8>, p1: i32, p2: i32, p3: i32) >> ptr<_aubio_pitch_t>;
+wrap @aubio_pitch_set_unit(p0: ptr<_aubio_pitch_t>, p1: ptr<u8>) >> i32;
+wrap @aubio_pitch_set_silence(p0: ptr<_aubio_pitch_t>, p1: f32) >> i32;
+wrap @aubio_pitch_get_silence(p0: ptr<_aubio_pitch_t>) >> f32;
+wrap @aubio_pitch_get_confidence(p0: ptr<_aubio_pitch_t>) >> f32;
+wrap @new_aubio_onset(p0: ptr<u8>, p1: i32, p2: i32, p3: i32) >> ptr<_aubio_onset_t>;
+wrap @aubio_onset_do(p0: ptr<_aubio_onset_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_onset_get_last(p0: ptr<_aubio_onset_t>) >> i32;
+wrap @aubio_onset_get_last_s(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_last_ms(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_set_awhitening(p0: ptr<_aubio_onset_t>, p1: i32) >> i32;
+wrap @aubio_onset_get_awhitening(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_set_compression(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_get_compression(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_set_silence(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_get_silence(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_descriptor(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_thresholded_descriptor(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_set_threshold(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_set_minioi(p0: ptr<_aubio_onset_t>, p1: i32) >> i32;
+wrap @aubio_onset_set_minioi_s(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_set_minioi_ms(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_set_delay(p0: ptr<_aubio_onset_t>, p1: i32) >> i32;
+wrap @aubio_onset_set_delay_s(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_set_delay_ms(p0: ptr<_aubio_onset_t>, p1: f32) >> i32;
+wrap @aubio_onset_get_minioi(p0: ptr<_aubio_onset_t>) >> i32;
+wrap @aubio_onset_get_minioi_s(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_minioi_ms(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_delay(p0: ptr<_aubio_onset_t>) >> i32;
+wrap @aubio_onset_get_delay_s(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_delay_ms(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_get_threshold(p0: ptr<_aubio_onset_t>) >> f32;
+wrap @aubio_onset_set_default_parameters(p0: ptr<_aubio_onset_t>, p1: ptr<u8>) >> i32;
+wrap @aubio_onset_reset(p0: ptr<_aubio_onset_t>) >> void;
+wrap @del_aubio_onset(p0: ptr<_aubio_onset_t>) >> void;
+wrap @new_aubio_tempo(p0: ptr<u8>, p1: i32, p2: i32, p3: i32) >> ptr<_aubio_tempo_t>;
+wrap @aubio_tempo_do(p0: ptr<_aubio_tempo_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_tempo_get_last(p0: ptr<_aubio_tempo_t>) >> i32;
+wrap @aubio_tempo_get_last_s(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_last_ms(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_set_silence(p0: ptr<_aubio_tempo_t>, p1: f32) >> i32;
+wrap @aubio_tempo_get_silence(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_set_threshold(p0: ptr<_aubio_tempo_t>, p1: f32) >> i32;
+wrap @aubio_tempo_get_threshold(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_period(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_period_s(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_bpm(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_confidence(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_set_tatum_signature(p0: ptr<_aubio_tempo_t>, p1: i32) >> i32;
+wrap @aubio_tempo_was_tatum(p0: ptr<_aubio_tempo_t>) >> i32;
+wrap @aubio_tempo_get_last_tatum(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_delay(p0: ptr<_aubio_tempo_t>) >> i32;
+wrap @aubio_tempo_get_delay_s(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_get_delay_ms(p0: ptr<_aubio_tempo_t>) >> f32;
+wrap @aubio_tempo_set_delay(p0: ptr<_aubio_tempo_t>, p1: i32) >> i32;
+wrap @aubio_tempo_set_delay_s(p0: ptr<_aubio_tempo_t>, p1: f32) >> i32;
+wrap @aubio_tempo_set_delay_ms(p0: ptr<_aubio_tempo_t>, p1: f32) >> i32;
+wrap @del_aubio_tempo(p0: ptr<_aubio_tempo_t>) >> void;
+wrap @new_aubio_notes(p0: ptr<u8>, p1: i32, p2: i32, p3: i32) >> ptr<_aubio_notes_t>;
+wrap @del_aubio_notes(p0: ptr<_aubio_notes_t>) >> void;
+wrap @aubio_notes_do(p0: ptr<_aubio_notes_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_notes_set_silence(p0: ptr<_aubio_notes_t>, p1: f32) >> i32;
+wrap @aubio_notes_get_silence(p0: ptr<_aubio_notes_t>) >> f32;
+wrap @aubio_notes_get_minioi_ms(p0: ptr<_aubio_notes_t>) >> f32;
+wrap @aubio_notes_set_minioi_ms(p0: ptr<_aubio_notes_t>, p1: f32) >> i32;
+wrap @aubio_notes_get_release_drop(p0: ptr<_aubio_notes_t>) >> f32;
+wrap @aubio_notes_set_release_drop(p0: ptr<_aubio_notes_t>, p1: f32) >> i32;
+wrap @new_aubio_source(p0: ptr<u8>, p1: i32, p2: i32) >> ptr<_aubio_source_t>;
+wrap @aubio_source_do(p0: ptr<_aubio_source_t>, p1: ptr<fvec_t>, p2: ptr<i32>) >> void;
+wrap @aubio_source_do_multi(p0: ptr<_aubio_source_t>, p1: ptr<fmat_t>, p2: ptr<i32>) >> void;
+wrap @aubio_source_get_samplerate(p0: ptr<_aubio_source_t>) >> i32;
+wrap @aubio_source_get_channels(p0: ptr<_aubio_source_t>) >> i32;
+wrap @aubio_source_seek(p0: ptr<_aubio_source_t>, p1: i32) >> i32;
+wrap @aubio_source_get_duration(p0: ptr<_aubio_source_t>) >> i32;
+wrap @aubio_source_close(p0: ptr<_aubio_source_t>) >> i32;
+wrap @del_aubio_source(p0: ptr<_aubio_source_t>) >> void;
+wrap @new_aubio_sink(p0: ptr<u8>, p1: i32) >> ptr<_aubio_sink_t>;
+wrap @aubio_sink_preset_samplerate(p0: ptr<_aubio_sink_t>, p1: i32) >> i32;
+wrap @aubio_sink_preset_channels(p0: ptr<_aubio_sink_t>, p1: i32) >> i32;
+wrap @aubio_sink_get_samplerate(p0: ptr<_aubio_sink_t>) >> i32;
+wrap @aubio_sink_get_channels(p0: ptr<_aubio_sink_t>) >> i32;
+wrap @aubio_sink_do(p0: ptr<_aubio_sink_t>, p1: ptr<fvec_t>, p2: i32) >> void;
+wrap @aubio_sink_do_multi(p0: ptr<_aubio_sink_t>, p1: ptr<fmat_t>, p2: i32) >> void;
+wrap @aubio_sink_close(p0: ptr<_aubio_sink_t>) >> i32;
+wrap @del_aubio_sink(p0: ptr<_aubio_sink_t>) >> void;
+wrap @new_aubio_sampler(p0: i32, p1: i32) >> ptr<_aubio_sampler_t>;
+wrap @aubio_sampler_load(p0: ptr<_aubio_sampler_t>, p1: ptr<u8>) >> i32;
+wrap @aubio_sampler_do(p0: ptr<_aubio_sampler_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_sampler_do_multi(p0: ptr<_aubio_sampler_t>, p1: ptr<fmat_t>, p2: ptr<fmat_t>) >> void;
+wrap @aubio_sampler_get_playing(p0: ptr<_aubio_sampler_t>) >> i32;
+wrap @aubio_sampler_set_playing(p0: ptr<_aubio_sampler_t>, p1: i32) >> i32;
+wrap @aubio_sampler_play(p0: ptr<_aubio_sampler_t>) >> i32;
+wrap @aubio_sampler_stop(p0: ptr<_aubio_sampler_t>) >> i32;
+wrap @del_aubio_sampler(p0: ptr<_aubio_sampler_t>) >> void;
+wrap @new_aubio_wavetable(p0: i32, p1: i32) >> ptr<_aubio_wavetable_t>;
+wrap @aubio_wavetable_load(p0: ptr<_aubio_wavetable_t>, p1: ptr<u8>) >> i32;
+wrap @aubio_wavetable_do(p0: ptr<_aubio_wavetable_t>, p1: ptr<fvec_t>, p2: ptr<fvec_t>) >> void;
+wrap @aubio_wavetable_do_multi(p0: ptr<_aubio_wavetable_t>, p1: ptr<fmat_t>, p2: ptr<fmat_t>) >> void;
+wrap @aubio_wavetable_get_playing(p0: ptr<_aubio_wavetable_t>) >> i32;
+wrap @aubio_wavetable_set_playing(p0: ptr<_aubio_wavetable_t>, p1: i32) >> i32;
+wrap @aubio_wavetable_play(p0: ptr<_aubio_wavetable_t>) >> i32;
+wrap @aubio_wavetable_stop(p0: ptr<_aubio_wavetable_t>) >> i32;
+wrap @aubio_wavetable_set_freq(p0: ptr<_aubio_wavetable_t>, p1: f32) >> i32;
+wrap @aubio_wavetable_get_freq(p0: ptr<_aubio_wavetable_t>) >> f32;
+wrap @aubio_wavetable_set_amp(p0: ptr<_aubio_wavetable_t>, p1: f32) >> i32;
+wrap @aubio_wavetable_get_amp(p0: ptr<_aubio_wavetable_t>) >> f32;
+wrap @del_aubio_wavetable(p0: ptr<_aubio_wavetable_t>) >> void;
+wrap @new_aubio_parameter(p0: f32, p1: f32, p2: i32) >> ptr<_aubio_parameter_t>;
+wrap @aubio_parameter_set_target_value(p0: ptr<_aubio_parameter_t>, p1: f32) >> i32;
+wrap @aubio_parameter_get_next_value(p0: ptr<_aubio_parameter_t>) >> f32;
+wrap @aubio_parameter_get_current_value(p0: ptr<_aubio_parameter_t>) >> f32;
+wrap @aubio_parameter_set_current_value(p0: ptr<_aubio_parameter_t>, p1: f32) >> i32;
+wrap @aubio_parameter_set_steps(p0: ptr<_aubio_parameter_t>, p1: i32) >> i32;
+wrap @aubio_parameter_get_steps(p0: ptr<_aubio_parameter_t>) >> i32;
+wrap @aubio_parameter_set_min_value(p0: ptr<_aubio_parameter_t>, p1: f32) >> i32;
+wrap @aubio_parameter_get_min_value(p0: ptr<_aubio_parameter_t>) >> f32;
+wrap @aubio_parameter_set_max_value(p0: ptr<_aubio_parameter_t>, p1: f32) >> i32;
+wrap @aubio_parameter_get_max_value(p0: ptr<_aubio_parameter_t>) >> f32;
+wrap @del_aubio_parameter(p0: ptr<_aubio_parameter_t>) >> void;
+wrap @aubio_log_set_function(p0: ptr<void>, p1: ptr<void>) >> void;
+wrap @aubio_log_set_level_function(p0: i32, p1: ptr<void>, p2: ptr<void>) >> ptr<void>;
+wrap @aubio_log_reset() >> void;

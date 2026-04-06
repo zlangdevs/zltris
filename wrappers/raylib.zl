@@ -1,4 +1,4 @@
-#flag -L./bin
+#flag -L../bin
 #flag -lraylib
 #flag -lGL
 #flag -lm
