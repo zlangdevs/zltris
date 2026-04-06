@@ -1,11 +1,12 @@
 #flag -L./bin
 #flag -lraylib
-#flag -lGL
-#flag -lm
-#flag -lpthread
-#flag -ldl
-#flag -lrt
-#flag -lX11
+#flag -ltextshim
+#flag -lopengl32
+#flag -lgdi32
+#flag -lwinmm
+#flag -lshell32
+#flag -luser32
+#flag -lkernel32
 module raylib;
 
 struct rAudioBuffer {
@@ -1625,13 +1626,14 @@ fun DrawText(p0: ptr<u8>, p1: i32, p2: i32, p3: i32, p4: Color) >> void {
     @DrawText(p0, p1, p2, p3, __abi_pack_Color(p4));
 }
 
-fun @DrawTextEx(p0: Font, p1: ptr<u8>, p2: simd<f32, 2>, p3: f32, p4: f32, p5: u32) >> void;
+fun @DrawTextEx(p0: Font, p1: ptr<u8>, p2: Vector2, p3: f32, p4: f32, p5: u32) >> void;
 fun DrawTextExV(p0: Font, p1: ptr<u8>, p2: Vector2, p3: f32, p4: f32, p5: Color) >> void {
-    @DrawTextEx(p0, p1, __abi_pack_Vector2(p2), p3, p4, __abi_pack_Color(p5));
+    @DrawTextEx(p0, p1, p2, p3, p4, __abi_pack_Color(p5));
 }
+wrap @zltris_draw_text_ex_xy(p0: ptr<Font>, p1: ptr<u8>, p2: f32, p3: f32, p4: f32, p5: f32, p6: u32) >> void;
 fun DrawTextExXY(p0: Font, p1: ptr<u8>, x: f32, y: f32, p3: f32, p4: f32, p5: Color) >> void {
-    simd<f32, 2> pos = {x, y};
-    @DrawTextEx(p0, p1, pos, p3, p4, __abi_pack_Color(p5));
+    Font f = p0;
+    @zltris_draw_text_ex_xy(&f, p1, x, y, p3, p4, __abi_pack_Color(p5));
 }
 
 fun @DrawTextPro(p0: Font, p1: ptr<u8>, p2: simd<f32, 2>, p3: simd<f32, 2>, p4: f32, p5: f32, p6: f32, p7: u32) >> void;
@@ -1642,9 +1644,17 @@ fun @DrawTextCodepoints(p0: Font, p1: ptr<i32>, p2: i32, p3: simd<f32, 2>, p4: f
 
 wrap @SetTextLineSpacing(p0: i32) >> void;
 wrap @MeasureText(p0: ptr<u8>, p1: i32) >> i32;
-fun @MeasureTextEx(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> simd<f32, 2>;
+fun @MeasureTextEx(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> Vector2;
+wrap @zltris_measure_text_ex_xy(p0: ptr<Font>, p1: ptr<u8>, p2: f32, p3: f32, p4: ptr<f32>, p5: ptr<f32>) >> void;
 fun MeasureTextExSize(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> Vector2 {
-    return __abi_unpack_Vector2(@MeasureTextEx(p0, p1, p2, p3));
+    Font f = p0;
+    f32 w = 0.0;
+    f32 h = 0.0;
+    @zltris_measure_text_ex_xy(&f, p1, p2, p3, &w, &h);
+    Vector2 out = {0};
+    out.x = w;
+    out.y = h;
+    return out;
 }
 
 wrap @GetGlyphIndex(p0: Font, p1: i32) >> i32;

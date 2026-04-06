@@ -1,33 +1,88 @@
 module zltris.menu;
 use raylib
-use zltris.scale
-use zltris.theme
+
+#define BOTDEVMODE false
 
 #define MENU_BTN_FREE_PLAY 0
 #define MENU_BTN_40_LINES 1
 #define MENU_BTN_BLITZ 2
-#define MENU_BTN_SETTINGS 3
-#define MENU_BTN_COUNT 4
+#define MENU_BTN_AGAINST_BOT 3
+#define MENU_BTN_BOT_DUELS 4
+#define MENU_BTN_SETTINGS 5
 
 #define MENU_ACTION_NONE 0
 #define MENU_ACTION_START_FREE_PLAY 1
 #define MENU_ACTION_OPEN_SETTINGS 2
 #define MENU_ACTION_START_40_LINES 3
+#define MENU_ACTION_START_BLITZ 4
+#define MENU_ACTION_OPEN_BOT_SETUP 5
+#define MENU_ACTION_START_BOT_DUELS 6
 
-i32 g_menu_index = 0;
-i32 g_menu_notice = -1;
-f32 g_menu_notice_timer = 0.0;
+struct MenuState {
+    index i32,
+    notice i32,
+    notice_timer f32,
+}
+
+fun init(self: MenuState) >> MenuState {
+    MenuState next = self;
+    next.index = 0;
+    next.notice = -1;
+    next.notice_timer = 0.0;
+    return next;
+}
+
+fun tick_notice(self: MenuState, dt: f32) >> MenuState {
+    MenuState next = self;
+    if next.notice_timer > 0.0 {
+        next.notice_timer -= dt;
+        if next.notice_timer < 0.0 {
+            next.notice_timer = 0.0;
+            next.notice = -1;
+        }
+    }
+    return next;
+}
+
+fun move_index(self: MenuState, delta: i32) >> MenuState {
+    MenuState next = self;
+    next.index += delta;
+    i32 count = menuButtonCount();
+    if next.index < 0 {next.index = count - 1;}
+    if next.index >= count {next.index = 0;}
+    return next;
+}
+
+fun show_notice(self: MenuState, idx: i32) >> MenuState {
+    MenuState next = self;
+    next.notice = idx;
+    next.notice_timer = 1.6;
+    return next;
+}
+
+MenuState g_menu = {0};
 
 fun menuInit() >> void {
-    g_menu_index = 0;
-    g_menu_notice = -1;
-    g_menu_notice_timer = 0.0;
+    g_menu = g_menu.init();
 }
 
 fun menuActionNone() >> i32 { return MENU_ACTION_NONE; }
 fun menuActionStartFreePlay() >> i32 { return MENU_ACTION_START_FREE_PLAY; }
 fun menuActionOpenSettings() >> i32 { return MENU_ACTION_OPEN_SETTINGS; }
 fun menuActionStart40Lines() >> i32 { return MENU_ACTION_START_40_LINES; }
+fun menuActionStartBlitz() >> i32 { return MENU_ACTION_START_BLITZ; }
+fun menuActionOpenBotSetup() >> i32 { return MENU_ACTION_OPEN_BOT_SETUP; }
+fun menuActionStartBotDuels() >> i32 { return MENU_ACTION_START_BOT_DUELS; }
+
+fun menuButtonCount() >> i32 {
+    if BOTDEVMODE {return 6;}
+    return 5;
+}
+
+fun menuSettingsIndex() >> i32 {
+    if BOTDEVMODE {return MENU_BTN_SETTINGS;}
+    return MENU_BTN_BOT_DUELS;
+}
 
 fun toColor(color_rgba: u32) >> Color {
     return Color{
@@ -41,12 +96,8 @@ fun toColor(color_rgba: u32) >> Color {
 fun alphaColor(base: u32, alpha: f32) >> u32 {
     i32 a = ((base >> 24) & 255) as i32;
     i32 scaled = ((a as f32) * alpha) as i32;
-    if (scaled < 0) {
-        scaled = 0;
-    }
-    if (scaled > 255) {
-        scaled = 255;
-    }
+    if scaled < 0 {scaled = 0;}
+    if scaled > 255 {scaled = 255;}
     return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
 }
 
@@ -70,9 +121,7 @@ fun drawHorizontalFullWidth(base_y: i64, color_rgba: u32) >> void {
 fun drawFloorTintFullWidth(base_y: i64, color_rgba: u32) >> void {
     i32 sy = uiY(base_y);
     i32 h = GetScreenHeight() - sy;
-    if (h < 0) {
-        h = 0;
-    }
+    if h < 0 {h = 0;}
     DrawRectangle(0, sy, GetScreenWidth(), h, toColor(color_rgba));
 }
 
@@ -93,20 +142,18 @@ fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rg
 }
 
 fun menuLabel(index: i32) >> ptr<u8> {
-    if (index == MENU_BTN_40_LINES) {
-        return "40 LINES";
-    }
-    if (index == MENU_BTN_BLITZ) {
-        return "BLITZ";
-    }
-    if (index == MENU_BTN_SETTINGS) {
-        return "SETTINGS";
-    }
+    if index == MENU_BTN_40_LINES {return "40 LINES";}
+    if index == MENU_BTN_BLITZ {return "BLITZ";}
+    if index == MENU_BTN_AGAINST_BOT {return "AGAINST BOT";}
+    if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return "BOT DUELS";}
+    if index == menuSettingsIndex() {return "SETTINGS";}
     return "FREE PLAY";
 }
 
 fun menuEnabled(index: i32) >> bool {
-    return index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_SETTINGS;
+    if index == MENU_BTN_FREE_PLAY || index == MENU_BTN_40_LINES || index == MENU_BTN_BLITZ || index == MENU_BTN_AGAINST_BOT {return true;}
+    if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return true;}
+    return index == menuSettingsIndex();
 }
 
 fun menuButtonY(index: i32) >> i64 {
@@ -118,18 +165,10 @@ fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
     i32 ry = uiY(y);
     i32 rw = uiS(w);
     i32 rh = uiS(h);
-    if (px < rx as f32) {
-        return false;
-    }
-    if (py < ry as f32) {
-        return false;
-    }
-    if (px > (rx + rw) as f32) {
-        return false;
-    }
-    if (py > (ry + rh) as f32) {
-        return false;
-    }
+    if px < rx as f32 {return false;}
+    if py < ry as f32 {return false;}
+    if px > (rx + rw) as f32 {return false;}
+    if py > (ry + rh) as f32 {return false;}
     return true;
 }
 
@@ -143,26 +182,29 @@ fun drawRetroGrid(theme: Theme) >> void {
     i64 bottom_half_span = (top_half_span * 557) / 100;
     f32 t = GetTime() as f32;
 
-    drawFloorTintFullWidth(horizon, alphaColor(theme.bg_outer, 0.22));
-    drawHorizontalFullWidth(horizon, alphaColor(theme.panel_stroke, 0.58));
+    f32 line_brightness = 1.0 as f32;
+    if theme.panel_bg == 0xFF121212 && theme.piece_t == 0xFFA755B7 {
+        line_brightness = 1.45 as f32;
+    }
+
+    drawFloorTintFullWidth(horizon, alphaColor(theme.bg_outer, (0.22 as f32) * line_brightness));
+    drawHorizontalFullWidth(horizon, alphaColor(theme.panel_stroke, (0.58 as f32) * line_brightness));
 
     for i32 i = -23; i <= 23; i++ {
         f32 n = (i as f32) / 23.0;
         i64 xh = center + ((top_half_span as f32) * n) as i64;
         i64 xb = center + ((bottom_half_span as f32) * n) as i64;
-        drawLineBase(xh, horizon, xb, bottom, alphaColor(theme.panel_stroke, 0.30));
+        drawLineBase(xh, horizon, xb, bottom, alphaColor(theme.panel_stroke, (0.30 as f32) * line_brightness));
     }
 
     for i32 i = 0; i < 16; i++ {
         f32 phase = (i as f32) / 16.0 + t * 0.28;
         i32 cycles = phase as i32;
         f32 frac = phase - (cycles as f32);
-        if (frac < 0.0) {
-            frac += 1.0;
-        }
+        if frac < 0.0 {frac += 1.0;}
         f32 depth = frac * frac;
         i64 y = horizon + (((bottom - horizon) as f32) * depth) as i64;
-        f32 alpha = 0.18 + depth * 0.44;
+        f32 alpha = ((0.18 as f32) + depth * (0.44 as f32)) * line_brightness;
         drawHorizontalFullWidth(y, alphaColor(theme.panel_stroke, alpha));
     }
 }
@@ -173,7 +215,7 @@ fun drawMenuButton(font: Font, theme: Theme, index: i32) >> void {
     i64 w = 352;
     i64 h = 72;
 
-    bool selected = index == g_menu_index;
+    bool selected = index == g_menu.index;
     bool enabled = menuEnabled(index);
 
     u32 bg = alphaColor(theme.panel_bg, 0.90);
@@ -192,9 +234,7 @@ fun drawMenuButton(font: Font, theme: Theme, index: i32) >> void {
     fillRect(x, y, w, h, bg);
     strokeRect(x, y, w, h, stroke);
     drawTextColor(font, menuLabel(index), x + 24, y + 24, 18, text_color);
-    if (!enabled) {
-        drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, 0.82));
-    }
+    if !enabled {drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, 0.82));}
 }
 
 fun drawMenu(font: Font, theme: Theme) >> void {
@@ -209,75 +249,53 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     drawTextColor(font, "ZLTRIS", 220, 156, 36, theme.text_main);
     drawTextColor(font, "Modern handling, classic pleasure.", 138, 212, 11, theme.text_muted);
 
-    for i32 i = 0; i < MENU_BTN_COUNT; i++ {
+    i32 count = menuButtonCount();
+    for i32 i = 0; i < count; i++ {
         drawMenuButton(font, theme, i);
     }
 
-    drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 704, 12, theme.text_muted);
-    drawTextColor(font, "ESC in game returns here", 146, 727, 12, theme.text_muted);
+    drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 761, 12, theme.text_muted);
+    drawTextColor(font, "ESC in game returns here", 146, 784, 12, theme.text_muted);
 
-    if (g_menu_notice_timer > 0.0) {
+    if (g_menu.notice_timer > 0.0) {
         fillRect(146, 764, 354, 42, alphaColor(theme.board_bg, 0.92));
         strokeRect(146, 764, 354, 42, alphaColor(theme.panel_stroke, 0.70));
-        drawTextColor(font, TextFormat("%s mode coming soon", menuLabel(g_menu_notice)), 160, 779, 11, theme.text_main);
+        drawTextColor(font, TextFormat("%s mode coming soon", menuLabel(g_menu.notice)), 160, 779, 11, theme.text_main);
     }
 }
 
 fun menuUpdate() >> i32 {
     f32 dt = GetFrameTime();
-    if (g_menu_notice_timer > 0.0) {
-        g_menu_notice_timer -= dt;
-        if (g_menu_notice_timer < 0.0) {
-            g_menu_notice_timer = 0.0;
-            g_menu_notice = -1;
-        }
-    }
+    g_menu = g_menu.tick_notice(dt);
 
-    if (IsKeyPressed(KEY_UP)) {
-        g_menu_index -= 1;
-        if (g_menu_index < 0) {
-            g_menu_index = MENU_BTN_COUNT - 1;
-        }
-    }
-    if (IsKeyPressed(KEY_DOWN)) {
-        g_menu_index += 1;
-        if (g_menu_index >= MENU_BTN_COUNT) {
-            g_menu_index = 0;
-        }
-    }
+    if IsKeyPressed(KEY_UP) {g_menu = g_menu.move_index(-1);}
+    if IsKeyPressed(KEY_DOWN) {g_menu = g_menu.move_index(1);}
 
     Vector2 mouse = GetMousePosition();
-    for i32 i = 0; i < MENU_BTN_COUNT; i++ {
+    i32 count = menuButtonCount();
+    for i32 i = 0; i < count; i++ {
         if (pointInBaseRect(mouse.x, mouse.y, 148, menuButtonY(i), 352, 72)) {
-            g_menu_index = i;
+            g_menu.index = i;
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                if (i == MENU_BTN_FREE_PLAY) {
-                    return MENU_ACTION_START_FREE_PLAY;
-                }
-                if (i == MENU_BTN_40_LINES) {
-                    return MENU_ACTION_START_40_LINES;
-                }
-                if (i == MENU_BTN_SETTINGS) {
-                    return MENU_ACTION_OPEN_SETTINGS;
-                }
-                g_menu_notice = i;
-                g_menu_notice_timer = 1.6;
+                if i == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
+                if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
+                if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
+                if i == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
+                if BOTDEVMODE && i == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
+                if i == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
+                g_menu = g_menu.show_notice(i);
             }
         }
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-        if (g_menu_index == MENU_BTN_FREE_PLAY) {
-            return MENU_ACTION_START_FREE_PLAY;
-        }
-        if (g_menu_index == MENU_BTN_40_LINES) {
-            return MENU_ACTION_START_40_LINES;
-        }
-        if (g_menu_index == MENU_BTN_SETTINGS) {
-            return MENU_ACTION_OPEN_SETTINGS;
-        }
-        g_menu_notice = g_menu_index;
-        g_menu_notice_timer = 1.6;
+        if g_menu.index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
+        if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
+        if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
+        if g_menu.index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
+        if BOTDEVMODE && g_menu.index == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
+        if g_menu.index == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
+        g_menu = g_menu.show_notice(g_menu.index);
     }
 
     return MENU_ACTION_NONE;
