@@ -525,6 +525,7 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
     writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
     writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
+    writeLineFd(fd, TextFormat("music_volume=%.2f", g_music_volume));
     writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
 
     close(fd);
@@ -591,6 +592,8 @@ fun loadSettingsFile() >> void {
                     g_star_music_intensity = parseFloatValue(value, g_star_music_intensity);
                 } else if (strEq(key, "star_music_style")) {
                     g_star_music_style = atoi(value);
+                } else if (strEq(key, "music_volume")) {
+                    g_music_volume = parseFloatValue(value, g_music_volume);
                 } else if (strEq(key, "board_bounciness")) {
                     g_board_bounciness = atoi(value);
                 }
@@ -4847,7 +4850,7 @@ fun drawApp(font: Font) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart);
+        drawSettings(font, theme, g_game.theme_index, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         EndDrawing();
         return;
@@ -4929,10 +4932,11 @@ fun updateApp() >> void {
         f32 prev_intensity = g_star_intensity;
         f32 prev_music_intensity = g_star_music_intensity;
         i32 prev_music_style = g_star_music_style;
+        f32 prev_music_volume = g_music_volume;
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart);
         if (prev_theme != g_game.theme_index ||
             prev_arr != g_arr_frames ||
             prev_das != g_das_frames ||
@@ -4945,6 +4949,7 @@ fun updateApp() >> void {
             prev_intensity != g_star_intensity ||
             prev_music_intensity != g_star_music_intensity ||
             prev_music_style != g_star_music_style ||
+            prev_music_volume != g_music_volume ||
             prev_double_row != g_double_row_ui ||
             prev_instant_restart != g_instant_restart) {
             clampSettings();

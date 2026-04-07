@@ -1,18 +1,22 @@
 module zltris.sound;
 use raylib
 use std.io
+use std.fs
 use zltris.aubio
 
 #define STAR_MUSIC_STYLE_PULSE 0
 #define STAR_MUSIC_STYLE_WAVE 1
 #define STAR_MUSIC_STYLE_AGGRO 2
-#define STAR_MUSIC_PATH "assets/songs/song1.mp3"
+#define STAR_MUSIC_DIR "assets/songs/default"
 #define STAR_MUSIC_HOP_SIZE 512
 #define STAR_MUSIC_WIN_SIZE 1024
 #define STAR_MUSIC_MAX_BEATS 16384
+#define STAR_MUSIC_MAX_TRACKS 64
+#define STAR_MUSIC_PATH_MAX 320
 
 f32 g_star_music_intensity = 0.6;
 i32 g_star_music_style = STAR_MUSIC_STYLE_PULSE;
+f32 g_music_volume = 0.60;
 
 Music g_star_music = {0};
 bool g_star_music_loaded = false;
@@ -28,6 +32,57 @@ i32 g_star_music_beat_index = 0;
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beats = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_accent = {0.0};
+arr<u8, 20480> g_star_music_track_path_buf = {0};
+arr<i32, 64> g_star_music_track_number = {0};
+i32 g_star_music_track_count = 0;
+i32 g_star_music_track_index = 0;
+
+fun trackPathPtr(slot: i32) >> ptr<u8> {
+    return &g_star_music_track_path_buf[slot * STAR_MUSIC_PATH_MAX];
+}
+
+fun lowerAscii(ch: u8) >> u8 {
+    if ch >= ('A' as u8) && ch <= ('Z' as u8) {return ch + 32 as u8;}
+    return ch;
+}
+
+fun strEndsWithIgnoreCase(text: ptr<u8>, suffix: ptr<u8>) >> bool {
+    i32 text_len = 0;
+    for (text[text_len] != 0) {text_len += 1;}
+    i32 suffix_len = 0;
+    for (suffix[suffix_len] != 0) {suffix_len += 1;}
+    if suffix_len > text_len {return false;}
+
+    i32 start = text_len - suffix_len;
+    for i32 i = 0; i < suffix_len; i++ {
+        if lowerAscii(text[start + i]) != lowerAscii(suffix[i]) {return false;}
+    }
+    return true;
+}
+
+fun isAudioTrackName(name: ptr<u8>) >> bool {
+    if strEndsWithIgnoreCase(name, ".mp3") {return true;}
+    if strEndsWithIgnoreCase(name, ".ogg") {return true;}
+    if strEndsWithIgnoreCase(name, ".wav") {return true;}
+    if strEndsWithIgnoreCase(name, ".flac") {return true;}
+    return false;
+}
+
+fun parseTrackNumberFromName(name: ptr<u8>) >> i32 {
+    i32 value = 0;
+    bool has_digit = false;
+    i32 i = 0;
+    for (name[i] != 0) {
+        u8 ch = name[i];
+        if ch >= ('0' as u8) && ch <= ('9' as u8) {
+            has_digit = true;
+            value = value * 10 + ((ch as i32) - ('0' as i32));
+        }
+        i += 1;
+    }
+    if !has_digit {return 1000000 + i;}
+    return value;
+}
 
 fun sndClamp01(v: f32) >> f32 {
     if v < 0.0 as f32 {return 0.0 as f32;}
@@ -45,6 +100,110 @@ fun clampSoundSettings() >> void {
     if g_star_music_intensity > 1.0 {g_star_music_intensity = 1.0;}
     if g_star_music_style < STAR_MUSIC_STYLE_PULSE {g_star_music_style = STAR_MUSIC_STYLE_PULSE;}
     if g_star_music_style > STAR_MUSIC_STYLE_AGGRO {g_star_music_style = STAR_MUSIC_STYLE_AGGRO;}
+    if g_music_volume < 0.0 {g_music_volume = 0.0;}
+    if g_music_volume > 1.0 {g_music_volume = 1.0;}
+}
+
+fun copyTrackPath(slot: i32, src: ptr<u8>) >> void {
+    if slot < 0 || slot >= STAR_MUSIC_MAX_TRACKS {return;}
+    ptr<u8> dst = trackPathPtr(slot);
+    i32 i = 0;
+    for (i < STAR_MUSIC_PATH_MAX - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun buildMusicPlaylist() >> void {
+    g_star_music_track_count = 0;
+    g_star_music_track_index = 0;
+
+    ptr<void> dir = openDir(STAR_MUSIC_DIR);
+    if dir == (0 as ptr<void>) {
+        printf("[zltris] failed to open music dir: %s\n", STAR_MUSIC_DIR);
+        return;
+    }
+
+    for (true) {
+        ptr<DirEntry> ent = readDirEntry(dir);
+        if ent == (0 as ptr<DirEntry>) {break;}
+
+        ptr<u8> name = &ent.d_name[0];
+        if name[0] == ('.' as u8) {continue;}
+        if !isAudioTrackName(name) {continue;}
+
+        i32 slot = g_star_music_track_count;
+        if slot >= STAR_MUSIC_MAX_TRACKS {break;}
+        ptr<u8> full_path = TextFormat("%s/%s", STAR_MUSIC_DIR, name);
+        copyTrackPath(slot, full_path);
+        g_star_music_track_number[slot] = parseTrackNumberFromName(name);
+        g_star_music_track_count += 1;
+    }
+    closeDir(dir);
+
+    for i32 i = 0; i < g_star_music_track_count; i++ {
+        for i32 j = i + 1; j < g_star_music_track_count; j++ {
+            if g_star_music_track_number[j] < g_star_music_track_number[i] {
+                i32 num_tmp = g_star_music_track_number[i];
+                g_star_music_track_number[i] = g_star_music_track_number[j];
+                g_star_music_track_number[j] = num_tmp;
+
+                ptr<u8> pi = trackPathPtr(i);
+                ptr<u8> pj = trackPathPtr(j);
+                for i32 k = 0; k < STAR_MUSIC_PATH_MAX; k++ {
+                    u8 tmp = pi[k];
+                    pi[k] = pj[k];
+                    pj[k] = tmp;
+                }
+            }
+        }
+    }
+
+    if g_star_music_track_count <= 0 {
+        printf("[zltris] no tracks found in %s\n", STAR_MUSIC_DIR);
+        return;
+    }
+
+    printf("[zltris] playlist tracks: %i\n", g_star_music_track_count);
+}
+
+fun loadStarMusicTrack(index: i32) >> void {
+    if g_star_music_track_count <= 0 {return;}
+    if index < 0 {index = 0;}
+    if index >= g_star_music_track_count {index = 0;}
+
+    if g_star_music_loaded {
+        StopMusicStream(g_star_music);
+        UnloadMusicStream(g_star_music);
+        g_star_music_loaded = false;
+    }
+
+    ptr<u8> path = trackPathPtr(index);
+    if !FileExists(path) {
+        printf("[zltris] track missing: %s\n", path);
+        return;
+    }
+
+    g_star_music = LoadMusicStream(path);
+    if !IsMusicValid(g_star_music) {
+        printf("[zltris] LoadMusicStream failed: %s\n", path);
+        return;
+    }
+
+    g_star_music_track_index = index;
+    g_star_music_time = 0.0;
+    g_star_music_prev_time = 0.0;
+    g_star_music_beat_index = 0;
+    g_star_music_attack_speed = 1.0;
+    g_star_music_decay_speed = 1.0;
+
+    SetMusicVolume(g_star_music, g_music_volume);
+    PlayMusicStream(g_star_music);
+    g_star_music_loaded = true;
+
+    analyzeMusicBeats(path);
+    printf("[zltris] now playing #%i: %s\n", index + 1, path);
 }
 
 fun starMusicIntensityNorm() >> f32 {
@@ -194,22 +353,9 @@ fun loadStarMusic() >> void {
         return;
     }
 
-    if !FileExists(STAR_MUSIC_PATH) {
-        printf("[zltris] music file not found: %s\n", STAR_MUSIC_PATH);
-        return;
-    }
-
-    g_star_music = LoadMusicStream(STAR_MUSIC_PATH);
-    if !IsMusicValid(g_star_music) {
-        printf("[zltris] LoadMusicStream failed: %s\n", STAR_MUSIC_PATH);
-        return;
-    }
-
-    SetMusicVolume(g_star_music, 0.65 as f32);
-    PlayMusicStream(g_star_music);
-    g_star_music_loaded = true;
-
-    analyzeMusicBeats(STAR_MUSIC_PATH);
+    buildMusicPlaylist();
+    if g_star_music_track_count <= 0 {return;}
+    loadStarMusicTrack(0);
 }
 
 fun updateStarMusicPlayback() >> void {
@@ -221,13 +367,16 @@ fun updateStarMusicPlayback() >> void {
 
     UpdateMusicStream(g_star_music);
     if !IsMusicStreamPlaying(g_star_music) {PlayMusicStream(g_star_music);}
+    SetMusicVolume(g_star_music, g_music_volume);
 
     f32 played = GetMusicTimePlayed(g_star_music);
     f32 length = GetMusicTimeLength(g_star_music);
 
     if length > 0.1 as f32 && played >= length - 0.01 as f32 {
-        SeekMusicStream(g_star_music, 0.0 as f32);
-        played = 0.0 as f32;
+        i32 next_track = g_star_music_track_index + 1;
+        if next_track >= g_star_music_track_count {next_track = 0;}
+        loadStarMusicTrack(next_track);
+        return;
     }
 
     if played + 0.12 as f32 < g_star_music_prev_time {

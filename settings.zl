@@ -8,15 +8,16 @@ use zltris.theme
 #define SETTINGS_ITEM_DAS 2
 #define SETTINGS_ITEM_DCD 3
 #define SETTINGS_ITEM_SDF 4
-#define SETTINGS_ITEM_BOARD_BOUNCINESS 5
-#define SETTINGS_ITEM_DOUBLE_ROW 6
-#define SETTINGS_ITEM_INSTANT_RESTART 7
-#define SETTINGS_ITEM_BG_STARS_AMOUNT 8
-#define SETTINGS_ITEM_BG_STARS_MODE 9
-#define SETTINGS_ITEM_STAR_PEAK_TARGET 10
-#define SETTINGS_ITEM_STAR_INTENSITY 11
-#define SETTINGS_ITEM_BACK 12
-#define SETTINGS_ITEM_COUNT 13
+#define SETTINGS_ITEM_MUSIC_VOLUME 5
+#define SETTINGS_ITEM_BOARD_BOUNCINESS 6
+#define SETTINGS_ITEM_DOUBLE_ROW 7
+#define SETTINGS_ITEM_INSTANT_RESTART 8
+#define SETTINGS_ITEM_BG_STARS_AMOUNT 9
+#define SETTINGS_ITEM_BG_STARS_MODE 10
+#define SETTINGS_ITEM_STAR_PEAK_TARGET 11
+#define SETTINGS_ITEM_STAR_INTENSITY 12
+#define SETTINGS_ITEM_BACK 13
+#define SETTINGS_ITEM_COUNT 14
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
@@ -703,7 +704,7 @@ fun drawToggleRow(font: Font, theme: Theme, bg_stars_mode: i32, index: i32, labe
     drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
 }
 
-fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32, dcd: f32, sdf: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool) >> void {
+fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawImpulseGridBackground(font, theme);
 
@@ -728,6 +729,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32,
     drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
     drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DCD, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);
     drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_SDF, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);
+    drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_MUSIC_VOLUME, "Music volume", TextFormat("%i%%", (music_volume * 100.0) as i32), music_volume, 0.0, 1.0);
     drawSliderRow(font, theme, bg_stars_mode, SETTINGS_ITEM_BOARD_BOUNCINESS, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);
     drawToggleRow(font, theme, bg_stars_mode, SETTINGS_ITEM_DOUBLE_ROW, "Double-row UI", double_row_ui);
     drawToggleRow(font, theme, bg_stars_mode, SETTINGS_ITEM_INSTANT_RESTART, "Instant restart", instant_restart);
@@ -748,7 +750,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, arr: f32, das: f32,
     fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75));
 }
 
-fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if (index == SETTINGS_ITEM_THEME) {
         theme_index[0] = switchTheme(theme_index[0], dir);
         return SETTINGS_ACTION_NONE;
@@ -767,6 +769,10 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
     }
     if (index == SETTINGS_ITEM_SDF) {
         sdf[0] = clampf(sdf[0] + (dir as f32) * 0.5, 1.0, 40.0);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_MUSIC_VOLUME) {
+        music_volume[0] = clampf(music_volume[0] + (dir as f32) * 0.05, 0.0, 1.0);
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_BOARD_BOUNCINESS) {
@@ -816,7 +822,7 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, arr: ptr<f32
     return SETTINGS_ACTION_BACK;
 }
 
-fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
     i32 max_scroll = (SETTINGS_ITEM_COUNT as i32) - (SETTINGS_VISIBLE_ROWS as i32);
@@ -863,15 +869,15 @@ fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr
     }
     if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
-    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
     if (IsKeyPressed(KEY_ENTER)) {
         if g_settings.index == SETTINGS_ITEM_BACK {return SETTINGS_ACTION_BACK;}
         if g_settings.index == SETTINGS_ITEM_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0];}
         if g_settings.index == SETTINGS_ITEM_INSTANT_RESTART {instant_restart[0] = !instant_restart[0];}
-        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
     }
 
     Vector2 mouse = GetMousePosition();
@@ -895,19 +901,20 @@ fun settingsUpdate(theme_index: ptr<i32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr
     }
 
     if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BG_STARS_MODE, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
     }
 
     if (bg_stars_mode[0] == STAR_MODE_MUSIC && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, -1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, 1, theme_index, arr, das, dcd, sdf, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, -1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, 1, theme_index, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
     }
 
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DAS, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);}
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DCD, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);}
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_SDF, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);}
+    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_MUSIC_VOLUME, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {music_volume[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.0);}
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BOARD_BOUNCINESS, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {board_bounciness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 100.0) as i32;}
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BG_STARS_AMOUNT, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;}
     if bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);}
