@@ -2,6 +2,7 @@ module zltris.sound;
 use raylib
 use std.io
 use std.fs
+use std.math
 use zltris.aubio
 
 #define STAR_MUSIC_STYLE_PULSE 0
@@ -31,7 +32,9 @@ i32 g_star_music_beat_count = 0;
 i32 g_star_music_beat_index = 0;
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beats = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength = {0.0};
+arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength_raw = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_accent = {0.0};
+i32 g_star_music_style_applied = STAR_MUSIC_STYLE_PULSE;
 arr<u8, 20480> g_star_music_track_path_buf = {0};
 arr<i32, 64> g_star_music_track_number = {0};
 i32 g_star_music_track_count = 0;
@@ -93,6 +96,72 @@ fun sndClamp01(v: f32) >> f32 {
 fun sndAbsf(v: f32) >> f32 {
     if v < 0.0 as f32 {return -v;}
     return v;
+}
+
+fun styleStrengthCurve(s: f32) >> f32 {
+    f32 v = sndClamp01(s);
+    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {return sqrt(v as f64) as f32;}
+    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {return v * v * v;}
+    return v * v;
+}
+
+fun styleProximityWidth(interval: f32) >> f32 {
+    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {
+        f32 width = interval * (0.70 as f32);
+        if width < 0.09 as f32 {width = 0.09 as f32;}
+        if width > 0.60 as f32 {width = 0.60 as f32;}
+        return width;
+    }
+    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {
+        f32 width = interval * (0.30 as f32);
+        if width < 0.05 as f32 {width = 0.05 as f32;}
+        if width > 0.30 as f32 {width = 0.30 as f32;}
+        return width;
+    }
+
+    f32 width = interval * (0.50 as f32);
+    if width < 0.07 as f32 {width = 0.07 as f32;}
+    if width > 0.45 as f32 {width = 0.45 as f32;}
+    return width;
+}
+
+fun styleLerpSpeed() >> f32 {
+    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {return 0.015 as f32;}
+    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {return 0.06 as f32;}
+    return 0.03 as f32;
+}
+
+fun applyStyleStrengthCurveToBeats() >> void {
+    for i32 i = 0; i < g_star_music_beat_count; i++ {
+        g_star_music_beat_strength[i] = styleStrengthCurve(g_star_music_beat_strength_raw[i]);
+    }
+    g_star_music_style_applied = g_star_music_style;
+}
+
+fun beatWindowEnergy(samples: ptr<f32>, frame_count: i32, channels: i32, center_frame: i32, half_window: i32) >> f32 {
+    if frame_count <= 0 || channels <= 0 {return 0.0 as f32;}
+
+    i32 start = center_frame - half_window;
+    i32 end = center_frame + half_window;
+    if start < 0 {start = 0;}
+    if end >= frame_count {end = frame_count - 1;}
+    if end < start {return 0.0 as f32;}
+
+    f32 sum = 0.0 as f32;
+    i32 count = 0;
+    for i32 frame = start; frame <= end; frame++ {
+        i32 base = frame * channels;
+        f32 mixed = 0.0 as f32;
+        for i32 c = 0; c < channels; c++ {
+            mixed += samples[base + c];
+        }
+        mixed = mixed / (channels as f32);
+        sum += sndAbsf(mixed);
+        count += 1;
+    }
+
+    if count <= 0 {return 0.0 as f32;}
+    return sum / (count as f32);
 }
 
 fun clampSoundSettings() >> void {
@@ -190,6 +259,7 @@ fun loadStarMusicTrack(index: i32) >> void {
         printf("[zltris] LoadMusicStream failed: %s\n", path);
         return;
     }
+    g_star_music.looping = false;
 
     g_star_music_track_index = index;
     g_star_music_time = 0.0;
@@ -208,7 +278,7 @@ fun loadStarMusicTrack(index: i32) >> void {
 
 fun starMusicIntensityNorm() >> f32 {
     f32 n = sndClamp01((g_star_music_intensity - 0.1) / 0.9);
-    return n * (0.35 + 0.65 * n);
+    return sqrt(n as f64) as f32;
 }
 
 fun analyzeMusicBeats(path: ptr<u8>) >> void {
@@ -301,7 +371,12 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
                 if last_beat < 0.0 as f32 || beat_sec - last_beat > 0.08 as f32 {
                     if g_star_music_beat_count < STAR_MUSIC_MAX_BEATS {
                         g_star_music_beats[g_star_music_beat_count] = beat_sec;
-                        g_star_music_beat_strength[g_star_music_beat_count] = hop_energy;
+                        i32 beat_frame = (beat_sec * (samplerate as f32)) as i32;
+                        if beat_frame < 0 {beat_frame = 0;}
+                        if beat_frame >= frame_count {beat_frame = frame_count - 1;}
+                        i32 beat_half_window = (STAR_MUSIC_HOP_SIZE as i32) / 4;
+                        f32 beat_energy = beatWindowEnergy(samples, frame_count, channels, beat_frame, beat_half_window);
+                        g_star_music_beat_strength[g_star_music_beat_count] = beat_energy;
                         g_star_music_beat_accent[g_star_music_beat_count] = accent;
                         g_star_music_beat_count += 1;
                         last_beat = beat_sec;
@@ -329,11 +404,13 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
         f32 rel_norm = (g_star_music_beat_strength[i] / (mean_energy * (1.8 as f32)));
         if rel_norm > 1.0 as f32 {rel_norm = 1.0 as f32;}
         f32 accent_norm = sndClamp01((g_star_music_beat_accent[i] - (0.90 as f32)) / (0.90 as f32));
-        f32 strength = loud_norm * (0.58 as f32) + rel_norm * (0.24 as f32) + accent_norm * (0.34 as f32);
+        f32 strength = loud_norm * (0.52 as f32) + rel_norm * (0.28 as f32) + accent_norm * (0.20 as f32);
         if strength < 0.0 as f32 {strength = 0.0 as f32;}
         if strength > 1.0 as f32 {strength = 1.0 as f32;}
-        g_star_music_beat_strength[i] = strength;
+        g_star_music_beat_strength_raw[i] = strength;
     }
+
+    applyStyleStrengthCurveToBeats();
 
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
@@ -361,23 +438,38 @@ fun loadStarMusic() >> void {
 fun updateStarMusicPlayback() >> void {
     g_star_music_hits_frame = 0;
     g_star_music_hit_strength = 0.0;
-    g_star_music_attack_speed += (1.0 as f32 - g_star_music_attack_speed) * (0.10 as f32);
-    g_star_music_decay_speed += (1.0 as f32 - g_star_music_decay_speed) * (0.10 as f32);
+    f32 speed = styleLerpSpeed();
+    g_star_music_attack_speed += (1.0 as f32 - g_star_music_attack_speed) * speed;
+    g_star_music_decay_speed += (1.0 as f32 - g_star_music_decay_speed) * speed;
+
+    if g_star_music_style_applied != g_star_music_style {
+        applyStyleStrengthCurveToBeats();
+    }
     if !g_star_music_loaded {return;}
 
     UpdateMusicStream(g_star_music);
-    if !IsMusicStreamPlaying(g_star_music) {PlayMusicStream(g_star_music);}
     SetMusicVolume(g_star_music, g_music_volume);
 
     f32 played = GetMusicTimePlayed(g_star_music);
     f32 length = GetMusicTimeLength(g_star_music);
 
-    if length > 0.1 as f32 && played >= length - 0.01 as f32 {
+    bool track_ended = false;
+    if length > 0.1 as f32 {
+        if played >= length - 0.01 as f32 {
+            track_ended = true;
+        } else if !IsMusicStreamPlaying(g_star_music) && g_star_music_prev_time > played + 0.05 as f32 {
+            track_ended = true;
+        }
+    }
+
+    if track_ended {
         i32 next_track = g_star_music_track_index + 1;
         if next_track >= g_star_music_track_count {next_track = 0;}
         loadStarMusicTrack(next_track);
         return;
     }
+
+    if !IsMusicStreamPlaying(g_star_music) {PlayMusicStream(g_star_music);}
 
     if played + 0.12 as f32 < g_star_music_prev_time {
         g_star_music_beat_index = 0;
@@ -419,7 +511,16 @@ fun currentMusicBeatProximity() >> f32 {
 
     f32 prev_t = g_star_music_beats[prev_index];
     f32 next_t = g_star_music_beats[next_index];
-    if next_t < prev_t {next_t = prev_t + 0.45 as f32;}
+    if next_t <= prev_t {
+        f32 fallback_interval = 0.50 as f32;
+        i32 prev_prev_index = prev_index - 1;
+        if prev_prev_index >= 0 {
+            fallback_interval = prev_t - g_star_music_beats[prev_prev_index];
+        }
+        if fallback_interval < 0.18 as f32 {fallback_interval = 0.18 as f32;}
+        if fallback_interval > 1.20 as f32 {fallback_interval = 1.20 as f32;}
+        next_t = prev_t + fallback_interval;
+    }
 
     f32 interval = next_t - prev_t;
     if interval < 0.18 as f32 {interval = 0.18 as f32;}
@@ -430,11 +531,10 @@ fun currentMusicBeatProximity() >> f32 {
     f32 dist = dist_prev;
     if dist_next < dist {dist = dist_next;}
 
-    f32 width = interval * (0.36 as f32);
-    if width < 0.05 as f32 {width = 0.05 as f32;}
-    if width > 0.28 as f32 {width = 0.28 as f32;}
-
-    return sndClamp01((1.0 as f32) - dist / width);
+    f32 width = styleProximityWidth(interval);
+    f32 t = sndClamp01(dist / width);
+    f64 angle = (t as f64) * PI;
+    return (0.5 as f32) * ((1.0 as f32) + (cos(angle) as f32));
 }
 
 fun currentMusicBeatInterval() >> f32 {
