@@ -659,7 +659,7 @@ enum NPatchLayout {
 const i32 RAYLIB_VERSION_MAJOR = 5;
 const i32 RAYLIB_VERSION_MINOR = 6;
 const i32 RAYLIB_VERSION_PATCH = 0;
-const f32 PI = 3.14159265358979323846;
+const f32 RAYLIB_PI = 3.14159265358979323846;
 
 fun __abi_pack_Vector2(value: Vector2) >> simd<f32, 2> {
     simd<f32, 2> tmp = {value.x, value.y};
