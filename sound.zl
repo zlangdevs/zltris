@@ -432,7 +432,8 @@ fun loadStarMusic() >> void {
 
     buildMusicPlaylist();
     if g_star_music_track_count <= 0 {return;}
-    loadStarMusicTrack(0);
+    i32 start_track = GetRandomValue(0, g_star_music_track_count - 1);
+    loadStarMusicTrack(start_track);
 }
 
 fun updateStarMusicPlayback() >> void {
