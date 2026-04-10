@@ -7,20 +7,22 @@ use zltris.theme
 #define SETTINGS_ITEM_SHADER 1
 #define SETTINGS_ITEM_CRT_CURVATURE 2
 #define SETTINGS_ITEM_CRT_BRIGHTNESS 3
-#define SETTINGS_ITEM_ARR 4
-#define SETTINGS_ITEM_DAS 5
-#define SETTINGS_ITEM_DCD 6
-#define SETTINGS_ITEM_SDF 7
-#define SETTINGS_ITEM_MUSIC_VOLUME 8
-#define SETTINGS_ITEM_BOARD_BOUNCINESS 9
-#define SETTINGS_ITEM_DOUBLE_ROW 10
-#define SETTINGS_ITEM_INSTANT_RESTART 11
-#define SETTINGS_ITEM_BG_STARS_AMOUNT 12
-#define SETTINGS_ITEM_BG_STARS_MODE 13
-#define SETTINGS_ITEM_STAR_PEAK_TARGET 14
-#define SETTINGS_ITEM_STAR_INTENSITY 15
-#define SETTINGS_ITEM_BACK 16
-#define SETTINGS_ITEM_COUNT 17
+#define SETTINGS_ITEM_VHS_WAVES 4
+#define SETTINGS_ITEM_VHS_DAMAGE 5
+#define SETTINGS_ITEM_ARR 6
+#define SETTINGS_ITEM_DAS 7
+#define SETTINGS_ITEM_DCD 8
+#define SETTINGS_ITEM_SDF 9
+#define SETTINGS_ITEM_MUSIC_VOLUME 10
+#define SETTINGS_ITEM_BOARD_BOUNCINESS 11
+#define SETTINGS_ITEM_DOUBLE_ROW 12
+#define SETTINGS_ITEM_INSTANT_RESTART 13
+#define SETTINGS_ITEM_BG_STARS_AMOUNT 14
+#define SETTINGS_ITEM_BG_STARS_MODE 15
+#define SETTINGS_ITEM_STAR_PEAK_TARGET 16
+#define SETTINGS_ITEM_STAR_INTENSITY 17
+#define SETTINGS_ITEM_BACK 18
+#define SETTINGS_ITEM_COUNT 19
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
@@ -29,6 +31,7 @@ use zltris.theme
 #define SHADER_MODE_NONE 0
 #define SHADER_MODE_LIGHT_CRT 1
 #define SHADER_MODE_CRT 2
+#define SHADER_MODE_VHS 3
 #define STAR_MUSIC_STYLE_PULSE 0
 #define STAR_MUSIC_STYLE_WAVE 1
 #define STAR_MUSIC_STYLE_AGGRO 2
@@ -572,6 +575,12 @@ fun visibleOrderForItem(index: i32, bg_stars_mode: i32, shader_mode: i32) >> i32
         if index > SETTINGS_ITEM_CRT_BRIGHTNESS {order -= 1;}
     }
 
+    if shader_mode != SHADER_MODE_VHS {
+        if index == SETTINGS_ITEM_VHS_WAVES || index == SETTINGS_ITEM_VHS_DAMAGE {return -1;}
+        if index > SETTINGS_ITEM_VHS_WAVES {order -= 1;}
+        if index > SETTINGS_ITEM_VHS_DAMAGE {order -= 1;}
+    }
+
     if bg_stars_mode == STAR_MODE_NONE {
         if index == SETTINGS_ITEM_STAR_PEAK_TARGET || index == SETTINGS_ITEM_STAR_INTENSITY {return -1;}
         if index > SETTINGS_ITEM_STAR_INTENSITY {order -= 2;}
@@ -582,7 +591,8 @@ fun visibleOrderForItem(index: i32, bg_stars_mode: i32, shader_mode: i32) >> i32
 
 fun visibleItemCount(bg_stars_mode: i32, shader_mode: i32) >> i32 {
     i32 count = SETTINGS_ITEM_COUNT;
-    if shader_mode != SHADER_MODE_CRT {count -= 1;}
+    if shader_mode != SHADER_MODE_CRT {count -= 2;}
+    if shader_mode != SHADER_MODE_VHS {count -= 2;}
     if bg_stars_mode == STAR_MODE_NONE {count -= 2;}
     return count;
 }
@@ -592,6 +602,10 @@ fun itemFromVisibleOrder(order: i32, bg_stars_mode: i32, shader_mode: i32) >> i3
     if shader_mode != SHADER_MODE_CRT {
         if idx >= SETTINGS_ITEM_CRT_CURVATURE {idx += 1;}
         if idx >= SETTINGS_ITEM_CRT_BRIGHTNESS {idx += 1;}
+    }
+    if shader_mode != SHADER_MODE_VHS {
+        if idx >= SETTINGS_ITEM_VHS_WAVES {idx += 1;}
+        if idx >= SETTINGS_ITEM_VHS_DAMAGE {idx += 1;}
     }
     if bg_stars_mode == STAR_MODE_NONE && idx >= SETTINGS_ITEM_STAR_PEAK_TARGET {idx += 2;}
     return idx;
@@ -623,6 +637,7 @@ fun musicStyleLabel(style: i32) >> ptr<u8> {
 fun shaderModeLabel(mode: i32) >> ptr<u8> {
     if mode == SHADER_MODE_LIGHT_CRT {return "Light CRT";}
     if mode == SHADER_MODE_CRT {return "CRT";}
+    if mode == SHADER_MODE_VHS {return "VHS";}
     return "None";
 }
 
@@ -732,7 +747,7 @@ fun drawToggleRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i32
     drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
 }
 
-fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool) >> void {
+fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, vhs_waves: f32, vhs_damage: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawImpulseGridBackground(font, theme);
 
@@ -757,6 +772,9 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     if shader_mode == SHADER_MODE_CRT {
         drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_CRT_CURVATURE, "CRT curvature", TextFormat("%i%%", (crt_curvature * 100.0) as i32), crt_curvature, 0.2, 1.4);
         drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_CRT_BRIGHTNESS, "CRT brightness", TextFormat("%i%%", (crt_brightness * 100.0) as i32), crt_brightness, 0.6, 1.8);
+    } else if shader_mode == SHADER_MODE_VHS {
+        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_VHS_WAVES, "VHS waves", TextFormat("%i%%", (vhs_waves * 100.0) as i32), vhs_waves, 0.0, 1.4);
+        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_VHS_DAMAGE, "VHS damage", TextFormat("%i%%", (vhs_damage * 100.0) as i32), vhs_damage, 0.0, 1.5);
     }
     drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_ARR, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);
     drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
@@ -783,15 +801,15 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75));
 }
 
-fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if (index == SETTINGS_ITEM_THEME) {
         theme_index[0] = switchTheme(theme_index[0], dir);
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_SHADER) {
         shader_mode[0] += dir;
-        if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_CRT;}
-        if shader_mode[0] > SHADER_MODE_CRT {shader_mode[0] = SHADER_MODE_NONE;}
+        if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_VHS;}
+        if shader_mode[0] > SHADER_MODE_VHS {shader_mode[0] = SHADER_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_CRT_CURVATURE) {
@@ -800,6 +818,14 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, shader_mode:
     }
     if (index == SETTINGS_ITEM_CRT_BRIGHTNESS) {
         crt_brightness[0] = clampf(crt_brightness[0] + (dir as f32) * 0.05, 0.6, 1.8);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_VHS_WAVES) {
+        vhs_waves[0] = clampf(vhs_waves[0] + (dir as f32) * 0.05, 0.0, 1.4);
+        return SETTINGS_ACTION_NONE;
+    }
+    if (index == SETTINGS_ITEM_VHS_DAMAGE) {
+        vhs_damage[0] = clampf(vhs_damage[0] + (dir as f32) * 0.05, 0.0, 1.5);
         return SETTINGS_ACTION_NONE;
     }
     if (index == SETTINGS_ITEM_ARR) {
@@ -869,7 +895,7 @@ fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, shader_mode:
     return SETTINGS_ACTION_BACK;
 }
 
-fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
+fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>) >> i32 {
     if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
     i32 max_scroll = (SETTINGS_ITEM_COUNT as i32) - (SETTINGS_VISIBLE_ROWS as i32);
@@ -916,18 +942,20 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     }
     if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
-    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
     if (IsKeyPressed(KEY_ENTER)) {
         if g_settings.index == SETTINGS_ITEM_BACK {return SETTINGS_ACTION_BACK;}
         if g_settings.index == SETTINGS_ITEM_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0];}
         if g_settings.index == SETTINGS_ITEM_INSTANT_RESTART {instant_restart[0] = !instant_restart[0];}
-        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_SHADER {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_CRT_CURVATURE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        if g_settings.index == SETTINGS_ITEM_CRT_BRIGHTNESS {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_SHADER {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_CRT_CURVATURE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_CRT_BRIGHTNESS {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_VHS_WAVES {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        if g_settings.index == SETTINGS_ITEM_VHS_DAMAGE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
     }
 
     Vector2 mouse = GetMousePosition();
@@ -951,8 +979,8 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     }
 
     if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_SHADER, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_SHADER, -1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        return settingsNudgeValue(SETTINGS_ITEM_SHADER, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_SHADER, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        return settingsNudgeValue(SETTINGS_ITEM_SHADER, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
     }
 
     if (shader_mode[0] == SHADER_MODE_CRT && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
@@ -961,15 +989,21 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     if (shader_mode[0] == SHADER_MODE_CRT && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         crt_brightness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.6, 1.8);
     }
+    if (shader_mode[0] == SHADER_MODE_VHS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        vhs_waves[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.4);
+    }
+    if (shader_mode[0] == SHADER_MODE_VHS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        vhs_damage[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.5);
+    }
 
     if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BG_STARS_MODE, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
     }
 
     if (bg_stars_mode[0] == STAR_MODE_MUSIC && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, -1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
-        return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, 1, theme_index, shader_mode, crt_curvature, crt_brightness, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
+        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);}
+        return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart);
     }
 
     if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
