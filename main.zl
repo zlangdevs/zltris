@@ -5187,8 +5187,6 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
 
         if isVsBotMode() {
             i64 bot_panel_x = vsBotBotPanelX();
-            f32 bot_apm = 0.0;
-            if g_rt.run_timer > 0.001 {bot_apm = ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;}
 
             fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
             strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
@@ -5199,8 +5197,6 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
                 strokeRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
                 drawMiniPieceCentered(theme, g_bot_queue[i], bot_panel_x + 35, panel_y, 108, 72, 13);
             }
-            drawTextColor(font, TextFormat("APM %.1f", bot_apm), bot_panel_x + 20, 580, 12, theme.panel_stroke);
-            drawTextColor(font, TextFormat("LINES %i", g_bot.lines), bot_panel_x + 20, 600, 12, theme.text_muted);
         }
         return;
     }
