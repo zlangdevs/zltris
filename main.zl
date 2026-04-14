@@ -99,6 +99,10 @@ use zltris.theme
 #define LINE_FX_BOARD_PLAYER 0
 #define LINE_FX_BOARD_BOT 1
 #define LOCK_FX_MAX 64
+#define RESTART_CLEAR_FX_MAX 256
+#define QUAD_FX_TIME 0.24
+#define ALL_CLEAR_FX_TIME 0.62
+#define HARD_DROP_RING_MAX 8
 
 #define STAR_MODE_NONE 0
 #define STAR_MODE_DROPS 1
@@ -359,6 +363,7 @@ i32 g_player_pending_garbage = 0;
 i32 g_bot_pending_garbage = 0;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
+bool g_hard_drop_ring = false;
 bool g_restart_hold_blocked = false;
 i32 g_bg_stars_amount = 50;
 i32 g_bg_star_react_mode = STAR_MODE_DROPS;
@@ -427,6 +432,24 @@ arr<f32, LOCK_FX_MAX> g_lock_fx_age = {0.0};
 arr<f32, LOCK_FX_MAX> g_lock_fx_life = {0.0};
 arr<u32, LOCK_FX_MAX> g_lock_fx_color = {0};
 i32 g_lock_fx_cursor = 0;
+arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_active = {0};
+arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_x = {0};
+arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_y = {0};
+arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_age = {0.0};
+arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_delay = {0.0};
+arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_life = {0.0};
+arr<u32, RESTART_CLEAR_FX_MAX> g_restart_fx_color = {0};
+f32 g_quad_fx_time_left = 0.0;
+f32 g_all_clear_fx_time_left = 0.0;
+arr<i32, HARD_DROP_RING_MAX> g_drop_ring_active = {0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_cx = {0.0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_cy = {0.0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_r0 = {0.0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_r1 = {0.0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_age = {0.0};
+arr<f32, HARD_DROP_RING_MAX> g_drop_ring_life = {0.0};
+arr<u32, HARD_DROP_RING_MAX> g_drop_ring_color = {0};
+i32 g_drop_ring_cursor = 0;
 
 fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
     return (r as u32) |
@@ -587,9 +610,12 @@ fun saveSettingsFile() >> void {
     if g_double_row_ui {double_row_flag = 1;}
     i32 instant_restart_flag = 0;
     if g_instant_restart {instant_restart_flag = 1;}
+    i32 hard_drop_ring_flag = 0;
+    if g_hard_drop_ring {hard_drop_ring_flag = 1;}
 
     writeLineFd(fd, TextFormat("double_row_ui=%i", double_row_flag));
     writeLineFd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
+    writeLineFd(fd, TextFormat("hard_drop_ring=%i", hard_drop_ring_flag));
     writeLineFd(fd, TextFormat("bg_stars_amount=%i", g_bg_stars_amount));
     writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
     writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
@@ -661,6 +687,8 @@ fun loadSettingsFile() >> void {
                     g_double_row_ui = parseBoolValue(value, g_double_row_ui);
                 } else if (strEq(key, "instant_restart")) {
                     g_instant_restart = parseBoolValue(value, g_instant_restart);
+                } else if (strEq(key, "hard_drop_ring")) {
+                    g_hard_drop_ring = parseBoolValue(value, g_hard_drop_ring);
                 } else if (strEq(key, "bg_stars_amount")) {
                     g_bg_stars_amount = atoi(value);
                 } else if (strEq(key, "bg_star_react_mode")) {
@@ -1219,6 +1247,14 @@ fun resetLineClearEffects() >> void {
     g_line_fx_row_cursor = 0;
     g_line_fx_particle_cursor = 0;
     g_lock_fx_cursor = 0;
+    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
+        g_drop_ring_active[i] = 0;
+        g_drop_ring_age[i] = 0.0;
+        g_drop_ring_life[i] = 0.0;
+    }
+    g_drop_ring_cursor = 0;
+    g_quad_fx_time_left = 0.0;
+    g_all_clear_fx_time_left = 0.0;
 }
 
 fun allocLineClearRowSlot() >> i32 {
@@ -1399,6 +1435,128 @@ fun updateLockEffects(dt: f32) >> void {
         if g_lock_fx_active[i] == 0 {continue;}
         g_lock_fx_age[i] += dt;
         if g_lock_fx_age[i] >= g_lock_fx_life[i] {g_lock_fx_active[i] = 0;}
+    }
+}
+
+fun clearRestartBoardEffects() >> void {
+    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
+        g_restart_fx_active[i] = 0;
+        g_restart_fx_age[i] = 0.0;
+    }
+}
+
+fun spawnRestartBoardEffects() >> void {
+    clearRestartBoardEffects();
+    Theme theme = currentTheme();
+    i32 slot = 0;
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 cell = boardGet(x, y);
+            if cell == 0 {continue;}
+            if slot >= RESTART_CLEAR_FX_MAX {return;}
+
+            u32 color = lineClearCellColor(theme, cell);
+            f32 wave = ((BOARD_H - 1 - y) as f32) * (0.010 as f32);
+            f32 jitter = (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00040 as f32);
+            f32 life = (0.20 as f32) + (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00090 as f32);
+
+            g_restart_fx_active[slot] = 1;
+            g_restart_fx_x[slot] = x;
+            g_restart_fx_y[slot] = y;
+            g_restart_fx_age[slot] = 0.0;
+            g_restart_fx_delay[slot] = wave + jitter;
+            g_restart_fx_life[slot] = life;
+            g_restart_fx_color[slot] = color;
+            slot += 1;
+        }
+    }
+}
+
+fun updateRestartBoardEffects(dt: f32) >> void {
+    if dt <= 0.0 {return;}
+    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
+        if g_restart_fx_active[i] == 0 {continue;}
+        g_restart_fx_age[i] += dt;
+        if g_restart_fx_age[i] >= g_restart_fx_delay[i] + g_restart_fx_life[i] {
+            g_restart_fx_active[i] = 0;
+        }
+    }
+}
+
+fun triggerQuadClearFx(lines_cleared: i32, spin: bool) >> void {
+    if spin {return;}
+    if lines_cleared != 4 {return;}
+    if g_quad_fx_time_left < (QUAD_FX_TIME as f32) {
+        g_quad_fx_time_left = QUAD_FX_TIME as f32;
+    }
+}
+
+fun updateQuadClearFx(dt: f32) >> void {
+    if g_quad_fx_time_left <= 0.0 {return;}
+    g_quad_fx_time_left -= dt;
+    if g_quad_fx_time_left < 0.0 {g_quad_fx_time_left = 0.0;}
+}
+
+fun triggerAllClearFx(all_clear: bool) >> void {
+    if !all_clear {return;}
+    if g_all_clear_fx_time_left < (ALL_CLEAR_FX_TIME as f32) {
+        g_all_clear_fx_time_left = ALL_CLEAR_FX_TIME as f32;
+    }
+    kickBoardShake(12.8 as f32, 0.16 as f32);
+}
+
+fun updateAllClearFx(dt: f32) >> void {
+    if g_all_clear_fx_time_left <= 0.0 {return;}
+    g_all_clear_fx_time_left -= dt;
+    if g_all_clear_fx_time_left < 0.0 {g_all_clear_fx_time_left = 0.0;}
+}
+
+fun allocHardDropRingSlot() >> i32 {
+    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
+        if g_drop_ring_active[i] == 0 {return i;}
+    }
+    i32 slot = g_drop_ring_cursor % HARD_DROP_RING_MAX;
+    g_drop_ring_cursor += 1;
+    return slot;
+}
+
+fun spawnHardDropImpactRing(kind: i32, rotation: i32, base_x: i32, base_y: i32, distance: i32) >> void {
+    i32 slot = allocHardDropRingSlot();
+
+    f32 cx = 0.0;
+    f32 cy = 0.0;
+    for i32 i = 0; i < 4; i++ {
+        cx += (base_x + minoX(kind, rotation, i)) as f32 + 0.5 as f32;
+        cy += (base_y + minoY(kind, rotation, i)) as f32 + 0.5 as f32;
+    }
+    cx /= 4.0 as f32;
+    cy /= 4.0 as f32;
+
+    f32 dist = distance as f32;
+    f32 strength = dist / (18.0 as f32);
+    if strength < 0.0 {strength = 0.0;}
+    if strength > 1.0 {strength = 1.0;}
+
+    Theme theme = currentTheme();
+    u32 accent = shadeColor(pieceColor(theme, kind), 1.26 as f32);
+    g_drop_ring_active[slot] = 1;
+    g_drop_ring_cx[slot] = cx;
+    g_drop_ring_cy[slot] = cy;
+    g_drop_ring_r0[slot] = 10.0 as f32 + strength * (8.0 as f32);
+    g_drop_ring_r1[slot] = 64.0 as f32 + strength * (52.0 as f32);
+    g_drop_ring_age[slot] = 0.0;
+    g_drop_ring_life[slot] = 0.20 as f32 + strength * (0.08 as f32);
+    g_drop_ring_color[slot] = accent;
+}
+
+fun updateHardDropImpactRings(dt: f32) >> void {
+    if dt <= 0.0 {return;}
+    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
+        if g_drop_ring_active[i] == 0 {continue;}
+        g_drop_ring_age[i] += dt;
+        if g_drop_ring_age[i] >= g_drop_ring_life[i] {
+            g_drop_ring_active[i] = 0;
+        }
     }
 }
 
@@ -1994,6 +2152,7 @@ fun startGameMode(mode: i32) >> void {
 }
 
 fun restartCurrentModeWithShake() >> void {
+    spawnRestartBoardEffects();
     startGameMode(g_play.game_mode);
     kickBoardShake(lineClearShakeAmp(4), 0.11);
 }
@@ -4003,6 +4162,8 @@ fun stepLock() >> void {
         aiLog(TextFormat("fp lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i total_lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_piece_x, g_piece_rotation, lines_cleared, spin as i32, all_clear as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
     }
     if lines_cleared > 0 {kickBoardShake(lineClearShakeAmp(lines_cleared), 0.11);}
+    triggerQuadClearFx(lines_cleared, spin);
+    triggerAllClearFx(all_clear);
     applyLockScore(lines_cleared, spin, mini, all_clear);
     if (isFortyLinesMode() && g_play.round_state == ROUND_RUNNING && g_play.lines >= 40) {
         g_play = g_play.with_round_state(ROUND_FINISHED);
@@ -4022,6 +4183,9 @@ fun hardDrop() >> void {
     i32 distance = 0;
     for (tryMove(0, 1)) {
         distance += 1;
+    }
+    if g_hard_drop_ring {
+        spawnHardDropImpactRing(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, distance);
     }
     g_play.score += distance * 2;
     if (g_bg_star_react_mode == STAR_MODE_DROPS) {
@@ -4150,6 +4314,126 @@ fun drawLockEffects(theme: Theme, board_left: i64, board_top: i64, board_side: i
     }
 }
 
+fun drawRestartBoardEffects(board_left: i64, board_top: i64) >> void {
+    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
+        if g_restart_fx_active[i] == 0 {continue;}
+
+        f32 local_age = g_restart_fx_age[i] - g_restart_fx_delay[i];
+        if local_age < 0.0 {continue;}
+        f32 t = clamp01(local_age / g_restart_fx_life[i]);
+        f32 fade = (1.0 as f32) - t;
+
+        i32 sx = 0;
+        i32 sy = 0;
+        i32 sw = 0;
+        i32 sh = 0;
+        boardCellRectPixels(board_left, board_top, g_restart_fx_x[i] as i64, g_restart_fx_y[i] as i64, &sx, &sy, &sw, &sh);
+
+        i32 inset = (t * (sw as f32) * (0.32 as f32)) as i32;
+        i32 cx = sx + inset;
+        i32 cy = sy + inset;
+        i32 cw = sw - inset * 2;
+        i32 ch = sh - inset * 2;
+        if cw <= 0 || ch <= 0 {continue;}
+
+        i32 halo = 2 + ((1.0 as f32) - t * (0.8 as f32)) as i32;
+        DrawRectangle(cx - halo, cy - halo, cw + halo * 2, ch + halo * 2, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 1.40 as f32), fade * (0.20 as f32))));
+        DrawRectangle(cx, cy, cw, ch, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 1.12 as f32), fade * (0.56 as f32))));
+        DrawRectangleLines(cx, cy, cw, ch, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 0.70 as f32), fade * (0.62 as f32))));
+    }
+}
+
+fun drawQuadClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if g_quad_fx_time_left <= 0.0 {return;}
+
+    f32 t = (1.0 as f32) - g_quad_fx_time_left / (QUAD_FX_TIME as f32);
+    t = clamp01(t);
+    f32 fade = (1.0 as f32) - t;
+
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    u32 accent = shadeColor(theme.piece_i, 1.22 as f32);
+
+    i64 rail_w = 3 + (((1.0 as f32) - t) * (6.0 as f32)) as i64;
+    fillRect(board_left - rail_w, board_top, rail_w, board_h, alphaColor(accent, (0.05 as f32) + fade * (0.14 as f32)));
+    fillRect(board_left + board_w, board_top, rail_w, board_h, alphaColor(accent, (0.05 as f32) + fade * (0.14 as f32)));
+
+    i64 line_h = 2 + (((1.0 as f32) - t) * (5.0 as f32)) as i64;
+    i64 y0 = board_top + ((board_h as f32) * t) as i64 - line_h / 2;
+    i64 y1 = board_top + ((board_h as f32) * ((1.0 as f32) - t)) as i64 - line_h / 2;
+    fillRect(board_left, y0, board_w, line_h, alphaColor(shadeColor(accent, 1.32 as f32), fade * (0.20 as f32)));
+    fillRect(board_left, y1, board_w, line_h, alphaColor(shadeColor(accent, 0.92 as f32), fade * (0.16 as f32)));
+
+    strokeRect(board_left - 1, board_top - 1, board_w + 2, board_h + 2, alphaColor(accent, fade * (0.36 as f32)));
+}
+
+fun drawAllClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if g_all_clear_fx_time_left <= 0.0 {return;}
+
+    f32 t = (1.0 as f32) - g_all_clear_fx_time_left / (ALL_CLEAR_FX_TIME as f32);
+    t = clamp01(t);
+    f32 fade = (1.0 as f32) - t;
+    f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
+
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    u32 accent = shadeColor(theme.piece_o, (1.24 as f32) + pulse * (0.24 as f32));
+
+    i64 pad = 8 + (((1.0 as f32) - t) * (16.0 as f32)) as i64;
+    fillRect(board_left - pad, board_top - pad, board_w + pad * 2, board_h + pad * 2, alphaColor(accent, (0.04 as f32) + fade * (0.12 as f32)));
+    strokeRect(board_left - pad / 2, board_top - pad / 2, board_w + pad, board_h + pad, alphaColor(shadeColor(accent, 1.18 as f32), fade * (0.34 as f32)));
+
+    i64 beam_h = 2 + (((1.0 as f32) - t) * (7.0 as f32)) as i64;
+    i64 y_a = board_top + ((board_h as f32) * (0.28 as f32 + t * (0.30 as f32))) as i64;
+    i64 y_b = board_top + ((board_h as f32) * (0.72 as f32 - t * (0.30 as f32))) as i64;
+    fillRect(board_left, y_a - beam_h / 2, board_w, beam_h, alphaColor(shadeColor(accent, 1.34 as f32), fade * (0.22 as f32)));
+    fillRect(board_left, y_b - beam_h / 2, board_w, beam_h, alphaColor(shadeColor(accent, 1.12 as f32), fade * (0.18 as f32)));
+
+    i64 rail_w = 3 + (((1.0 as f32) - t) * (5.0 as f32)) as i64;
+    fillRect(board_left - rail_w, board_top, rail_w, board_h, alphaColor(accent, fade * (0.14 as f32)));
+    fillRect(board_left + board_w, board_top, rail_w, board_h, alphaColor(accent, fade * (0.14 as f32)));
+}
+
+fun drawAllClearFxLabel(font: Font, theme: Theme, board_left: i64, board_top: i64) >> void {
+    if g_all_clear_fx_time_left <= 0.0 {return;}
+
+    f32 t = (1.0 as f32) - g_all_clear_fx_time_left / (ALL_CLEAR_FX_TIME as f32);
+    t = clamp01(t);
+    f32 fade = (1.0 as f32) - t;
+    f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
+
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 banner_w = 250;
+    i64 banner_h = 62;
+    i64 bx = board_left + (board_w - banner_w) / 2;
+    i64 by = board_top + 284;
+
+    u32 accent = shadeColor(theme.piece_o, (1.10 as f32) + pulse * (0.24 as f32));
+    fillRect(bx, by, banner_w, banner_h, alphaColor(shadeColor(theme.board_bg, 0.72 as f32), (0.56 as f32) + fade * (0.20 as f32)));
+    strokeRect(bx, by, banner_w, banner_h, alphaColor(accent, (0.48 as f32) + fade * (0.34 as f32)));
+    drawTextCenteredInRect(font, "ALL CLEAR", bx, by + 2, banner_w, banner_h - 4, 22, alphaColor(shadeColor(theme.text_main, (1.00 as f32) + pulse * (0.18 as f32)), (0.42 as f32) + fade * (0.58 as f32)));
+}
+
+fun drawHardDropImpactRings(board_left: i64, board_top: i64) >> void {
+    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
+        if g_drop_ring_active[i] == 0 {continue;}
+
+        f32 t = clamp01(g_drop_ring_age[i] / g_drop_ring_life[i]);
+        f32 fade = (1.0 as f32) - t;
+        f32 radius = g_drop_ring_r0[i] + (g_drop_ring_r1[i] - g_drop_ring_r0[i]) * t;
+
+        i64 cx_base = board_left + (g_drop_ring_cx[i] * (CELL as f32)) as i64;
+        i64 cy_base = board_top + ((g_drop_ring_cy[i] - (boardVisibleStartRow() as f32)) * (CELL as f32)) as i64;
+        i32 sx = uiX(cx_base);
+        i32 sy = uiY(cy_base);
+        f32 sr = uiS(radius as i64) as f32;
+        if sr < 2.0 as f32 {sr = 2.0 as f32;}
+
+        DrawCircleLines(sx, sy, sr, toColor(alphaColor(g_drop_ring_color[i], fade * (0.52 as f32))));
+        DrawCircleLines(sx, sy, sr * (0.70 as f32), toColor(alphaColor(shadeColor(g_drop_ring_color[i], 1.20 as f32), fade * (0.34 as f32))));
+    }
+}
+
 fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
     u32 hi = shadeColor(color, 1.20);
     u32 lo = shadeColor(color, 0.60);
@@ -4270,6 +4554,10 @@ fun drawBoard(theme: Theme) >> void {
         drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
     }
 
+    drawRestartBoardEffects(board_left, board_top);
+    drawHardDropImpactRings(board_left, board_top);
+    drawAllClearFx(theme, board_left, board_top);
+    drawQuadClearFx(theme, board_left, board_top);
     drawLockEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
     drawLineClearEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
 }
@@ -5327,7 +5615,7 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart);
+        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -5492,8 +5780,9 @@ fun updateApp() >> void {
         f32 prev_vhs_damage = g_vhs_damage;
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
+        bool prev_hard_drop_ring = g_hard_drop_ring;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring);
         if (prev_theme != g_game.theme_index ||
             prev_shader_mode != g_post_shader_mode ||
             prev_crt_curvature != g_crt_curvature ||
@@ -5513,7 +5802,8 @@ fun updateApp() >> void {
             prev_music_style != g_star_music_style ||
             prev_music_volume != g_music_volume ||
             prev_double_row != g_double_row_ui ||
-            prev_instant_restart != g_instant_restart) {
+            prev_instant_restart != g_instant_restart ||
+            prev_hard_drop_ring != g_hard_drop_ring) {
             clampSettings();
             saveSettingsFile();
         }
@@ -5554,6 +5844,7 @@ fun drawGameFrame(font: Font) >> void {
     }
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
+    drawAllClearFxLabel(font, theme, board_left, board_top);
     
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
         fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
@@ -5890,6 +6181,10 @@ fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
     updateBackgroundStarReaction(dt);
     updateBoardShake(dt);
+    updateRestartBoardEffects(dt);
+    updateHardDropImpactRings(dt);
+    updateAllClearFx(dt);
+    updateQuadClearFx(dt);
     updateLockEffects(dt);
     updateLineClearEffects(dt);
     updateRestartAfterglow(dt);
