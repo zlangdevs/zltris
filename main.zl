@@ -111,6 +111,8 @@ use zltris.theme
 #define SHADER_MODE_LIGHT_CRT 1
 #define SHADER_MODE_CRT 2
 #define SHADER_MODE_VHS 3
+#define SHADER_MODE_CUSTOM 4
+#define CUSTOM_SHADER_NAME_MAX 96
 #define STAR_MUSIC_STYLE_PULSE 0
 #define STAR_MUSIC_STYLE_WAVE 1
 #define STAR_MUSIC_STYLE_AGGRO 2
@@ -375,6 +377,7 @@ f32 g_crt_curvature = 0.70;
 f32 g_crt_brightness = 1.25;
 f32 g_vhs_waves = 0.25;
 f32 g_vhs_damage = 1.00;
+arr<u8, CUSTOM_SHADER_NAME_MAX> g_custom_shader_name = {0};
 i32 g_player_garbage_hole = -1;
 i32 g_bot_garbage_hole = -1;
 i32 g_bot_plan_len = 0;
@@ -394,6 +397,10 @@ Shader g_light_crt_shader = {0};
 bool g_light_crt_shader_ready = false;
 Shader g_vhs_shader = {0};
 bool g_vhs_shader_ready = false;
+Shader g_custom_shader = {0};
+bool g_custom_shader_ready = false;
+i32 g_custom_time_loc = -1;
+bool g_custom_shader_warned = false;
 i32 g_crt_curvature_loc = -1;
 i32 g_crt_brightness_loc = -1;
 i32 g_vhs_time_loc = -1;
@@ -406,50 +413,6 @@ arr<i32, BG_STAR_COUNT> g_star_size = {0};
 arr<i32, BG_STAR_COUNT> g_star_style = {0};
 arr<f32, BG_STAR_COUNT> g_star_phase = {0.0};
 arr<f32, BG_STAR_COUNT> g_star_speed = {0.0};
-arr<i32, LINE_CLEAR_FX_MAX> g_line_fx_row_active = {0};
-arr<i32, LINE_CLEAR_FX_MAX> g_line_fx_row_board = {0};
-arr<i32, LINE_CLEAR_FX_MAX> g_line_fx_row_y = {0};
-arr<f32, LINE_CLEAR_FX_MAX> g_line_fx_row_age = {0.0};
-arr<f32, LINE_CLEAR_FX_MAX> g_line_fx_row_life = {0.0};
-arr<u32, LINE_CLEAR_FX_MAX> g_line_fx_row_color = {0};
-arr<i32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_active = {0};
-arr<i32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_board = {0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_x = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_y = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_vx = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_vy = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_size = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_age = {0.0};
-arr<f32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_life = {0.0};
-arr<u32, LINE_CLEAR_PARTICLE_MAX> g_line_fx_particle_color = {0};
-i32 g_line_fx_row_cursor = 0;
-i32 g_line_fx_particle_cursor = 0;
-arr<i32, LOCK_FX_MAX> g_lock_fx_active = {0};
-arr<i32, LOCK_FX_MAX> g_lock_fx_board = {0};
-arr<i32, LOCK_FX_MAX> g_lock_fx_x = {0};
-arr<i32, LOCK_FX_MAX> g_lock_fx_y = {0};
-arr<f32, LOCK_FX_MAX> g_lock_fx_age = {0.0};
-arr<f32, LOCK_FX_MAX> g_lock_fx_life = {0.0};
-arr<u32, LOCK_FX_MAX> g_lock_fx_color = {0};
-i32 g_lock_fx_cursor = 0;
-arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_active = {0};
-arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_x = {0};
-arr<i32, RESTART_CLEAR_FX_MAX> g_restart_fx_y = {0};
-arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_age = {0.0};
-arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_delay = {0.0};
-arr<f32, RESTART_CLEAR_FX_MAX> g_restart_fx_life = {0.0};
-arr<u32, RESTART_CLEAR_FX_MAX> g_restart_fx_color = {0};
-f32 g_quad_fx_time_left = 0.0;
-f32 g_all_clear_fx_time_left = 0.0;
-arr<i32, HARD_DROP_RING_MAX> g_drop_ring_active = {0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_cx = {0.0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_cy = {0.0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_r0 = {0.0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_r1 = {0.0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_age = {0.0};
-arr<f32, HARD_DROP_RING_MAX> g_drop_ring_life = {0.0};
-arr<u32, HARD_DROP_RING_MAX> g_drop_ring_color = {0};
-i32 g_drop_ring_cursor = 0;
 
 fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
     return (r as u32) |
@@ -581,7 +544,7 @@ fun clampSettings() >> void {
     if g_board_bounciness < 0 {g_board_bounciness = 0;}
     if g_board_bounciness > 100 {g_board_bounciness = 100;}
     if g_post_shader_mode < SHADER_MODE_NONE {g_post_shader_mode = SHADER_MODE_NONE;}
-    if g_post_shader_mode > SHADER_MODE_VHS {g_post_shader_mode = SHADER_MODE_VHS;}
+    if g_post_shader_mode > SHADER_MODE_CUSTOM {g_post_shader_mode = SHADER_MODE_CUSTOM;}
     if g_crt_curvature < 0.20 {g_crt_curvature = 0.20;}
     if g_crt_curvature > 1.40 {g_crt_curvature = 1.40;}
     if g_crt_brightness < 0.60 {g_crt_brightness = 0.60;}
@@ -592,12 +555,22 @@ fun clampSettings() >> void {
     if g_vhs_damage > 1.5 {g_vhs_damage = 1.5;}
 }
 
+fun copyCustomShaderName(dst: ptr<u8>, src: ptr<u8>) >> void {
+    i32 i = 0;
+    for (i < CUSTOM_SHADER_NAME_MAX - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
 fun saveSettingsFile() >> void {
     i32 fd = openForWrite(SETTINGS_FILE_PATH);
     if fd < 0 {return;}
 
     writeLineFd(fd, TextFormat("theme=%i", g_game.theme_index));
     writeLineFd(fd, TextFormat("shader_mode=%i", g_post_shader_mode));
+    writeLineFd(fd, TextFormat("custom_shader=%s", &g_custom_shader_name[0]));
     writeLineFd(fd, TextFormat("crt_curvature=%.2f", g_crt_curvature));
     writeLineFd(fd, TextFormat("crt_brightness=%.2f", g_crt_brightness));
     writeLineFd(fd, TextFormat("vhs_waves=%.2f", g_vhs_waves));
@@ -667,6 +640,8 @@ fun loadSettingsFile() >> void {
                     g_game.theme_index = atoi(value);
                 } else if (strEq(key, "shader_mode")) {
                     g_post_shader_mode = atoi(value);
+                } else if (strEq(key, "custom_shader")) {
+                    copyCustomShaderName(&g_custom_shader_name[0], value);
                 } else if (strEq(key, "crt_curvature")) {
                     g_crt_curvature = parseFloatValue(value, g_crt_curvature);
                 } else if (strEq(key, "crt_brightness")) {
@@ -716,7 +691,7 @@ fun loadSettingsFile() >> void {
 }
 
 fun loadPostEffects() >> void {
-    g_light_crt_shader = LoadShader("assets/shaders/crt.vert", "assets/shaders/crt_light.frag");
+    g_light_crt_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/crt_light.frag");
     g_light_crt_shader_ready = IsShaderValid(g_light_crt_shader);
     if g_light_crt_shader_ready {
         printf("[zltris] loaded light CRT shader\n");
@@ -724,7 +699,7 @@ fun loadPostEffects() >> void {
         printf("[zltris] failed to load light CRT shader\n");
     }
 
-    g_crt_shader = LoadShader("assets/shaders/crt.vert", "assets/shaders/crt.frag");
+    g_crt_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/crt.frag");
     g_crt_shader_ready = IsShaderValid(g_crt_shader);
     if g_crt_shader_ready {
         printf("[zltris] loaded CRT shader\n");
@@ -736,7 +711,7 @@ fun loadPostEffects() >> void {
         g_crt_brightness_loc = -1;
     }
 
-    g_vhs_shader = LoadShader("assets/shaders/crt.vert", "assets/shaders/vhs.frag");
+    g_vhs_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/vhs.frag");
     g_vhs_shader_ready = IsShaderValid(g_vhs_shader);
     if g_vhs_shader_ready {
         g_vhs_time_loc = GetShaderLocation(g_vhs_shader, "uTime");
@@ -748,6 +723,29 @@ fun loadPostEffects() >> void {
         g_vhs_waves_loc = -1;
         g_vhs_damage_loc = -1;
         printf("[zltris] failed to load VHS shader\n");
+    }
+
+    if g_custom_shader_ready {
+        UnloadShader(g_custom_shader);
+        g_custom_shader_ready = false;
+    }
+    g_custom_shader_warned = false;
+    if g_custom_shader_name[0] != 0 {
+        ptr<u8> custom_path = TextFormat("assets/shaders/%s", &g_custom_shader_name[0]);
+        printf("[zltris] custom shader requested: '%s'\n", &g_custom_shader_name[0]);
+        printf("[zltris] custom shader path: %s\n", custom_path);
+        g_custom_shader = LoadShader("assets/shaders/default/crt.vert", custom_path);
+        g_custom_shader_ready = IsShaderValid(g_custom_shader);
+        if g_custom_shader_ready {
+            g_custom_time_loc = GetShaderLocation(g_custom_shader, "uTime");
+            printf("[zltris] loaded custom shader: %s (uTime loc=%i)\n", custom_path, g_custom_time_loc);
+        } else {
+            g_custom_time_loc = -1;
+            printf("[zltris] failed to load custom shader: %s\n", custom_path);
+        }
+    } else {
+        g_custom_time_loc = -1;
+        printf("[zltris] custom shader not set (empty name)\n");
     }
 }
 
@@ -792,6 +790,12 @@ fun unloadPostEffects() >> void {
         UnloadShader(g_vhs_shader);
         g_vhs_shader_ready = false;
     }
+    if g_custom_shader_ready {
+        UnloadShader(g_custom_shader);
+        g_custom_shader_ready = false;
+    }
+    g_custom_time_loc = -1;
+    g_custom_shader_warned = false;
     g_crt_curvature_loc = -1;
     g_crt_brightness_loc = -1;
     g_vhs_time_loc = -1;
@@ -1223,341 +1227,6 @@ fun clamp01(v: f32) >> f32 {
 fun absf(v: f32) >> f32 {
     if v < 0.0 {return -v;}
     return v;
-}
-
-fun resetLineClearEffects() >> void {
-    for i32 i = 0; i < LINE_CLEAR_FX_MAX; i++ {
-        g_line_fx_row_active[i] = 0;
-        g_line_fx_row_board[i] = LINE_FX_BOARD_PLAYER;
-        g_line_fx_row_age[i] = 0.0;
-        g_line_fx_row_life[i] = 0.0;
-    }
-    for i32 i = 0; i < LINE_CLEAR_PARTICLE_MAX; i++ {
-        g_line_fx_particle_active[i] = 0;
-        g_line_fx_particle_board[i] = LINE_FX_BOARD_PLAYER;
-        g_line_fx_particle_age[i] = 0.0;
-        g_line_fx_particle_life[i] = 0.0;
-    }
-    for i32 i = 0; i < LOCK_FX_MAX; i++ {
-        g_lock_fx_active[i] = 0;
-        g_lock_fx_board[i] = LINE_FX_BOARD_PLAYER;
-        g_lock_fx_age[i] = 0.0;
-        g_lock_fx_life[i] = 0.0;
-    }
-    g_line_fx_row_cursor = 0;
-    g_line_fx_particle_cursor = 0;
-    g_lock_fx_cursor = 0;
-    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
-        g_drop_ring_active[i] = 0;
-        g_drop_ring_age[i] = 0.0;
-        g_drop_ring_life[i] = 0.0;
-    }
-    g_drop_ring_cursor = 0;
-    g_quad_fx_time_left = 0.0;
-    g_all_clear_fx_time_left = 0.0;
-}
-
-fun allocLineClearRowSlot() >> i32 {
-    for i32 i = 0; i < LINE_CLEAR_FX_MAX; i++ {
-        if g_line_fx_row_active[i] == 0 {return i;}
-    }
-    i32 slot = g_line_fx_row_cursor % LINE_CLEAR_FX_MAX;
-    g_line_fx_row_cursor += 1;
-    return slot;
-}
-
-fun allocLineClearParticleSlot() >> i32 {
-    for i32 i = 0; i < LINE_CLEAR_PARTICLE_MAX; i++ {
-        if g_line_fx_particle_active[i] == 0 {return i;}
-    }
-    i32 slot = g_line_fx_particle_cursor % LINE_CLEAR_PARTICLE_MAX;
-    g_line_fx_particle_cursor += 1;
-    return slot;
-}
-
-fun lineClearCellColor(theme: Theme, cell: i32) >> u32 {
-    if cell == 8 {return garbageCellColor(theme);}
-    if cell <= 0 {return theme.text_main;}
-    return pieceColor(theme, cell - 1);
-}
-
-fun lineFxBoardCell(board_side: i32, x: i32, y: i32) >> i32 {
-    if board_side == LINE_FX_BOARD_BOT {return botBoardGet(x, y);}
-    return boardGet(x, y);
-}
-
-fun lineFxBoardLeft(board_side: i32) >> i64 {
-    if board_side == LINE_FX_BOARD_BOT {return currentBotBoardLeft();}
-    return currentPlayerBoardLeft();
-}
-
-fun lineFxBoardTop(board_side: i32) >> i64 {
-    if board_side == LINE_FX_BOARD_BOT {return currentBotBoardTop();}
-    return currentBoardTop();
-}
-
-fun spawnLineClearEffectsForBoardRow(row: i32, board_side: i32) >> void {
-    Theme theme = currentTheme();
-    i32 sum_r = 0;
-    i32 sum_g = 0;
-    i32 sum_b = 0;
-    i32 count = 0;
-
-    i64 board_left = lineFxBoardLeft(board_side);
-    i64 board_top = lineFxBoardTop(board_side);
-
-    for i32 x = 0; x < BOARD_W; x++ {
-        i32 cell = lineFxBoardCell(board_side, x, row);
-        if cell == 0 {continue;}
-        u32 color = lineClearCellColor(theme, cell);
-        sum_r += colorR(color);
-        sum_g += colorG(color);
-        sum_b += colorB(color);
-        count += 1;
-
-        f32 px = (board_left + (x as i64) * (CELL as i64) + (CELL / 2) as i64) as f32;
-        f32 py = (boardScreenY(board_top, row as i64) + (CELL / 2) as i64) as f32;
-        f32 dir = (((x as f32) + 0.5) / (BOARD_W as f32) - 0.5) * 2.0;
-
-        i32 burst = 2;
-        if x % 3 == 0 {burst = 3;}
-        for i32 p = 0; p < burst; p++ {
-            i32 slot = allocLineClearParticleSlot();
-            f32 jitter_x = (GetRandomValue(-90 as i32, 90 as i32) as f32) * 0.10;
-            f32 jitter_y = (GetRandomValue(-70 as i32, 70 as i32) as f32) * 0.10;
-            f32 speed_x = dir * (100.0 + (GetRandomValue(0 as i32, 80 as i32) as f32)) + (GetRandomValue(-60 as i32, 60 as i32) as f32);
-            f32 speed_y = -(80.0 + (GetRandomValue(0 as i32, 140 as i32) as f32));
-            f32 life = 0.22 + (GetRandomValue(0 as i32, 100 as i32) as f32) * 0.0020;
-            f32 size = 2.0 + (GetRandomValue(0 as i32, 100 as i32) as f32) * 0.024;
-
-            g_line_fx_particle_active[slot] = 1;
-            g_line_fx_particle_board[slot] = board_side;
-            g_line_fx_particle_x[slot] = px + jitter_x;
-            g_line_fx_particle_y[slot] = py + jitter_y;
-            g_line_fx_particle_vx[slot] = speed_x;
-            g_line_fx_particle_vy[slot] = speed_y;
-            g_line_fx_particle_size[slot] = size;
-            g_line_fx_particle_age[slot] = 0.0;
-            g_line_fx_particle_life[slot] = life;
-            g_line_fx_particle_color[slot] = shadeColor(color, 1.20);
-        }
-    }
-
-    u32 glow_color = theme.text_main;
-    if count > 0 {
-        i32 r = sum_r / count;
-        i32 g = sum_g / count;
-        i32 b = sum_b / count;
-        glow_color = rgba(r, g, b, 255);
-    }
-
-    i32 row_slot = allocLineClearRowSlot();
-    g_line_fx_row_active[row_slot] = 1;
-    g_line_fx_row_board[row_slot] = board_side;
-    g_line_fx_row_y[row_slot] = row;
-    g_line_fx_row_age[row_slot] = 0.0;
-    g_line_fx_row_life[row_slot] = 0.30;
-    g_line_fx_row_color[row_slot] = glow_color;
-}
-
-fun spawnLineClearEffectsForRow(row: i32) >> void {
-    spawnLineClearEffectsForBoardRow(row, LINE_FX_BOARD_PLAYER);
-}
-
-fun spawnBotLineClearEffectsForRow(row: i32) >> void {
-    spawnLineClearEffectsForBoardRow(row, LINE_FX_BOARD_BOT);
-}
-
-fun updateLineClearEffects(dt: f32) >> void {
-    if dt <= 0.0 {return;}
-
-    for i32 i = 0; i < LINE_CLEAR_FX_MAX; i++ {
-        if g_line_fx_row_active[i] == 0 {continue;}
-        g_line_fx_row_age[i] += dt;
-        if g_line_fx_row_age[i] >= g_line_fx_row_life[i] {
-            g_line_fx_row_active[i] = 0;
-        }
-    }
-
-    for i32 i = 0; i < LINE_CLEAR_PARTICLE_MAX; i++ {
-        if g_line_fx_particle_active[i] == 0 {continue;}
-
-        g_line_fx_particle_age[i] += dt;
-        if g_line_fx_particle_age[i] >= g_line_fx_particle_life[i] {
-            g_line_fx_particle_active[i] = 0;
-            continue;
-        }
-
-        f32 drag = 1.0 - dt * 3.2;
-        if drag < 0.20 {drag = 0.20;}
-        g_line_fx_particle_vx[i] *= drag;
-        g_line_fx_particle_vy[i] += 560.0 * dt;
-        g_line_fx_particle_x[i] += g_line_fx_particle_vx[i] * dt;
-        g_line_fx_particle_y[i] += g_line_fx_particle_vy[i] * dt;
-    }
-}
-
-fun allocLockFxSlot() >> i32 {
-    for i32 i = 0; i < LOCK_FX_MAX; i++ {
-        if g_lock_fx_active[i] == 0 {return i;}
-    }
-    i32 slot = g_lock_fx_cursor % LOCK_FX_MAX;
-    g_lock_fx_cursor += 1;
-    return slot;
-}
-
-fun spawnLockEffectCell(board_side: i32, x: i32, y: i32, color: u32) >> void {
-    if y < boardRenderMinRow() {return;}
-    i32 slot = allocLockFxSlot();
-    g_lock_fx_active[slot] = 1;
-    g_lock_fx_board[slot] = board_side;
-    g_lock_fx_x[slot] = x;
-    g_lock_fx_y[slot] = y;
-    g_lock_fx_age[slot] = 0.0;
-    g_lock_fx_life[slot] = 0.16 as f32;
-    g_lock_fx_color[slot] = color;
-}
-
-fun spawnLockEffectPiece(board_side: i32, kind: i32, rotation: i32, base_x: i32, base_y: i32) >> void {
-    Theme theme = currentTheme();
-    u32 color = pieceColor(theme, kind);
-    for i32 i = 0; i < 4; i++ {
-        i32 x = base_x + minoX(kind, rotation, i);
-        i32 y = base_y + minoY(kind, rotation, i);
-        if x < 0 || x >= BOARD_W || y < 0 || y >= BOARD_H {continue;}
-        spawnLockEffectCell(board_side, x, y, color);
-    }
-}
-
-fun updateLockEffects(dt: f32) >> void {
-    if dt <= 0.0 {return;}
-    for i32 i = 0; i < LOCK_FX_MAX; i++ {
-        if g_lock_fx_active[i] == 0 {continue;}
-        g_lock_fx_age[i] += dt;
-        if g_lock_fx_age[i] >= g_lock_fx_life[i] {g_lock_fx_active[i] = 0;}
-    }
-}
-
-fun clearRestartBoardEffects() >> void {
-    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
-        g_restart_fx_active[i] = 0;
-        g_restart_fx_age[i] = 0.0;
-    }
-}
-
-fun spawnRestartBoardEffects() >> void {
-    clearRestartBoardEffects();
-    Theme theme = currentTheme();
-    i32 slot = 0;
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
-            i32 cell = boardGet(x, y);
-            if cell == 0 {continue;}
-            if slot >= RESTART_CLEAR_FX_MAX {return;}
-
-            u32 color = lineClearCellColor(theme, cell);
-            f32 wave = ((BOARD_H - 1 - y) as f32) * (0.010 as f32);
-            f32 jitter = (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00040 as f32);
-            f32 life = (0.20 as f32) + (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00090 as f32);
-
-            g_restart_fx_active[slot] = 1;
-            g_restart_fx_x[slot] = x;
-            g_restart_fx_y[slot] = y;
-            g_restart_fx_age[slot] = 0.0;
-            g_restart_fx_delay[slot] = wave + jitter;
-            g_restart_fx_life[slot] = life;
-            g_restart_fx_color[slot] = color;
-            slot += 1;
-        }
-    }
-}
-
-fun updateRestartBoardEffects(dt: f32) >> void {
-    if dt <= 0.0 {return;}
-    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
-        if g_restart_fx_active[i] == 0 {continue;}
-        g_restart_fx_age[i] += dt;
-        if g_restart_fx_age[i] >= g_restart_fx_delay[i] + g_restart_fx_life[i] {
-            g_restart_fx_active[i] = 0;
-        }
-    }
-}
-
-fun triggerQuadClearFx(lines_cleared: i32, spin: bool) >> void {
-    if spin {return;}
-    if lines_cleared != 4 {return;}
-    if g_quad_fx_time_left < (QUAD_FX_TIME as f32) {
-        g_quad_fx_time_left = QUAD_FX_TIME as f32;
-    }
-}
-
-fun updateQuadClearFx(dt: f32) >> void {
-    if g_quad_fx_time_left <= 0.0 {return;}
-    g_quad_fx_time_left -= dt;
-    if g_quad_fx_time_left < 0.0 {g_quad_fx_time_left = 0.0;}
-}
-
-fun triggerAllClearFx(all_clear: bool) >> void {
-    if !all_clear {return;}
-    if g_all_clear_fx_time_left < (ALL_CLEAR_FX_TIME as f32) {
-        g_all_clear_fx_time_left = ALL_CLEAR_FX_TIME as f32;
-    }
-    kickBoardShake(12.8 as f32, 0.16 as f32);
-}
-
-fun updateAllClearFx(dt: f32) >> void {
-    if g_all_clear_fx_time_left <= 0.0 {return;}
-    g_all_clear_fx_time_left -= dt;
-    if g_all_clear_fx_time_left < 0.0 {g_all_clear_fx_time_left = 0.0;}
-}
-
-fun allocHardDropRingSlot() >> i32 {
-    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
-        if g_drop_ring_active[i] == 0 {return i;}
-    }
-    i32 slot = g_drop_ring_cursor % HARD_DROP_RING_MAX;
-    g_drop_ring_cursor += 1;
-    return slot;
-}
-
-fun spawnHardDropImpactRing(kind: i32, rotation: i32, base_x: i32, base_y: i32, distance: i32) >> void {
-    i32 slot = allocHardDropRingSlot();
-
-    f32 cx = 0.0;
-    f32 cy = 0.0;
-    for i32 i = 0; i < 4; i++ {
-        cx += (base_x + minoX(kind, rotation, i)) as f32 + 0.5 as f32;
-        cy += (base_y + minoY(kind, rotation, i)) as f32 + 0.5 as f32;
-    }
-    cx /= 4.0 as f32;
-    cy /= 4.0 as f32;
-
-    f32 dist = distance as f32;
-    f32 strength = dist / (18.0 as f32);
-    if strength < 0.0 {strength = 0.0;}
-    if strength > 1.0 {strength = 1.0;}
-
-    Theme theme = currentTheme();
-    u32 accent = shadeColor(pieceColor(theme, kind), 1.26 as f32);
-    g_drop_ring_active[slot] = 1;
-    g_drop_ring_cx[slot] = cx;
-    g_drop_ring_cy[slot] = cy;
-    g_drop_ring_r0[slot] = 10.0 as f32 + strength * (8.0 as f32);
-    g_drop_ring_r1[slot] = 64.0 as f32 + strength * (52.0 as f32);
-    g_drop_ring_age[slot] = 0.0;
-    g_drop_ring_life[slot] = 0.20 as f32 + strength * (0.08 as f32);
-    g_drop_ring_color[slot] = accent;
-}
-
-fun updateHardDropImpactRings(dt: f32) >> void {
-    if dt <= 0.0 {return;}
-    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
-        if g_drop_ring_active[i] == 0 {continue;}
-        g_drop_ring_age[i] += dt;
-        if g_drop_ring_age[i] >= g_drop_ring_life[i] {
-            g_drop_ring_active[i] = 0;
-        }
-    }
 }
 
 fun starIntensityNorm() >> f32 {
@@ -3937,10 +3606,15 @@ fun botPerformPlannedAction() >> bool {
     } else if action == BOT_ACTION_DOWN {
         if botTryMove(0, 1) {return true;}
     } else if action == BOT_ACTION_DROP {
+        i32 drop_distance = g_bot.target_y - g_bot.piece_y;
+        if drop_distance < 0 {drop_distance = 0;}
         g_bot.piece_x = g_bot.target_x;
         g_bot.piece_y = g_bot.target_y;
         g_bot.piece_rotation = g_bot.target_rotation;
         g_bot.last_rotate_success = g_bot.target_last_rotate;
+        if g_hard_drop_ring {
+            spawnHardDropImpactRing(LINE_FX_BOARD_BOT, g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, g_bot.piece_y, drop_distance);
+        }
         botApplyPlannedLock();
         return true;
     }
@@ -4185,7 +3859,7 @@ fun hardDrop() >> void {
         distance += 1;
     }
     if g_hard_drop_ring {
-        spawnHardDropImpactRing(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, distance);
+        spawnHardDropImpactRing(LINE_FX_BOARD_PLAYER, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, distance);
     }
     g_play.score += distance * 2;
     if (g_bg_star_react_mode == STAR_MODE_DROPS) {
@@ -4250,188 +3924,6 @@ fun drawCellPixels(screen_x: i32, screen_y: i32, cell_w: i32, cell_h: i32, color
 
     if cell_w > 2 && cell_h > 2 {DrawRectangleLines(screen_x + 1, screen_y + 1, cell_w - 2, cell_h - 2, toColor(alphaColor(hi, 0.34)));}
     DrawRectangleLines(screen_x, screen_y, cell_w, cell_h, toColor(alphaColor(lo, 0.70)));
-}
-
-fun drawLineClearEffects(theme: Theme, board_left: i64, board_top: i64, board_side: i32) >> void {
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-
-    for i32 i = 0; i < LINE_CLEAR_FX_MAX; i++ {
-        if g_line_fx_row_active[i] == 0 {continue;}
-        if g_line_fx_row_board[i] != board_side {continue;}
-        f32 t = clamp01(g_line_fx_row_age[i] / g_line_fx_row_life[i]);
-        f32 fade = (1.0 as f32) - t;
-        i64 row_y = boardScreenY(board_top, g_line_fx_row_y[i] as i64);
-        u32 color = g_line_fx_row_color[i];
-
-        i64 halo_pad = 4 + (((1.0 as f32) - t) * (11.0 as f32)) as i64;
-        fillRect(board_left - halo_pad, row_y - halo_pad, board_w + halo_pad * 2, (CELL as i64) + halo_pad * 2, alphaColor(shadeColor(color, 1.35 as f32), (0.08 as f32) + fade * (0.22 as f32)));
-        i64 core_h = 6 + (((1.0 as f32) - t) * (13.0 as f32)) as i64;
-        fillRect(board_left, row_y + ((CELL as i64) - core_h) / 2, board_w, core_h, alphaColor(shadeColor(color, 1.55 as f32), (0.20 as f32) + fade * (0.50 as f32)));
-
-        i64 sweep_x = board_left + ((board_w as f32) * t) as i64;
-        fillRect(sweep_x - 6, row_y + 2, 12, (CELL - 4) as i64, alphaColor(theme.text_main, fade * (0.32 as f32)));
-        strokeRect(board_left, row_y, board_w, CELL as i64, alphaColor(shadeColor(color, 1.30 as f32), fade * (0.55 as f32)));
-    }
-
-    for i32 i = 0; i < LINE_CLEAR_PARTICLE_MAX; i++ {
-        if g_line_fx_particle_active[i] == 0 {continue;}
-        if g_line_fx_particle_board[i] != board_side {continue;}
-        f32 t = clamp01(g_line_fx_particle_age[i] / g_line_fx_particle_life[i]);
-        f32 fade = (1.0 as f32) - t;
-        i64 size = (g_line_fx_particle_size[i] * ((0.65 as f32) + fade * (0.75 as f32))) as i64;
-        if size < 1 {size = 1;}
-        i64 px = g_line_fx_particle_x[i] as i64;
-        i64 py = g_line_fx_particle_y[i] as i64;
-        fillRect(px - size / 2, py - size / 2, size, size, alphaColor(g_line_fx_particle_color[i], fade * fade));
-    }
-}
-
-fun drawLockEffects(theme: Theme, board_left: i64, board_top: i64, board_side: i32) >> void {
-    for i32 i = 0; i < LOCK_FX_MAX; i++ {
-        if g_lock_fx_active[i] == 0 {continue;}
-        if g_lock_fx_board[i] != board_side {continue;}
-
-        f32 t = clamp01(g_lock_fx_age[i] / g_lock_fx_life[i]);
-        f32 fade = (1.0 as f32) - t;
-
-        i32 sx = 0;
-        i32 sy = 0;
-        i32 sw = 0;
-        i32 sh = 0;
-        boardCellRectPixels(board_left, board_top, g_lock_fx_x[i] as i64, g_lock_fx_y[i] as i64, &sx, &sy, &sw, &sh);
-
-        i32 grow = (2.0 as f32 + ((1.0 as f32) - t) * (6.0 as f32)) as i32;
-        DrawRectangle(sx - grow, sy - grow, sw + grow * 2, sh + grow * 2, toColor(alphaColor(shadeColor(g_lock_fx_color[i], 1.45 as f32), (0.05 as f32) + fade * (0.20 as f32))));
-
-        i32 inset = (t * (3.0 as f32)) as i32;
-        i32 core_w = sw - inset * 2;
-        i32 core_h = sh - inset * 2;
-        if core_w > 0 && core_h > 0 {
-            DrawRectangle(sx + inset, sy + inset, core_w, core_h, toColor(alphaColor(shadeColor(g_lock_fx_color[i], 1.62 as f32), fade * (0.34 as f32))));
-        }
-
-        DrawRectangleLines(sx, sy, sw, sh, toColor(alphaColor(theme.text_main, fade * (0.46 as f32))));
-    }
-}
-
-fun drawRestartBoardEffects(board_left: i64, board_top: i64) >> void {
-    for i32 i = 0; i < RESTART_CLEAR_FX_MAX; i++ {
-        if g_restart_fx_active[i] == 0 {continue;}
-
-        f32 local_age = g_restart_fx_age[i] - g_restart_fx_delay[i];
-        if local_age < 0.0 {continue;}
-        f32 t = clamp01(local_age / g_restart_fx_life[i]);
-        f32 fade = (1.0 as f32) - t;
-
-        i32 sx = 0;
-        i32 sy = 0;
-        i32 sw = 0;
-        i32 sh = 0;
-        boardCellRectPixels(board_left, board_top, g_restart_fx_x[i] as i64, g_restart_fx_y[i] as i64, &sx, &sy, &sw, &sh);
-
-        i32 inset = (t * (sw as f32) * (0.32 as f32)) as i32;
-        i32 cx = sx + inset;
-        i32 cy = sy + inset;
-        i32 cw = sw - inset * 2;
-        i32 ch = sh - inset * 2;
-        if cw <= 0 || ch <= 0 {continue;}
-
-        i32 halo = 2 + ((1.0 as f32) - t * (0.8 as f32)) as i32;
-        DrawRectangle(cx - halo, cy - halo, cw + halo * 2, ch + halo * 2, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 1.40 as f32), fade * (0.20 as f32))));
-        DrawRectangle(cx, cy, cw, ch, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 1.12 as f32), fade * (0.56 as f32))));
-        DrawRectangleLines(cx, cy, cw, ch, toColor(alphaColor(shadeColor(g_restart_fx_color[i], 0.70 as f32), fade * (0.62 as f32))));
-    }
-}
-
-fun drawQuadClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
-    if g_quad_fx_time_left <= 0.0 {return;}
-
-    f32 t = (1.0 as f32) - g_quad_fx_time_left / (QUAD_FX_TIME as f32);
-    t = clamp01(t);
-    f32 fade = (1.0 as f32) - t;
-
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
-    u32 accent = shadeColor(theme.piece_i, 1.22 as f32);
-
-    i64 rail_w = 3 + (((1.0 as f32) - t) * (6.0 as f32)) as i64;
-    fillRect(board_left - rail_w, board_top, rail_w, board_h, alphaColor(accent, (0.05 as f32) + fade * (0.14 as f32)));
-    fillRect(board_left + board_w, board_top, rail_w, board_h, alphaColor(accent, (0.05 as f32) + fade * (0.14 as f32)));
-
-    i64 line_h = 2 + (((1.0 as f32) - t) * (5.0 as f32)) as i64;
-    i64 y0 = board_top + ((board_h as f32) * t) as i64 - line_h / 2;
-    i64 y1 = board_top + ((board_h as f32) * ((1.0 as f32) - t)) as i64 - line_h / 2;
-    fillRect(board_left, y0, board_w, line_h, alphaColor(shadeColor(accent, 1.32 as f32), fade * (0.20 as f32)));
-    fillRect(board_left, y1, board_w, line_h, alphaColor(shadeColor(accent, 0.92 as f32), fade * (0.16 as f32)));
-
-    strokeRect(board_left - 1, board_top - 1, board_w + 2, board_h + 2, alphaColor(accent, fade * (0.36 as f32)));
-}
-
-fun drawAllClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
-    if g_all_clear_fx_time_left <= 0.0 {return;}
-
-    f32 t = (1.0 as f32) - g_all_clear_fx_time_left / (ALL_CLEAR_FX_TIME as f32);
-    t = clamp01(t);
-    f32 fade = (1.0 as f32) - t;
-    f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
-
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
-    u32 accent = shadeColor(theme.piece_o, (1.24 as f32) + pulse * (0.24 as f32));
-
-    i64 pad = 8 + (((1.0 as f32) - t) * (16.0 as f32)) as i64;
-    fillRect(board_left - pad, board_top - pad, board_w + pad * 2, board_h + pad * 2, alphaColor(accent, (0.04 as f32) + fade * (0.12 as f32)));
-    strokeRect(board_left - pad / 2, board_top - pad / 2, board_w + pad, board_h + pad, alphaColor(shadeColor(accent, 1.18 as f32), fade * (0.34 as f32)));
-
-    i64 beam_h = 2 + (((1.0 as f32) - t) * (7.0 as f32)) as i64;
-    i64 y_a = board_top + ((board_h as f32) * (0.28 as f32 + t * (0.30 as f32))) as i64;
-    i64 y_b = board_top + ((board_h as f32) * (0.72 as f32 - t * (0.30 as f32))) as i64;
-    fillRect(board_left, y_a - beam_h / 2, board_w, beam_h, alphaColor(shadeColor(accent, 1.34 as f32), fade * (0.22 as f32)));
-    fillRect(board_left, y_b - beam_h / 2, board_w, beam_h, alphaColor(shadeColor(accent, 1.12 as f32), fade * (0.18 as f32)));
-
-    i64 rail_w = 3 + (((1.0 as f32) - t) * (5.0 as f32)) as i64;
-    fillRect(board_left - rail_w, board_top, rail_w, board_h, alphaColor(accent, fade * (0.14 as f32)));
-    fillRect(board_left + board_w, board_top, rail_w, board_h, alphaColor(accent, fade * (0.14 as f32)));
-}
-
-fun drawAllClearFxLabel(font: Font, theme: Theme, board_left: i64, board_top: i64) >> void {
-    if g_all_clear_fx_time_left <= 0.0 {return;}
-
-    f32 t = (1.0 as f32) - g_all_clear_fx_time_left / (ALL_CLEAR_FX_TIME as f32);
-    t = clamp01(t);
-    f32 fade = (1.0 as f32) - t;
-    f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
-
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 banner_w = 250;
-    i64 banner_h = 62;
-    i64 bx = board_left + (board_w - banner_w) / 2;
-    i64 by = board_top + 284;
-
-    u32 accent = shadeColor(theme.piece_o, (1.10 as f32) + pulse * (0.24 as f32));
-    fillRect(bx, by, banner_w, banner_h, alphaColor(shadeColor(theme.board_bg, 0.72 as f32), (0.56 as f32) + fade * (0.20 as f32)));
-    strokeRect(bx, by, banner_w, banner_h, alphaColor(accent, (0.48 as f32) + fade * (0.34 as f32)));
-    drawTextCenteredInRect(font, "ALL CLEAR", bx, by + 2, banner_w, banner_h - 4, 22, alphaColor(shadeColor(theme.text_main, (1.00 as f32) + pulse * (0.18 as f32)), (0.42 as f32) + fade * (0.58 as f32)));
-}
-
-fun drawHardDropImpactRings(board_left: i64, board_top: i64) >> void {
-    for i32 i = 0; i < HARD_DROP_RING_MAX; i++ {
-        if g_drop_ring_active[i] == 0 {continue;}
-
-        f32 t = clamp01(g_drop_ring_age[i] / g_drop_ring_life[i]);
-        f32 fade = (1.0 as f32) - t;
-        f32 radius = g_drop_ring_r0[i] + (g_drop_ring_r1[i] - g_drop_ring_r0[i]) * t;
-
-        i64 cx_base = board_left + (g_drop_ring_cx[i] * (CELL as f32)) as i64;
-        i64 cy_base = board_top + ((g_drop_ring_cy[i] - (boardVisibleStartRow() as f32)) * (CELL as f32)) as i64;
-        i32 sx = uiX(cx_base);
-        i32 sy = uiY(cy_base);
-        f32 sr = uiS(radius as i64) as f32;
-        if sr < 2.0 as f32 {sr = 2.0 as f32;}
-
-        DrawCircleLines(sx, sy, sr, toColor(alphaColor(g_drop_ring_color[i], fade * (0.52 as f32))));
-        DrawCircleLines(sx, sy, sr * (0.70 as f32), toColor(alphaColor(shadeColor(g_drop_ring_color[i], 1.20 as f32), fade * (0.34 as f32))));
-    }
 }
 
 fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
@@ -4555,7 +4047,7 @@ fun drawBoard(theme: Theme) >> void {
     }
 
     drawRestartBoardEffects(board_left, board_top);
-    drawHardDropImpactRings(board_left, board_top);
+    drawHardDropImpactRings(board_left, board_top, LINE_FX_BOARD_PLAYER);
     drawAllClearFx(theme, board_left, board_top);
     drawQuadClearFx(theme, board_left, board_top);
     drawLockEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
@@ -4596,6 +4088,7 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
         drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
     }
 
+    drawHardDropImpactRings(board_x, board_y, LINE_FX_BOARD_BOT);
     drawLockEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
     drawLineClearEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
 
@@ -5615,7 +5108,7 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring);
+        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, &g_custom_shader_name[0]);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -5651,7 +5144,13 @@ fun drawApp(font: Font) >> void {
     bool use_light_crt = g_post_shader_mode == SHADER_MODE_LIGHT_CRT && g_light_crt_shader_ready;
     bool use_crt = g_post_shader_mode == SHADER_MODE_CRT && g_crt_shader_ready;
     bool use_vhs = g_post_shader_mode == SHADER_MODE_VHS && g_vhs_shader_ready;
-    bool use_shader = use_light_crt || use_crt || use_vhs;
+    bool use_custom = g_post_shader_mode == SHADER_MODE_CUSTOM && g_custom_shader_ready;
+    bool use_shader = use_light_crt || use_crt || use_vhs || use_custom;
+
+    if g_post_shader_mode == SHADER_MODE_CUSTOM && !g_custom_shader_ready && !g_custom_shader_warned {
+        printf("[zltris] custom mode active but shader is not ready (name='%s')\n", &g_custom_shader_name[0]);
+        g_custom_shader_warned = true;
+    }
 
     BeginDrawing();
     if !use_shader {
@@ -5695,10 +5194,16 @@ fun drawApp(font: Font) >> void {
         f32 damage = g_vhs_damage;
         SetShaderValue(g_vhs_shader, g_vhs_damage_loc, (&damage) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
     }
+    if use_custom && g_custom_time_loc >= 0 {
+        f32 custom_time = GetTime() as f32;
+        SetShaderValue(g_custom_shader, g_custom_time_loc, (&custom_time) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
     if use_light_crt {
         BeginShaderMode(g_light_crt_shader);
     } else if use_vhs {
         BeginShaderMode(g_vhs_shader);
+    } else if use_custom {
+        BeginShaderMode(g_custom_shader);
     } else {
         BeginShaderMode(g_crt_shader);
     }
@@ -5781,8 +5286,12 @@ fun updateApp() >> void {
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
         bool prev_hard_drop_ring = g_hard_drop_ring;
+        arr<u8, CUSTOM_SHADER_NAME_MAX> prev_custom_shader_name = {0};
+        copyCustomShaderName(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_custom_shader_name[0]);
+        bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
+        if prev_shader_mode != g_post_shader_mode {g_custom_shader_warned = false;}
         if (prev_theme != g_game.theme_index ||
             prev_shader_mode != g_post_shader_mode ||
             prev_crt_curvature != g_crt_curvature ||
@@ -5803,8 +5312,10 @@ fun updateApp() >> void {
             prev_music_volume != g_music_volume ||
             prev_double_row != g_double_row_ui ||
             prev_instant_restart != g_instant_restart ||
-            prev_hard_drop_ring != g_hard_drop_ring) {
+            prev_hard_drop_ring != g_hard_drop_ring ||
+            custom_shader_changed) {
             clampSettings();
+            if prev_shader_mode != g_post_shader_mode || custom_shader_changed {loadPostEffects();}
             saveSettingsFile();
         }
         if settings_action == settingsActionBack() {g_game = g_game.with_screen(g_game.settings_return_screen);}
@@ -6325,9 +5836,9 @@ fun main() >> i32 {
     }
 
     g_game.theme_index = 0;
-    loadPostEffects();
     initAiLogFile();
     loadSettingsFile();
+    loadPostEffects();
     loadBotDuelsFile();
     applyChampionAiTuning();
     clampSettings();
