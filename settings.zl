@@ -1,29 +1,39 @@
 module zltris.settings;
 use raylib
+use std.fs
 use zltris.scale
 use zltris.theme
 
-#define SETTINGS_ITEM_THEME 0
-#define SETTINGS_ITEM_SHADER 1
-#define SETTINGS_ITEM_CRT_CURVATURE 2
-#define SETTINGS_ITEM_CRT_BRIGHTNESS 3
-#define SETTINGS_ITEM_VHS_WAVES 4
-#define SETTINGS_ITEM_VHS_DAMAGE 5
-#define SETTINGS_ITEM_ARR 6
-#define SETTINGS_ITEM_DAS 7
-#define SETTINGS_ITEM_DCD 8
-#define SETTINGS_ITEM_SDF 9
-#define SETTINGS_ITEM_MUSIC_VOLUME 10
-#define SETTINGS_ITEM_BOARD_BOUNCINESS 11
-#define SETTINGS_ITEM_DOUBLE_ROW 12
-#define SETTINGS_ITEM_INSTANT_RESTART 13
-#define SETTINGS_ITEM_HARD_DROP_RING 14
-#define SETTINGS_ITEM_BG_STARS_AMOUNT 15
-#define SETTINGS_ITEM_BG_STARS_MODE 16
-#define SETTINGS_ITEM_STAR_PEAK_TARGET 17
-#define SETTINGS_ITEM_STAR_INTENSITY 18
-#define SETTINGS_ITEM_BACK 19
-#define SETTINGS_ITEM_COUNT 20
+#define SETTINGS_ROW_SECTION_CONTROLS 0
+#define SETTINGS_ROW_ARR 1
+#define SETTINGS_ROW_DAS 2
+#define SETTINGS_ROW_DCD 3
+#define SETTINGS_ROW_SDF 4
+#define SETTINGS_ROW_INSTANT_RESTART 5
+#define SETTINGS_ROW_BOARD_BOUNCINESS 6
+
+#define SETTINGS_ROW_SECTION_VIDEO 7
+#define SETTINGS_ROW_THEME 8
+#define SETTINGS_ROW_SHADER 9
+#define SETTINGS_ROW_CHOOSE_SHADER 10
+#define SETTINGS_ROW_CRT_CURVATURE 11
+#define SETTINGS_ROW_CRT_BRIGHTNESS 12
+#define SETTINGS_ROW_VHS_WAVES 13
+#define SETTINGS_ROW_VHS_DAMAGE 14
+#define SETTINGS_ROW_BG_STARS_AMOUNT 15
+#define SETTINGS_ROW_BG_STARS_MODE 16
+#define SETTINGS_ROW_STAR_PEAK_TARGET 17
+#define SETTINGS_ROW_STAR_INTENSITY 18
+#define SETTINGS_ROW_MUSIC_STYLE 19
+#define SETTINGS_ROW_MUSIC_INTENSITY 20
+#define SETTINGS_ROW_DOUBLE_ROW 21
+#define SETTINGS_ROW_HARD_DROP_RING 22
+
+#define SETTINGS_ROW_SECTION_AUDIO 23
+#define SETTINGS_ROW_MUSIC_VOLUME 24
+
+#define SETTINGS_ROW_BACK 25
+#define SETTINGS_ROW_COUNT 26
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
@@ -33,22 +43,47 @@ use zltris.theme
 #define SHADER_MODE_LIGHT_CRT 1
 #define SHADER_MODE_CRT 2
 #define SHADER_MODE_VHS 3
+#define SHADER_MODE_CUSTOM 4
 #define STAR_MUSIC_STYLE_PULSE 0
 #define STAR_MUSIC_STYLE_WAVE 1
 #define STAR_MUSIC_STYLE_AGGRO 2
+
+#define CUSTOM_SHADER_NAME_MAX 96
+#define CUSTOM_SHADER_LIST_MAX 64
 
 #define SETTINGS_ACTION_NONE 0
 #define SETTINGS_ACTION_BACK 1
 
 struct SettingsState {
-    index i32,
+    selected_row i32,
     scroll f32,
+    controls_expanded bool,
+    controls_anim f32,
+    video_expanded bool,
+    video_anim f32,
+    audio_expanded bool,
+    audio_anim f32,
+    picker_open bool,
+    picker_scroll f32,
+    picker_selected i32,
+    picker_count i32,
+    picker_names arr<u8, 6144>,
 }
 
 fun init(self: SettingsState) >> SettingsState {
     SettingsState next = self;
-    next.index = 0;
+    next.selected_row = SETTINGS_ROW_THEME;
     next.scroll = 0.0;
+    next.controls_expanded = true;
+    next.controls_anim = 1.0 as f32;
+    next.video_expanded = true;
+    next.video_anim = 1.0 as f32;
+    next.audio_expanded = true;
+    next.audio_anim = 1.0 as f32;
+    next.picker_open = false;
+    next.picker_scroll = 0.0 as f32;
+    next.picker_selected = 0;
+    next.picker_count = 0;
     return next;
 }
 
@@ -563,64 +598,166 @@ fun clampf(v: f32, min_v: f32, max_v: f32) >> f32 {
     return v;
 }
 
-fun itemY(index: i32) >> i64 {
-    return 246 + (index as i64) * 78;
+fun cstrLen(s: ptr<u8>) >> i32 {
+    i32 n = 0;
+    for (s[n] != 0) {n += 1;}
+    return n;
 }
 
-fun visibleOrderForItem(index: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
-    i32 order = index;
-
-    if shader_mode != SHADER_MODE_CRT {
-        if index == SETTINGS_ITEM_CRT_CURVATURE || index == SETTINGS_ITEM_CRT_BRIGHTNESS {return -1;}
-        if index > SETTINGS_ITEM_CRT_CURVATURE {order -= 1;}
-        if index > SETTINGS_ITEM_CRT_BRIGHTNESS {order -= 1;}
+fun cstrEq(a: ptr<u8>, b: ptr<u8>) >> bool {
+    i32 i = 0;
+    for (true) {
+        if a[i] != b[i] {return false;}
+        if a[i] == 0 {return true;}
+        i += 1;
     }
-
-    if shader_mode != SHADER_MODE_VHS {
-        if index == SETTINGS_ITEM_VHS_WAVES || index == SETTINGS_ITEM_VHS_DAMAGE {return -1;}
-        if index > SETTINGS_ITEM_VHS_WAVES {order -= 1;}
-        if index > SETTINGS_ITEM_VHS_DAMAGE {order -= 1;}
-    }
-
-    if bg_stars_mode == STAR_MODE_NONE {
-        if index == SETTINGS_ITEM_STAR_PEAK_TARGET || index == SETTINGS_ITEM_STAR_INTENSITY {return -1;}
-        if index > SETTINGS_ITEM_STAR_INTENSITY {order -= 2;}
-    }
-
-    return order;
+    return true;
 }
 
-fun visibleItemCount(bg_stars_mode: i32, shader_mode: i32) >> i32 {
-    i32 count = SETTINGS_ITEM_COUNT;
-    if shader_mode != SHADER_MODE_CRT {count -= 2;}
-    if shader_mode != SHADER_MODE_VHS {count -= 2;}
-    if bg_stars_mode == STAR_MODE_NONE {count -= 2;}
+fun copyFixed(dst: ptr<u8>, src: ptr<u8>, cap: i32) >> void {
+    i32 i = 0;
+    for (i < cap - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun endsWithFrag(name: ptr<u8>) >> bool {
+    i32 len = cstrLen(name);
+    if len < 5 {return false;}
+    if name[len - 5] != ('.' as u8) {return false;}
+    if name[len - 4] != ('f' as u8) {return false;}
+    if name[len - 3] != ('r' as u8) {return false;}
+    if name[len - 2] != ('a' as u8) {return false;}
+    if name[len - 1] != ('g' as u8) {return false;}
+    return true;
+}
+
+fun pickerNamePtr(index: i32) >> ptr<u8> {
+    if index < 0 || index >= CUSTOM_SHADER_LIST_MAX {return &g_settings.picker_names[0];}
+    return &g_settings.picker_names[index * CUSTOM_SHADER_NAME_MAX];
+}
+
+fun clearPickerList() >> void {
+    g_settings.picker_count = 0;
+    g_settings.picker_selected = 0;
+    g_settings.picker_scroll = 0.0 as f32;
+    for i32 i = 0; i < CUSTOM_SHADER_LIST_MAX * CUSTOM_SHADER_NAME_MAX; i++ {g_settings.picker_names[i] = 0 as u8;}
+}
+
+fun addPickerName(name: ptr<u8>) >> void {
+    if g_settings.picker_count >= CUSTOM_SHADER_LIST_MAX {return;}
+    ptr<u8> dst = pickerNamePtr(g_settings.picker_count);
+    copyFixed(dst, name, CUSTOM_SHADER_NAME_MAX);
+    g_settings.picker_count += 1;
+}
+
+fun openShaderPicker(current_name: ptr<u8>) >> void {
+    clearPickerList();
+
+    ptr<void> dir = openDir("assets/shaders");
+    if dir != (0 as ptr<void>) {
+        for (true) {
+            ptr<DirEntry> ent = readDirEntry(dir);
+            if ent == (0 as ptr<DirEntry>) {break;}
+            ptr<u8> name = &ent.d_name[0];
+            if name[0] == ('.' as u8) {continue;}
+            if cstrEq(name, "default") {continue;}
+            if !endsWithFrag(name) {continue;}
+            addPickerName(name);
+        }
+        closeDir(dir);
+    }
+
+    for i32 i = 0; i < g_settings.picker_count; i++ {
+        if cstrEq(pickerNamePtr(i), current_name) {
+            g_settings.picker_selected = i;
+            break;
+        }
+    }
+    g_settings.picker_open = true;
+}
+
+fun closeShaderPicker() >> void {
+    g_settings.picker_open = false;
+}
+
+fun sectionAnimForRow(row: i32) >> f32 {
+    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_BOARD_BOUNCINESS {return g_settings.controls_anim;}
+    if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_HARD_DROP_RING {return g_settings.video_anim;}
+    if row == SETTINGS_ROW_MUSIC_VOLUME {return g_settings.audio_anim;}
+    return 1.0 as f32;
+}
+
+fun rowIsSectionHeader(row: i32) >> bool {
+    return row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO;
+}
+
+fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+    if row == SETTINGS_ROW_BACK {return true;}
+    if row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO {return true;}
+
+    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_BOARD_BOUNCINESS {return g_settings.controls_expanded;}
+
+    if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_HARD_DROP_RING {
+        if !g_settings.video_expanded {return false;}
+        if row == SETTINGS_ROW_CRT_CURVATURE || row == SETTINGS_ROW_CRT_BRIGHTNESS {return shader_mode == SHADER_MODE_CRT;}
+        if row == SETTINGS_ROW_VHS_WAVES || row == SETTINGS_ROW_VHS_DAMAGE {return shader_mode == SHADER_MODE_VHS;}
+        if row == SETTINGS_ROW_CHOOSE_SHADER {return shader_mode == SHADER_MODE_CUSTOM;}
+        if row == SETTINGS_ROW_STAR_PEAK_TARGET || row == SETTINGS_ROW_STAR_INTENSITY {return bg_stars_mode == STAR_MODE_DROPS;}
+        if row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_INTENSITY {return bg_stars_mode == STAR_MODE_MUSIC;}
+        return true;
+    }
+
+    if row == SETTINGS_ROW_MUSIC_VOLUME {
+        if !g_settings.audio_expanded {return false;}
+        return true;
+    }
+
+    return false;
+}
+
+fun visibleRowCount(bg_stars_mode: i32, shader_mode: i32) >> i32 {
+    i32 count = 0;
+    for i32 row = 0; row < SETTINGS_ROW_COUNT; row++ {
+        if rowVisible(row, bg_stars_mode, shader_mode) {count += 1;}
+    }
     return count;
 }
 
-fun itemFromVisibleOrder(order: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
-    i32 idx = order;
-    if shader_mode != SHADER_MODE_CRT {
-        if idx >= SETTINGS_ITEM_CRT_CURVATURE {idx += 1;}
-        if idx >= SETTINGS_ITEM_CRT_BRIGHTNESS {idx += 1;}
+fun rowOrder(row: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
+    if !rowVisible(row, bg_stars_mode, shader_mode) {return -1;}
+    i32 order = 0;
+    for i32 it = 0; it < row; it++ {
+        if rowVisible(it, bg_stars_mode, shader_mode) {order += 1;}
     }
-    if shader_mode != SHADER_MODE_VHS {
-        if idx >= SETTINGS_ITEM_VHS_WAVES {idx += 1;}
-        if idx >= SETTINGS_ITEM_VHS_DAMAGE {idx += 1;}
-    }
-    if bg_stars_mode == STAR_MODE_NONE && idx >= SETTINGS_ITEM_STAR_PEAK_TARGET {idx += 2;}
-    return idx;
+    return order;
 }
 
-fun itemYDraw(index: i32, bg_stars_mode: i32, shader_mode: i32) >> i64 {
-    i32 order = visibleOrderForItem(index, bg_stars_mode, shader_mode);
+fun rowFromOrder(order: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
+    i32 seen = 0;
+    for i32 row = 0; row < SETTINGS_ROW_COUNT; row++ {
+        if !rowVisible(row, bg_stars_mode, shader_mode) {continue;}
+        if seen == order {return row;}
+        seen += 1;
+    }
+    return SETTINGS_ROW_BACK;
+}
+
+fun itemYDraw(row: i32, bg_stars_mode: i32, shader_mode: i32) >> i64 {
+    i32 order = rowOrder(row, bg_stars_mode, shader_mode);
     if order < 0 {return -10000;}
-    return 246 + (order as i64) * 78 - (g_settings.scroll * 78.0) as i64;
+    return 246 + (order as i64) * 78 - (g_settings.scroll * 78.0 as f32) as i64;
 }
 
-fun drawSelectionGlow(theme: Theme, y: i64) >> void {
-    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, 0.16));
-    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, 0.86));
+fun rowSelected(row: i32) >> bool {
+    return g_settings.selected_row == row;
+}
+
+fun drawSelectionGlow(theme: Theme, y: i64, alpha: f32) >> void {
+    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, (0.10 as f32) + alpha * (0.14 as f32)));
+    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, (0.46 as f32) + alpha * (0.40 as f32)));
 }
 
 fun bgStarsModeLabel(mode: i32) >> ptr<u8> {
@@ -639,11 +776,8 @@ fun shaderModeLabel(mode: i32) >> ptr<u8> {
     if mode == SHADER_MODE_LIGHT_CRT {return "Light CRT";}
     if mode == SHADER_MODE_CRT {return "CRT";}
     if mode == SHADER_MODE_VHS {return "VHS";}
+    if mode == SHADER_MODE_CUSTOM {return "Custom";}
     return "None";
-}
-
-fun rowSelected(index: i32) >> bool {
-    return g_settings.index == index;
 }
 
 fun sliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
@@ -663,19 +797,72 @@ fun measureTextWidthBase(font: Font, text: ptr<u8>, size: i64) >> i64 {
     return (m.x / uiScale()) as i64;
 }
 
-fun drawSelectorRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i32, index: i32, label: ptr<u8>, value: ptr<u8>) >> void {
-    i64 y = itemYDraw(index, bg_stars_mode, shader_mode);
+fun sectionHeaderLabel(row: i32) >> ptr<u8> {
+    if row == SETTINGS_ROW_SECTION_CONTROLS {return "CONTROLS";}
+    if row == SETTINGS_ROW_SECTION_VIDEO {return "VIDEO";}
+    return "AUDIO";
+}
+
+fun sectionExpanded(row: i32) >> bool {
+    if row == SETTINGS_ROW_SECTION_CONTROLS {return g_settings.controls_expanded;}
+    if row == SETTINGS_ROW_SECTION_VIDEO {return g_settings.video_expanded;}
+    return g_settings.audio_expanded;
+}
+
+fun setSectionExpanded(row: i32, open: bool) >> void {
+    if row == SETTINGS_ROW_SECTION_CONTROLS {g_settings.controls_expanded = open; return;}
+    if row == SETTINGS_ROW_SECTION_VIDEO {g_settings.video_expanded = open; return;}
+    g_settings.audio_expanded = open;
+}
+
+fun toggleSection(row: i32) >> void {
+    if !rowIsSectionHeader(row) {return;}
+    setSectionExpanded(row, !sectionExpanded(row));
+}
+
+fun updateSectionAnimations(dt: f32) >> void {
+    f32 speed = 10.0 as f32;
+    f32 tgt_controls = 0.0 as f32;
+    if g_settings.controls_expanded {tgt_controls = 1.0 as f32;}
+    g_settings.controls_anim += (tgt_controls - g_settings.controls_anim) * clampf(dt * speed, 0.0, 1.0);
+
+    f32 tgt_video = 0.0 as f32;
+    if g_settings.video_expanded {tgt_video = 1.0 as f32;}
+    g_settings.video_anim += (tgt_video - g_settings.video_anim) * clampf(dt * speed, 0.0, 1.0);
+
+    f32 tgt_audio = 0.0 as f32;
+    if g_settings.audio_expanded {tgt_audio = 1.0 as f32;}
+    g_settings.audio_anim += (tgt_audio - g_settings.audio_anim) * clampf(dt * speed, 0.0, 1.0);
+}
+
+fun drawSectionHeaderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    f32 pulse = 0.0 as f32;
+    if rowSelected(row) {pulse = triWave01((GetTime() as f32) * (1.8 as f32));}
+    u32 stroke = alphaColor(theme.panel_stroke, (0.44 as f32) + pulse * (0.28 as f32));
+
+    fillRect(118, y, 412, 62, alphaColor(theme.board_bg, 0.74 as f32));
+    strokeRect(118, y, 412, 62, stroke);
+    if rowSelected(row) {drawSelectionGlow(theme, y, (0.62 as f32) + pulse * (0.38 as f32));}
+
+    ptr<u8> caret = ">";
+    if sectionExpanded(row) {caret = "v";}
+    drawTextColor(font, sectionHeaderLabel(row), 160, y + 20, 16, alphaColor(theme.text_main, 0.96 as f32));
+    drawTextColor(font, caret, 136, y + 20, 16, alphaColor(theme.panel_stroke, 0.96 as f32));
+}
+
+fun drawSelectorRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value: ptr<u8>) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    f32 alpha = sectionAnimForRow(row);
+    if alpha < 0.01 as f32 {return;}
     i64 row_x = 118;
     i64 row_w = 412;
     i64 right_padding = 18;
     i64 text_gap = 12;
     i64 arrow_gap = 14;
 
-    ptr<u8> left_arrow = "<";
-    ptr<u8> right_arrow = ">";
-
-    i64 right_arrow_w = measureTextWidthBase(font, right_arrow, 15);
-    i64 left_arrow_w = measureTextWidthBase(font, left_arrow, 15);
+    i64 right_arrow_w = measureTextWidthBase(font, ">", 15);
+    i64 left_arrow_w = measureTextWidthBase(font, "<", 15);
     i64 value_w = measureTextWidthBase(font, value, 15);
 
     i64 right_edge = row_x + row_w - right_padding;
@@ -683,83 +870,162 @@ fun drawSelectorRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i
     i64 value_x = right_arrow_x - text_gap - value_w;
     i64 left_arrow_x = value_x - arrow_gap - left_arrow_w;
 
-    u32 stroke = alphaColor(theme.text_muted, 0.45);
-    if (rowSelected(index)) {
-        drawSelectionGlow(theme, y);
-        stroke = theme.panel_stroke;
+    u32 stroke = alphaColor(theme.text_muted, (0.22 as f32) + alpha * (0.30 as f32));
+    if rowSelected(row) {
+        drawSelectionGlow(theme, y, alpha);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
     }
-    fillRect(row_x, y, row_w, 62, alphaColor(theme.panel_bg, 0.92));
+    fillRect(row_x, y, row_w, 62, alphaColor(theme.panel_bg, (0.30 as f32) + alpha * (0.62 as f32)));
     strokeRect(row_x, y, row_w, 62, stroke);
-    drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
-    drawTextColor(font, left_arrow, left_arrow_x, y + 20, 15, theme.text_main);
-    drawTextColor(font, value, value_x, y + 20, 15, theme.panel_stroke);
-    drawTextColor(font, right_arrow, right_arrow_x, y + 20, 15, theme.text_main);
+    drawTextColor(font, label, 136, y + 20, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
+    drawTextColor(font, "<", left_arrow_x, y + 20, 15, alphaColor(theme.text_main, (0.30 as f32) + alpha * (0.70 as f32)));
+    drawTextColor(font, value, value_x, y + 20, 15, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
+    drawTextColor(font, ">", right_arrow_x, y + 20, 15, alphaColor(theme.text_main, (0.30 as f32) + alpha * (0.70 as f32)));
 }
 
-fun drawSliderRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i32, index: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
-    i64 y = itemYDraw(index, bg_stars_mode, shader_mode);
-    u32 stroke = alphaColor(theme.text_muted, 0.45);
-    if (rowSelected(index)) {
-        drawSelectionGlow(theme, y);
-        stroke = theme.panel_stroke;
+fun drawSliderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    f32 alpha = sectionAnimForRow(row);
+    if alpha < 0.01 as f32 {return;}
+
+    u32 stroke = alphaColor(theme.text_muted, (0.22 as f32) + alpha * (0.30 as f32));
+    if rowSelected(row) {
+        drawSelectionGlow(theme, y, alpha);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
     }
-    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, (0.30 as f32) + alpha * (0.62 as f32)));
     strokeRect(118, y, 412, 62, stroke);
 
-    drawTextColor(font, label, 136, y + 14, 15, theme.text_main);
-    drawTextColor(font, value_text, 430, y + 14, 14, theme.panel_stroke);
+    drawTextColor(font, label, 136, y + 14, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
+    drawTextColor(font, value_text, 430, y + 14, 14, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
 
     i64 sx = 136;
     i64 sy = y + 40;
     i64 sw = 372;
     i64 sh = 10;
-    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, 0.95));
-    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, 0.35));
+    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, (0.40 as f32) + alpha * (0.55 as f32)));
+    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, (0.18 as f32) + alpha * (0.30 as f32)));
     i64 fill_w = ((sw as f32) * sliderPercent(value, min_v, max_v)) as i64;
-    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, 0.85));
-    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, theme.text_main);
+    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, (0.40 as f32) + alpha * (0.45 as f32)));
+    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, alphaColor(theme.text_main, (0.52 as f32) + alpha * (0.48 as f32)));
 }
 
-fun drawBackRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i32) >> void {
-    i64 y = itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode, shader_mode);
-    u32 stroke = alphaColor(theme.text_muted, 0.45);
-    if (rowSelected(SETTINGS_ITEM_BACK)) {
-        drawSelectionGlow(theme, y);
+fun drawToggleRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, enabled: bool) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    f32 alpha = sectionAnimForRow(row);
+    if alpha < 0.01 as f32 {return;}
+
+    u32 stroke = alphaColor(theme.text_muted, (0.22 as f32) + alpha * (0.30 as f32));
+    if rowSelected(row) {
+        drawSelectionGlow(theme, y, alpha);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, (0.30 as f32) + alpha * (0.62 as f32)));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, label, 136, y + 20, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
+    ptr<u8> mark = "[ ]";
+    if enabled {mark = "[X]";}
+    drawTextColor(font, mark, 470, y + 20, 15, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
+}
+
+fun drawButtonRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    f32 alpha = sectionAnimForRow(row);
+    if alpha < 0.01 as f32 {return;}
+
+    u32 stroke = alphaColor(theme.text_muted, (0.22 as f32) + alpha * (0.30 as f32));
+    if rowSelected(row) {
+        drawSelectionGlow(theme, y, alpha);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, (0.30 as f32) + alpha * (0.62 as f32)));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextCenteredInRect(font, label, 118, y + 2, 412, 58, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
+}
+
+fun drawBackRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
+    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+    u32 stroke = alphaColor(theme.text_muted, 0.45 as f32);
+    if rowSelected(row) {
+        drawSelectionGlow(theme, y, 1.0 as f32);
         stroke = theme.panel_stroke;
     }
-    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, "Back", 136, y + 20, 15, theme.text_main);
     drawTextColor(font, "ENTER", 436, y + 20, 12, theme.text_muted);
 }
 
-fun drawToggleRow(font: Font, theme: Theme, bg_stars_mode: i32, shader_mode: i32, index: i32, label: ptr<u8>, enabled: bool) >> void {
-    i64 y = itemYDraw(index, bg_stars_mode, shader_mode);
-    u32 stroke = alphaColor(theme.text_muted, 0.45);
-    if (rowSelected(index)) {
-        drawSelectionGlow(theme, y);
-        stroke = theme.panel_stroke;
+fun settingsEnsureSelectedVisible(bg_stars_mode: i32, shader_mode: i32) >> void {
+    if rowVisible(g_settings.selected_row, bg_stars_mode, shader_mode) {return;}
+    if g_settings.selected_row >= SETTINGS_ROW_ARR && g_settings.selected_row <= SETTINGS_ROW_BOARD_BOUNCINESS {
+        g_settings.selected_row = SETTINGS_ROW_SECTION_CONTROLS;
+        return;
     }
-    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
-    strokeRect(118, y, 412, 62, stroke);
-    drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
-    ptr<u8> mark = "[ ]";
-    if enabled {mark = "[X]";}
-    drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
+    if g_settings.selected_row >= SETTINGS_ROW_THEME && g_settings.selected_row <= SETTINGS_ROW_HARD_DROP_RING {
+        g_settings.selected_row = SETTINGS_ROW_SECTION_VIDEO;
+        return;
+    }
+    if g_settings.selected_row == SETTINGS_ROW_MUSIC_VOLUME {
+        g_settings.selected_row = SETTINGS_ROW_SECTION_AUDIO;
+        return;
+    }
+    g_settings.selected_row = SETTINGS_ROW_THEME;
 }
 
-fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, vhs_waves: f32, vhs_damage: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool, hard_drop_ring: bool) >> void {
+fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, vhs_waves: f32, vhs_damage: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool, hard_drop_ring: bool, custom_shader_name: ptr<u8>) >> void {
+    settingsEnsureSelectedVisible(bg_stars_mode, shader_mode);
+
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawImpulseGridBackground(font, theme);
 
-    fillRect(84, 48, 480, 860, alphaColor(theme.bg_outer, 0.90));
-    strokeRect(84, 48, 480, 860, alphaColor(theme.panel_stroke, 0.90));
+    fillRect(84, 48, 480, 860, alphaColor(theme.bg_outer, 0.90 as f32));
+    strokeRect(84, 48, 480, 860, alphaColor(theme.panel_stroke, 0.90 as f32));
 
     drawTextColor(font, "SETTINGS", 130, 118, 30, theme.text_main);
-    drawTextColor(font, "Arrow keys or mouse", 130, 162, 14, theme.text_muted);
-    drawTextColor(font, "Left/Right changes value", 130, 182, 14, theme.text_muted);
+    drawTextColor(font, "Sections: ENTER toggle", 130, 162, 14, theme.text_muted);
+    drawTextColor(font, "Arrow keys or mouse", 130, 182, 14, theme.text_muted);
 
-    i32 visible_rows = visibleItemCount(bg_stars_mode, shader_mode);
+    if g_settings.picker_open {
+        fillRect(112, 232, 424, 646, alphaColor(theme.panel_bg, 0.94 as f32));
+        strokeRect(112, 232, 424, 646, alphaColor(theme.panel_stroke, 0.86 as f32));
+        drawTextColor(font, "CHOOSE SHADER", 136, 258, 18, theme.text_main);
+
+        i32 visible = 7;
+        i32 max_scroll = g_settings.picker_count - visible;
+        if max_scroll < 0 {max_scroll = 0;}
+        if g_settings.picker_scroll < 0.0 as f32 {g_settings.picker_scroll = 0.0 as f32;}
+        if g_settings.picker_scroll > max_scroll as f32 {g_settings.picker_scroll = max_scroll as f32;}
+
+        i64 row_h = 68;
+        i64 start_y = 298;
+        for i32 i = 0; i < g_settings.picker_count; i++ {
+            i64 y = start_y + ((i as f32 - g_settings.picker_scroll) * (row_h as f32)) as i64;
+            if y < 290 || y > 770 {continue;}
+
+            bool sel = i == g_settings.picker_selected;
+            u32 stroke = alphaColor(theme.text_muted, 0.38 as f32);
+            if sel {
+                stroke = theme.panel_stroke;
+                drawSelectionGlow(theme, y + 3, 1.0 as f32);
+            }
+            fillRect(130, y, 388, 56, alphaColor(theme.board_bg, 0.74 as f32));
+            strokeRect(130, y, 388, 56, stroke);
+            drawTextColor(font, pickerNamePtr(i), 148, y + 18, 14, theme.text_main);
+        }
+
+        i64 by = 806;
+        bool back_sel = g_settings.picker_selected == g_settings.picker_count;
+        fillRect(130, by, 388, 56, alphaColor(theme.board_bg, 0.86 as f32));
+        strokeRect(130, by, 388, 56, alphaColor(theme.panel_stroke, 0.82 as f32));
+        if back_sel {drawSelectionGlow(theme, by + 3, 1.0 as f32);}
+        drawTextColor(font, "Back", 148, by + 18, 15, theme.text_main);
+        drawTextColor(font, "ESC", 470, by + 18, 12, theme.text_muted);
+
+        return;
+    }
+
+    i32 visible_rows = visibleRowCount(bg_stars_mode, shader_mode);
     if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
     i32 list_x = uiX(112);
@@ -768,267 +1034,259 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     i32 list_h = uiS(list_h_base);
     BeginScissorMode(list_x, list_y, list_w, list_h);
 
-    drawSelectorRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_THEME, "Theme", themeName(theme_index));
-    drawSelectorRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_SHADER, "Shader", shaderModeLabel(shader_mode));
-    if shader_mode == SHADER_MODE_CRT {
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_CRT_CURVATURE, "CRT curvature", TextFormat("%i%%", (crt_curvature * 100.0) as i32), crt_curvature, 0.2, 1.4);
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_CRT_BRIGHTNESS, "CRT brightness", TextFormat("%i%%", (crt_brightness * 100.0) as i32), crt_brightness, 0.6, 1.8);
-    } else if shader_mode == SHADER_MODE_VHS {
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_VHS_WAVES, "VHS waves", TextFormat("%i%%", (vhs_waves * 100.0) as i32), vhs_waves, 0.0, 1.4);
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_VHS_DAMAGE, "VHS damage", TextFormat("%i%%", (vhs_damage * 100.0) as i32), vhs_damage, 0.0, 1.5);
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_CONTROLS, bg_stars_mode, shader_mode);
+    if rowVisible(SETTINGS_ROW_ARR, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_ARR, bg_stars_mode, shader_mode, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);}
+    if rowVisible(SETTINGS_ROW_DAS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DAS, bg_stars_mode, shader_mode, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);}
+    if rowVisible(SETTINGS_ROW_DCD, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DCD, bg_stars_mode, shader_mode, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);}
+    if rowVisible(SETTINGS_ROW_SDF, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_SDF, bg_stars_mode, shader_mode, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);}
+    if rowVisible(SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode, "Instant restart", instant_restart);}
+    if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);}
+
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, bg_stars_mode, shader_mode);
+    if rowVisible(SETTINGS_ROW_THEME, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, bg_stars_mode, shader_mode, "Theme", themeName(theme_index));}
+    if rowVisible(SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode, "Shader", shaderModeLabel(shader_mode));}
+    if rowVisible(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode) {
+        drawButtonRow(font, theme, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode, "CHOOSE CUSTOM SHADER");
     }
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_ARR, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_DAS, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_DCD, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_SDF, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_MUSIC_VOLUME, "Music volume", TextFormat("%i%%", (music_volume * 100.0) as i32), music_volume, 0.0, 1.0);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_BOARD_BOUNCINESS, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);
-    drawToggleRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_DOUBLE_ROW, "Double-row UI", double_row_ui);
-    drawToggleRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_INSTANT_RESTART, "Instant restart", instant_restart);
-    drawToggleRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_HARD_DROP_RING, "Hard drop ring", hard_drop_ring);
-    drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_BG_STARS_AMOUNT, "BG stars amount", TextFormat("%i", bg_stars_amount), bg_stars_amount as f32, 0.0, 150.0);
-    drawSelectorRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_BG_STARS_MODE, "BG stars react", bgStarsModeLabel(bg_stars_mode));
-    if (bg_stars_mode == STAR_MODE_DROPS) {
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_STAR_PEAK_TARGET, "Star peak target", TextFormat("%.1f dps", star_peak_target_dps), star_peak_target_dps, 0.5, 3.5);
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_STAR_INTENSITY, "Star intensity", TextFormat("%.1f", star_intensity), star_intensity, 0.1, 1.0);
-    } else if bg_stars_mode == STAR_MODE_MUSIC {
-        drawSelectorRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_STAR_PEAK_TARGET, "Music style", musicStyleLabel(star_music_style));
-        drawSliderRow(font, theme, bg_stars_mode, shader_mode, SETTINGS_ITEM_STAR_INTENSITY, "Music intensity", TextFormat("%.1f", star_music_intensity), star_music_intensity, 0.1, 1.0);
-    }
-    drawBackRow(font, theme, bg_stars_mode, shader_mode);
+    if rowVisible(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode, "CRT curvature", TextFormat("%i%%", (crt_curvature * 100.0 as f32) as i32), crt_curvature, 0.2, 1.4);}
+    if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode, "CRT brightness", TextFormat("%i%%", (crt_brightness * 100.0 as f32) as i32), crt_brightness, 0.6, 1.8);}
+    if rowVisible(SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode, "VHS waves", TextFormat("%i%%", (vhs_waves * 100.0 as f32) as i32), vhs_waves, 0.0, 1.4);}
+    if rowVisible(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode, shader_mode, "VHS damage", TextFormat("%i%%", (vhs_damage * 100.0 as f32) as i32), vhs_damage, 0.0, 1.5);}
+    if rowVisible(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode, shader_mode, "BG stars amount", TextFormat("%i", bg_stars_amount), bg_stars_amount as f32, 0.0, 150.0);}
+    if rowVisible(SETTINGS_ROW_BG_STARS_MODE, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_BG_STARS_MODE, bg_stars_mode, shader_mode, "BG stars react", bgStarsModeLabel(bg_stars_mode));}
+    if rowVisible(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode, shader_mode, "Star peak target", TextFormat("%.1f dps", star_peak_target_dps), star_peak_target_dps, 0.5, 3.5);}
+    if rowVisible(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode, shader_mode, "Star intensity", TextFormat("%.1f", star_intensity), star_intensity, 0.1, 1.0);}
+    if rowVisible(SETTINGS_ROW_MUSIC_STYLE, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_MUSIC_STYLE, bg_stars_mode, shader_mode, "Music style", musicStyleLabel(star_music_style));}
+    if rowVisible(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode, shader_mode, "Music intensity", TextFormat("%.1f", star_music_intensity), star_music_intensity, 0.1, 1.0);}
+    if rowVisible(SETTINGS_ROW_DOUBLE_ROW, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_DOUBLE_ROW, bg_stars_mode, shader_mode, "Double-row UI", double_row_ui);}
+    if rowVisible(SETTINGS_ROW_HARD_DROP_RING, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_HARD_DROP_RING, bg_stars_mode, shader_mode, "Hard drop ring", hard_drop_ring);}
+
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_AUDIO, bg_stars_mode, shader_mode);
+    if rowVisible(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode, shader_mode, "Music volume", TextFormat("%i%%", (music_volume * 100.0 as f32) as i32), music_volume, 0.0, 1.0);}
+
+    drawBackRow(font, theme, SETTINGS_ROW_BACK, bg_stars_mode, shader_mode);
 
     EndScissorMode();
 
-    fillRect(112, 232, 424, 18, alphaColor(theme.bg_outer, 0.75));
-    fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75));
+    fillRect(112, 232, 424, 18, alphaColor(theme.bg_outer, 0.75 as f32));
+    fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75 as f32));
 }
 
-fun settingsNudgeValue(index: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>) >> i32 {
-    if (index == SETTINGS_ITEM_THEME) {
-        theme_index[0] = switchTheme(theme_index[0], dir);
+fun settingsNudgeRow(row: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>) >> i32 {
+    if rowIsSectionHeader(row) {
+        if dir < 0 {setSectionExpanded(row, false);} else {setSectionExpanded(row, true);}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_SHADER) {
+
+    if row == SETTINGS_ROW_THEME {theme_index[0] = switchTheme(theme_index[0], dir); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_SHADER {
         shader_mode[0] += dir;
-        if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_VHS;}
-        if shader_mode[0] > SHADER_MODE_VHS {shader_mode[0] = SHADER_MODE_NONE;}
+        if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_CUSTOM;}
+        if shader_mode[0] > SHADER_MODE_CUSTOM {shader_mode[0] = SHADER_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_CRT_CURVATURE) {
-        crt_curvature[0] = clampf(crt_curvature[0] + (dir as f32) * 0.05, 0.2, 1.4);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_CRT_BRIGHTNESS) {
-        crt_brightness[0] = clampf(crt_brightness[0] + (dir as f32) * 0.05, 0.6, 1.8);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_VHS_WAVES) {
-        vhs_waves[0] = clampf(vhs_waves[0] + (dir as f32) * 0.05, 0.0, 1.4);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_VHS_DAMAGE) {
-        vhs_damage[0] = clampf(vhs_damage[0] + (dir as f32) * 0.05, 0.0, 1.5);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_ARR) {
-        arr[0] = clampf(arr[0] + (dir as f32) * 0.1, 0.0, 8.0);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_DAS) {
-        das[0] = clampf(das[0] + (dir as f32) * 0.1, 0.0, 20.0);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_DCD) {
-        dcd[0] = clampf(dcd[0] + (dir as f32) * 0.1, 0.0, 10.0);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_SDF) {
-        sdf[0] = clampf(sdf[0] + (dir as f32) * 0.5, 1.0, 40.0);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_MUSIC_VOLUME) {
-        music_volume[0] = clampf(music_volume[0] + (dir as f32) * 0.05, 0.0, 1.0);
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_BOARD_BOUNCINESS) {
+    if row == SETTINGS_ROW_CHOOSE_SHADER {return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_CRT_CURVATURE {crt_curvature[0] = clampf(crt_curvature[0] + (dir as f32) * (0.05 as f32), 0.2, 1.4); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_CRT_BRIGHTNESS {crt_brightness[0] = clampf(crt_brightness[0] + (dir as f32) * (0.05 as f32), 0.6, 1.8); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_VHS_WAVES {vhs_waves[0] = clampf(vhs_waves[0] + (dir as f32) * (0.05 as f32), 0.0, 1.4); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_VHS_DAMAGE {vhs_damage[0] = clampf(vhs_damage[0] + (dir as f32) * (0.05 as f32), 0.0, 1.5); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_ARR {arr[0] = clampf(arr[0] + (dir as f32) * (0.1 as f32), 0.0, 8.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DAS {das[0] = clampf(das[0] + (dir as f32) * (0.1 as f32), 0.0, 20.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DCD {dcd[0] = clampf(dcd[0] + (dir as f32) * (0.1 as f32), 0.0, 10.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_SDF {sdf[0] = clampf(sdf[0] + (dir as f32) * (0.5 as f32), 1.0, 40.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_VOLUME {music_volume[0] = clampf(music_volume[0] + (dir as f32) * (0.05 as f32), 0.0, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BOARD_BOUNCINESS {
         board_bounciness[0] += dir;
         if board_bounciness[0] < 0 {board_bounciness[0] = 0;}
         if board_bounciness[0] > 100 {board_bounciness[0] = 100;}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_BG_STARS_AMOUNT) {
+    if row == SETTINGS_ROW_BG_STARS_AMOUNT {
         bg_stars_amount[0] += dir;
         if bg_stars_amount[0] < 0 {bg_stars_amount[0] = 0;}
         if bg_stars_amount[0] > 150 {bg_stars_amount[0] = 150;}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_BG_STARS_MODE) {
+    if row == SETTINGS_ROW_BG_STARS_MODE {
         bg_stars_mode[0] += dir;
         if bg_stars_mode[0] < STAR_MODE_NONE {bg_stars_mode[0] = STAR_MODE_MUSIC;}
         if bg_stars_mode[0] > STAR_MODE_MUSIC {bg_stars_mode[0] = STAR_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_STAR_PEAK_TARGET) {
-        if bg_stars_mode[0] == STAR_MODE_MUSIC {
-            star_music_style[0] += dir;
-            if star_music_style[0] < STAR_MUSIC_STYLE_PULSE {star_music_style[0] = STAR_MUSIC_STYLE_AGGRO;}
-            if star_music_style[0] > STAR_MUSIC_STYLE_AGGRO {star_music_style[0] = STAR_MUSIC_STYLE_PULSE;}
-        } else {
-            star_peak_target_dps[0] = clampf(star_peak_target_dps[0] + (dir as f32) * 0.1, 0.5, 3.5);
-        }
+    if row == SETTINGS_ROW_STAR_PEAK_TARGET {star_peak_target_dps[0] = clampf(star_peak_target_dps[0] + (dir as f32) * (0.1 as f32), 0.5, 3.5); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_STAR_INTENSITY {star_intensity[0] = clampf(star_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_STYLE {
+        star_music_style[0] += dir;
+        if star_music_style[0] < STAR_MUSIC_STYLE_PULSE {star_music_style[0] = STAR_MUSIC_STYLE_AGGRO;}
+        if star_music_style[0] > STAR_MUSIC_STYLE_AGGRO {star_music_style[0] = STAR_MUSIC_STYLE_PULSE;}
         return SETTINGS_ACTION_NONE;
     }
-    if (index == SETTINGS_ITEM_STAR_INTENSITY) {
-        if bg_stars_mode[0] == STAR_MODE_MUSIC {
-            star_music_intensity[0] = clampf(star_music_intensity[0] + (dir as f32) * 0.1, 0.1, 1.0);
-        } else {
-            star_intensity[0] = clampf(star_intensity[0] + (dir as f32) * 0.1, 0.1, 1.0);
-        }
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_DOUBLE_ROW) {
-        double_row_ui[0] = !double_row_ui[0];
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_INSTANT_RESTART) {
-        instant_restart[0] = !instant_restart[0];
-        return SETTINGS_ACTION_NONE;
-    }
-    if (index == SETTINGS_ITEM_HARD_DROP_RING) {
-        hard_drop_ring[0] = !hard_drop_ring[0];
-        return SETTINGS_ACTION_NONE;
-    }
-    return SETTINGS_ACTION_BACK;
+    if row == SETTINGS_ROW_MUSIC_INTENSITY {star_music_intensity[0] = clampf(star_music_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_INSTANT_RESTART {instant_restart[0] = !instant_restart[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_HARD_DROP_RING {hard_drop_ring[0] = !hard_drop_ring[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BACK {return SETTINGS_ACTION_BACK;}
+    return SETTINGS_ACTION_NONE;
 }
 
-fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>) >> i32 {
+fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>, custom_shader_name: ptr<u8>) >> i32 {
+
+    updateSectionAnimations(GetFrameTime());
+
+    if g_settings.picker_open {
+        if IsKeyPressed(KEY_ESCAPE) {closeShaderPicker(); return SETTINGS_ACTION_NONE;}
+
+        i32 max_sel = g_settings.picker_count;
+        if IsKeyPressed(KEY_UP) {
+            g_settings.picker_selected -= 1;
+            if g_settings.picker_selected < 0 {g_settings.picker_selected = max_sel;}
+        }
+        if IsKeyPressed(KEY_DOWN) {
+            g_settings.picker_selected += 1;
+            if g_settings.picker_selected > max_sel {g_settings.picker_selected = 0;}
+        }
+
+        i32 visible = 7;
+        i32 max_scroll = g_settings.picker_count - visible;
+        if max_scroll < 0 {max_scroll = 0;}
+        f32 wheel = GetMouseWheelMove();
+        if wheel > 0.0 as f32 {g_settings.picker_scroll -= 1.0 as f32;}
+        if wheel < 0.0 as f32 {g_settings.picker_scroll += 1.0 as f32;}
+        if g_settings.picker_selected < (g_settings.picker_scroll as i32) {g_settings.picker_scroll = g_settings.picker_selected as f32;}
+        if g_settings.picker_selected >= (g_settings.picker_scroll as i32) + visible {g_settings.picker_scroll = (g_settings.picker_selected - visible + 1) as f32;}
+        if g_settings.picker_scroll < 0.0 as f32 {g_settings.picker_scroll = 0.0 as f32;}
+        if g_settings.picker_scroll > max_scroll as f32 {g_settings.picker_scroll = max_scroll as f32;}
+
+        Vector2 mouse = GetMousePosition();
+        if pointInBaseRect(mouse.x, mouse.y, 130, 298, 388, 56 * 7) {
+            i32 idx = (((mouse.y - uiY(298) as f32) / (uiS(68) as f32)) + g_settings.picker_scroll) as i32;
+            if idx >= 0 && idx < g_settings.picker_count {g_settings.picker_selected = idx;}
+        }
+        if pointInBaseRect(mouse.x, mouse.y, 130, 806, 388, 56) {g_settings.picker_selected = g_settings.picker_count;}
+
+        bool choose = IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        if choose {
+            if g_settings.picker_selected == g_settings.picker_count {
+                closeShaderPicker();
+                return SETTINGS_ACTION_NONE;
+            }
+            if g_settings.picker_selected >= 0 && g_settings.picker_selected < g_settings.picker_count {
+                copyFixed(custom_shader_name, pickerNamePtr(g_settings.picker_selected), CUSTOM_SHADER_NAME_MAX);
+                return SETTINGS_ACTION_NONE;
+            }
+        }
+        return SETTINGS_ACTION_NONE;
+    }
+
     if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
-    i32 max_scroll = (SETTINGS_ITEM_COUNT as i32) - (SETTINGS_VISIBLE_ROWS as i32);
-    i32 item_count = visibleItemCount(bg_stars_mode[0], shader_mode[0]);
-    max_scroll = item_count - (SETTINGS_VISIBLE_ROWS as i32);
+    settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+
+    i32 item_count = visibleRowCount(bg_stars_mode[0], shader_mode[0]);
+    i32 max_scroll = item_count - (SETTINGS_VISIBLE_ROWS as i32);
     if max_scroll < 0 {max_scroll = 0;}
 
     f32 wheel = GetMouseWheelMove();
-    if (wheel > 0.0) {g_settings.scroll -= 1.0;} else if (wheel < 0.0) {
-        g_settings.scroll += 1.0;
-    }
+    if (wheel > 0.0) {g_settings.scroll -= 1.0;} else if (wheel < 0.0) {g_settings.scroll += 1.0;}
     if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
 
-    if g_settings.index < 0 {g_settings.index = (SETTINGS_ITEM_COUNT as i32) - 1;}
-    if g_settings.index >= (SETTINGS_ITEM_COUNT as i32) {g_settings.index = 0;}
-    if visibleOrderForItem(g_settings.index, bg_stars_mode[0], shader_mode[0]) < 0 {g_settings.index = SETTINGS_ITEM_BG_STARS_MODE;}
+    if IsKeyPressed(KEY_UP) {
+        i32 order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+        if order < 0 {order = 0;}
+        order -= 1;
+        if order < 0 {order = item_count - 1;}
+        g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+    }
+    if IsKeyPressed(KEY_DOWN) {
+        i32 order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+        if order < 0 {order = 0;}
+        order += 1;
+        if order >= item_count {order = 0;}
+        g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+    }
 
-    if (IsKeyPressed(KEY_UP)) {
-        i32 idx = g_settings.index;
-        for i32 i = 0; i < (SETTINGS_ITEM_COUNT as i32); i++ {
-            idx -= 1;
-            if idx < 0 {idx = (SETTINGS_ITEM_COUNT as i32) - 1;}
-            if (visibleOrderForItem(idx, bg_stars_mode[0], shader_mode[0]) >= 0) {
-                g_settings.index = idx;
-                break;
-            }
-        }
-        i32 sel_order = visibleOrderForItem(g_settings.index, bg_stars_mode[0], shader_mode[0]);
-        if (sel_order as f32) < g_settings.scroll {g_settings.scroll = sel_order as f32;}
-    }
-    if (IsKeyPressed(KEY_DOWN)) {
-        i32 idx = g_settings.index;
-        for i32 i = 0; i < (SETTINGS_ITEM_COUNT as i32); i++ {
-            idx += 1;
-            if idx >= (SETTINGS_ITEM_COUNT as i32) {idx = 0;}
-            if (visibleOrderForItem(idx, bg_stars_mode[0], shader_mode[0]) >= 0) {
-                g_settings.index = idx;
-                break;
-            }
-        }
-        i32 sel_order = visibleOrderForItem(g_settings.index, bg_stars_mode[0], shader_mode[0]);
-        if sel_order >= (g_settings.scroll as i32) + (SETTINGS_VISIBLE_ROWS as i32) {g_settings.scroll = (sel_order - ((SETTINGS_VISIBLE_ROWS as i32) - 1)) as f32;}
-    }
+    i32 sel_order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+    if sel_order < 0 {sel_order = 0;}
+    if (sel_order as f32) < g_settings.scroll {g_settings.scroll = sel_order as f32;}
+    if sel_order >= (g_settings.scroll as i32) + (SETTINGS_VISIBLE_ROWS as i32) {g_settings.scroll = (sel_order - ((SETTINGS_VISIBLE_ROWS as i32) - 1)) as f32;}
     if g_settings.scroll < 0.0 {g_settings.scroll = 0.0;}
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
-    if IsKeyPressed(KEY_LEFT) {return settingsNudgeValue(g_settings.index, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-    if IsKeyPressed(KEY_RIGHT) {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-    if (IsKeyPressed(KEY_ENTER)) {
-        if g_settings.index == SETTINGS_ITEM_BACK {return SETTINGS_ACTION_BACK;}
-        if g_settings.index == SETTINGS_ITEM_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0];}
-        if g_settings.index == SETTINGS_ITEM_INSTANT_RESTART {instant_restart[0] = !instant_restart[0];}
-        if g_settings.index == SETTINGS_ITEM_HARD_DROP_RING {hard_drop_ring[0] = !hard_drop_ring[0];}
-        if g_settings.index == SETTINGS_ITEM_BG_STARS_MODE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_STAR_PEAK_TARGET {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_STAR_INTENSITY {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_SHADER {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_CRT_CURVATURE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_CRT_BRIGHTNESS {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_VHS_WAVES {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        if g_settings.index == SETTINGS_ITEM_VHS_DAMAGE {return settingsNudgeValue(g_settings.index, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
+
+    if IsKeyPressed(KEY_LEFT) {
+        i32 act = settingsNudgeRow(g_settings.selected_row, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+        settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        if act != SETTINGS_ACTION_NONE {return act;}
+    }
+    if IsKeyPressed(KEY_RIGHT) {
+        i32 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+        settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        if act != SETTINGS_ACTION_NONE {return act;}
+    }
+    if IsKeyPressed(KEY_ENTER) {
+        if rowIsSectionHeader(g_settings.selected_row) {
+            toggleSection(g_settings.selected_row);
+            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER {
+            openShaderPicker(custom_shader_name);
+        } else {
+            i32 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+            if act != SETTINGS_ACTION_NONE {return act;}
+        }
     }
 
     Vector2 mouse = GetMousePosition();
     i32 visible_rows = item_count;
     if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
-
-    if (pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base)) {
+    if pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base) {
         f32 row_h = uiS(78) as f32;
         f32 local = (mouse.y - (uiY(246) as f32)) / row_h;
         i32 hovered_order = (local + g_settings.scroll) as i32;
         if hovered_order < 0 {hovered_order = 0;}
         if hovered_order >= item_count {hovered_order = item_count - 1;}
-        g_settings.index = itemFromVisibleOrder(hovered_order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.selected_row = rowFromOrder(hovered_order, bg_stars_mode[0], shader_mode[0]);
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_THEME, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (mouse.x < uiX(336) as f32) {theme_index[0] = switchTheme(theme_index[0], -1);} else {
-            theme_index[0] = switchTheme(theme_index[0], 1);
+    if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        if rowIsSectionHeader(g_settings.selected_row) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+            toggleSection(g_settings.selected_row);
+            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        } else {
+            i32 act = SETTINGS_ACTION_NONE;
+            if g_settings.selected_row == SETTINGS_ROW_THEME && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_THEME, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+                if mouse.x < uiX(336) as f32 {act = settingsNudgeRow(SETTINGS_ROW_THEME, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);} else {act = settingsNudgeRow(SETTINGS_ROW_THEME, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
+            } else if (g_settings.selected_row == SETTINGS_ROW_SHADER || g_settings.selected_row == SETTINGS_ROW_BG_STARS_MODE || g_settings.selected_row == SETTINGS_ROW_MUSIC_STYLE) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+                if mouse.x < uiX(336) as f32 {act = settingsNudgeRow(g_settings.selected_row, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);} else {act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
+            } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+                openShaderPicker(custom_shader_name);
+            } else if (g_settings.selected_row == SETTINGS_ROW_DOUBLE_ROW || g_settings.selected_row == SETTINGS_ROW_INSTANT_RESTART || g_settings.selected_row == SETTINGS_ROW_HARD_DROP_RING) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+                act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+            } else if g_settings.selected_row == SETTINGS_ROW_BACK && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_BACK, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+                return SETTINGS_ACTION_BACK;
+            }
+            if act != SETTINGS_ACTION_NONE {return act;}
         }
     }
 
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_SHADER, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_SHADER, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        return settingsNudgeValue(SETTINGS_ITEM_SHADER, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+    if IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        if rowVisible(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {crt_curvature[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.2, 1.4);}
+        if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {crt_brightness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.6, 1.8);}
+        if rowVisible(SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {vhs_waves[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.4);}
+        if rowVisible(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {vhs_damage[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.5);}
+        if rowVisible(SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
+        if rowVisible(SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);}
+        if rowVisible(SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);}
+        if rowVisible(SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);}
+        if rowVisible(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {music_volume[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.0);}
+        if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {board_bounciness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 100.0) as i32;}
+        if rowVisible(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;}
+        if rowVisible(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);}
+        if rowVisible(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
+        if rowVisible(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_music_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
     }
 
-    if (shader_mode[0] == SHADER_MODE_CRT && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        crt_curvature[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.2, 1.4);
-    }
-    if (shader_mode[0] == SHADER_MODE_CRT && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        crt_brightness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.6, 1.8);
-    }
-    if (shader_mode[0] == SHADER_MODE_VHS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        vhs_waves[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.4);
-    }
-    if (shader_mode[0] == SHADER_MODE_VHS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        vhs_damage[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.5);
-    }
-
-    if (pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BG_STARS_MODE, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        return settingsNudgeValue(SETTINGS_ITEM_BG_STARS_MODE, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
-    }
-
-    if (bg_stars_mode[0] == STAR_MODE_MUSIC && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if mouse.x < uiX(336) as f32 {return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-        return settingsNudgeValue(SETTINGS_ITEM_STAR_PEAK_TARGET, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
-    }
-
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_ARR, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DAS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_DCD, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_SDF, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {music_volume[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.0);}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {board_bounciness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 100.0) as i32;}
-    if pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;}
-    if bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);}
-    if bg_stars_mode[0] == STAR_MODE_DROPS && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
-    if bg_stars_mode[0] == STAR_MODE_MUSIC && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ITEM_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {star_music_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
-
-    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_DOUBLE_ROW, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {double_row_ui[0] = !double_row_ui[0];}
-    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_INSTANT_RESTART, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {instant_restart[0] = !instant_restart[0];}
-    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_HARD_DROP_RING, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {hard_drop_ring[0] = !hard_drop_ring[0];}
-
-    if pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ITEM_BACK, bg_stars_mode[0], shader_mode[0]), 412, 62) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {return SETTINGS_ACTION_BACK;}
-
+    settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
     return SETTINGS_ACTION_NONE;
 }
