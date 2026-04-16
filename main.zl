@@ -391,6 +391,14 @@ RenderTexture g_post_fx_target = {0};
 bool g_post_fx_target_ready = false;
 i32 g_post_fx_target_w = 0;
 i32 g_post_fx_target_h = 0;
+RenderTexture g_layer_bg_target = {0};
+RenderTexture g_layer_blocks_target = {0};
+RenderTexture g_layer_ui_target = {0};
+bool g_layer_targets_ready = false;
+i32 g_layer_targets_w = 0;
+i32 g_layer_targets_h = 0;
+Texture g_layer_empty_texture = {0};
+bool g_layer_empty_texture_ready = false;
 Shader g_crt_shader = {0};
 bool g_crt_shader_ready = false;
 Shader g_light_crt_shader = {0};
@@ -400,7 +408,12 @@ bool g_vhs_shader_ready = false;
 Shader g_custom_shader = {0};
 bool g_custom_shader_ready = false;
 i32 g_custom_time_loc = -1;
+i32 g_custom_bg_tex_loc = -1;
+i32 g_custom_blocks_tex_loc = -1;
+i32 g_custom_ui_tex_loc = -1;
+i32 g_custom_layered_loc = -1;
 bool g_custom_shader_warned = false;
+bool g_custom_sampler_warned = false;
 i32 g_crt_curvature_loc = -1;
 i32 g_crt_brightness_loc = -1;
 i32 g_vhs_time_loc = -1;
@@ -730,6 +743,7 @@ fun loadPostEffects() >> void {
         g_custom_shader_ready = false;
     }
     g_custom_shader_warned = false;
+    g_custom_sampler_warned = false;
     if g_custom_shader_name[0] != 0 {
         ptr<u8> custom_path = TextFormat("assets/shaders/%s", &g_custom_shader_name[0]);
         printf("[zltris] custom shader requested: '%s'\n", &g_custom_shader_name[0]);
@@ -738,13 +752,25 @@ fun loadPostEffects() >> void {
         g_custom_shader_ready = IsShaderValid(g_custom_shader);
         if g_custom_shader_ready {
             g_custom_time_loc = GetShaderLocation(g_custom_shader, "uTime");
-            printf("[zltris] loaded custom shader: %s (uTime loc=%i)\n", custom_path, g_custom_time_loc);
+            g_custom_bg_tex_loc = GetShaderLocation(g_custom_shader, "uBackgroundTex");
+            g_custom_blocks_tex_loc = GetShaderLocation(g_custom_shader, "uBlocksTex");
+            g_custom_ui_tex_loc = GetShaderLocation(g_custom_shader, "uUiTex");
+            g_custom_layered_loc = GetShaderLocation(g_custom_shader, "uLayeredTargets");
+            printf("[zltris] loaded custom shader: %s (uTime=%i bg=%i blocks=%i ui=%i layered=%i)\n", custom_path, g_custom_time_loc, g_custom_bg_tex_loc, g_custom_blocks_tex_loc, g_custom_ui_tex_loc, g_custom_layered_loc);
         } else {
             g_custom_time_loc = -1;
+            g_custom_bg_tex_loc = -1;
+            g_custom_blocks_tex_loc = -1;
+            g_custom_ui_tex_loc = -1;
+            g_custom_layered_loc = -1;
             printf("[zltris] failed to load custom shader: %s\n", custom_path);
         }
     } else {
         g_custom_time_loc = -1;
+        g_custom_bg_tex_loc = -1;
+        g_custom_blocks_tex_loc = -1;
+        g_custom_ui_tex_loc = -1;
+        g_custom_layered_loc = -1;
         printf("[zltris] custom shader not set (empty name)\n");
     }
 }
@@ -771,12 +797,70 @@ fun ensurePostFxTarget(width: i32, height: i32) >> void {
     SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_BILINEAR);
 }
 
+fun ensureLayerTargets(width: i32, height: i32) >> void {
+    if width <= 0 || height <= 0 {return;}
+    if g_layer_targets_ready && g_layer_targets_w == width && g_layer_targets_h == height {return;}
+
+    if g_layer_targets_ready {
+        UnloadRenderTexture(g_layer_bg_target);
+        UnloadRenderTexture(g_layer_blocks_target);
+        UnloadRenderTexture(g_layer_ui_target);
+        g_layer_targets_ready = false;
+        g_layer_targets_w = 0;
+        g_layer_targets_h = 0;
+    }
+
+    g_layer_bg_target = LoadRenderTexture(width, height);
+    g_layer_blocks_target = LoadRenderTexture(width, height);
+    g_layer_ui_target = LoadRenderTexture(width, height);
+
+    if g_layer_bg_target.texture.id == (0 as u32) || g_layer_blocks_target.texture.id == (0 as u32) || g_layer_ui_target.texture.id == (0 as u32) {
+        printf("[zltris] failed to create layer targets %ix%i\n", width, height);
+        if g_layer_bg_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_bg_target);}
+        if g_layer_blocks_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_blocks_target);}
+        if g_layer_ui_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_ui_target);}
+        return;
+    }
+
+    g_layer_targets_ready = true;
+    g_layer_targets_w = width;
+    g_layer_targets_h = height;
+    SetTextureFilter(g_layer_bg_target.texture, TEXTURE_FILTER_POINT);
+    SetTextureFilter(g_layer_blocks_target.texture, TEXTURE_FILTER_POINT);
+    SetTextureFilter(g_layer_ui_target.texture, TEXTURE_FILTER_POINT);
+}
+
+fun ensureLayerFallbackTexture() >> void {
+    if g_layer_empty_texture_ready {return;}
+    Image img = @GenImageColor(1, 1, rgba(0, 0, 0, 0));
+    g_layer_empty_texture = LoadTextureFromImage(img);
+    UnloadImage(img);
+    if g_layer_empty_texture.id == (0 as u32) {
+        printf("[zltris] failed to create layer fallback texture\n");
+        return;
+    }
+    g_layer_empty_texture_ready = true;
+    SetTextureFilter(g_layer_empty_texture, TEXTURE_FILTER_POINT);
+}
+
 fun unloadPostEffects() >> void {
     if g_post_fx_target_ready {
         UnloadRenderTexture(g_post_fx_target);
         g_post_fx_target_ready = false;
         g_post_fx_target_w = 0;
         g_post_fx_target_h = 0;
+    }
+    if g_layer_targets_ready {
+        UnloadRenderTexture(g_layer_bg_target);
+        UnloadRenderTexture(g_layer_blocks_target);
+        UnloadRenderTexture(g_layer_ui_target);
+        g_layer_targets_ready = false;
+        g_layer_targets_w = 0;
+        g_layer_targets_h = 0;
+    }
+    if g_layer_empty_texture_ready {
+        UnloadTexture(g_layer_empty_texture);
+        g_layer_empty_texture_ready = false;
     }
     if g_crt_shader_ready {
         UnloadShader(g_crt_shader);
@@ -795,12 +879,38 @@ fun unloadPostEffects() >> void {
         g_custom_shader_ready = false;
     }
     g_custom_time_loc = -1;
+    g_custom_bg_tex_loc = -1;
+    g_custom_blocks_tex_loc = -1;
+    g_custom_ui_tex_loc = -1;
+    g_custom_layered_loc = -1;
     g_custom_shader_warned = false;
+    g_custom_sampler_warned = false;
     g_crt_curvature_loc = -1;
     g_crt_brightness_loc = -1;
     g_vhs_time_loc = -1;
     g_vhs_waves_loc = -1;
     g_vhs_damage_loc = -1;
+}
+
+fun setShaderCommonUniforms(shader: Shader) >> void {
+    i32 time_loc = GetShaderLocation(shader, "uTime");
+    if time_loc >= 0 {
+        f32 t = GetTime() as f32;
+        SetShaderValue(shader, time_loc, (&t) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+
+    i32 res_loc = GetShaderLocation(shader, "uResolution");
+    if res_loc >= 0 {
+        arr<f32, 2> res = {0.0};
+        if g_post_fx_target_ready {
+            res[0] = g_post_fx_target_w as f32;
+            res[1] = g_post_fx_target_h as f32;
+        } else {
+            res[0] = GetScreenWidth() as f32;
+            res[1] = GetScreenHeight() as f32;
+        }
+        SetShaderValue(shader, res_loc, (&res[0]) as ptr<void>, SHADER_UNIFORM_VEC2 as i32);
+    }
 }
 
 fun defaultArenaChampionSetup() >> BotSetupState {
@@ -5146,6 +5256,7 @@ fun drawApp(font: Font) >> void {
     bool use_vhs = g_post_shader_mode == SHADER_MODE_VHS && g_vhs_shader_ready;
     bool use_custom = g_post_shader_mode == SHADER_MODE_CUSTOM && g_custom_shader_ready;
     bool use_shader = use_light_crt || use_crt || use_vhs || use_custom;
+    bool use_layered_targets = use_custom && g_game.screen == SCREEN_GAME && !isBotDuelsMode();
 
     if g_post_shader_mode == SHADER_MODE_CUSTOM && !g_custom_shader_ready && !g_custom_shader_warned {
         printf("[zltris] custom mode active but shader is not ready (name='%s')\n", &g_custom_shader_name[0]);
@@ -5168,10 +5279,36 @@ fun drawApp(font: Font) >> void {
         return;
     }
 
+    if use_custom {
+        SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_POINT);
+    } else {
+        SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_BILINEAR);
+    }
+
     BeginTextureMode(g_post_fx_target);
     clearWithColor(theme.bg_outer);
     drawAppContent(font, theme);
     EndTextureMode();
+
+    if use_layered_targets {
+        ensureLayerTargets(GetScreenWidth(), GetScreenHeight());
+        if g_layer_targets_ready {
+            BeginTextureMode(g_layer_bg_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameBackgroundTargetLayer(theme);
+            EndTextureMode();
+
+            BeginTextureMode(g_layer_blocks_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameBlocksTargetLayer(theme);
+            EndTextureMode();
+
+            BeginTextureMode(g_layer_ui_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameUiTargetLayer(font, theme);
+            EndTextureMode();
+        }
+    }
 
     clearWithColor(theme.bg_outer);
     if use_crt && g_crt_curvature_loc >= 0 {
@@ -5194,17 +5331,39 @@ fun drawApp(font: Font) >> void {
         f32 damage = g_vhs_damage;
         SetShaderValue(g_vhs_shader, g_vhs_damage_loc, (&damage) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
     }
-    if use_custom && g_custom_time_loc >= 0 {
-        f32 custom_time = GetTime() as f32;
-        SetShaderValue(g_custom_shader, g_custom_time_loc, (&custom_time) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
-    }
     if use_light_crt {
+        setShaderCommonUniforms(g_light_crt_shader);
         BeginShaderMode(g_light_crt_shader);
     } else if use_vhs {
+        setShaderCommonUniforms(g_vhs_shader);
         BeginShaderMode(g_vhs_shader);
     } else if use_custom {
         BeginShaderMode(g_custom_shader);
+        setShaderCommonUniforms(g_custom_shader);
+        i32 layered_flag = 0;
+        if use_layered_targets && g_layer_targets_ready {layered_flag = 1;}
+        if g_custom_layered_loc >= 0 {
+            SetShaderValue(g_custom_shader, g_custom_layered_loc, (&layered_flag) as ptr<void>, SHADER_UNIFORM_INT as i32);
+        }
+
+        if layered_flag != 0 {
+            if g_custom_bg_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_bg_tex_loc, g_layer_bg_target.texture);}
+            if g_custom_blocks_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_blocks_tex_loc, g_layer_blocks_target.texture);}
+            if g_custom_ui_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_ui_tex_loc, g_layer_ui_target.texture);}
+        } else {
+            ensureLayerFallbackTexture();
+            Texture empty_tex = g_post_fx_target.texture;
+            if g_layer_empty_texture_ready {empty_tex = g_layer_empty_texture;}
+            if g_custom_bg_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_bg_tex_loc, g_post_fx_target.texture);}
+            if g_custom_blocks_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_blocks_tex_loc, empty_tex);}
+            if g_custom_ui_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_ui_tex_loc, g_post_fx_target.texture);}
+        }
+        if g_game.screen == SCREEN_GAME && !g_custom_sampler_warned && g_custom_blocks_tex_loc < 0 {
+            printf("[zltris] custom shader has no uBlocksTex (name='%s')\n", &g_custom_shader_name[0]);
+            g_custom_sampler_warned = true;
+        }
     } else {
+        setShaderCommonUniforms(g_crt_shader);
         BeginShaderMode(g_crt_shader);
     }
     @DrawTexture(g_post_fx_target.texture, 0, 0, rgba(255, 255, 255, 255));
@@ -5332,19 +5491,38 @@ fun updateApp() >> void {
 
 fun drawGameFrame(font: Font) >> void {
     Theme theme = currentTheme();
+    drawGameBackgroundLayer(theme);
+    drawGameBlocksLayer(font, theme);
+    drawGameUiLayer(font, theme);
+}
+
+fun shouldDrawGameWidthPopup() >> bool {
+    return (isVsBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi();
+}
+
+fun drawGameBackgroundLayer(theme: Theme) >> void {
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBackgroundStars(theme);
+}
+
+fun drawGameBlocksLayer(font: Font, theme: Theme) >> void {
+    if shouldDrawGameWidthPopup() {return;}
+    drawBoard(theme);
+    if isVsBotMode() {drawBotBoard(theme, font);}
+}
+
+fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
     f32 hint_alpha = 1.0;
     if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
-    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
-    drawBackgroundStars(theme);
-    if (isVsBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi() {
+
+    if shouldDrawGameWidthPopup() {
         drawBotWidthPopup(font, theme, false);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
-    drawBoard(theme);
+
     drawSidebar(font, theme, split_layout);
-    if isVsBotMode() {drawBotBoard(theme, font);}
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
     if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
@@ -5357,6 +5535,336 @@ fun drawGameFrame(font: Font) >> void {
     i64 board_top = currentBoardTop();
     drawAllClearFxLabel(font, theme, board_left, board_top);
     
+    if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
+        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(board_left + 24, board_top + 224, 272, 140, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", board_left + 50, board_top + 256, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", board_left + 40, board_top + 304, 14, theme.text_muted);
+    }
+
+    drawFortyLinesOverlay(font, theme);
+
+    if isVsBotMode() && !g_duel_running {
+        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(board_left + 24, board_top + 224, 272, 140, theme.panel_stroke);
+        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", board_left + 74, board_top + 256, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", board_left + 70, board_top + 256, 24, theme.text_main);}
+        drawTextColor(font, "R retry  ESC menu", board_left + 48, board_top + 304, 14, theme.text_muted);
+    }
+
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
+}
+
+fun drawPlayerBoardBackgroundTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    drawHighStackSpawnZone(theme, board_left, board_top);
+    fillRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.board_bg);
+}
+
+fun drawPlayerBoardUiTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    strokeRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.panel_stroke);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+}
+
+fun drawPlayerBoardBlocksTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 cell = boardGet(x, y);
+            if cell == 0 {continue;}
+
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !g_play.game_over {
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, currentGhostY(), ghostColor(pieceColor(theme, g_piece_kind)));
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
+    }
+
+    drawRestartBoardEffects(board_left, board_top);
+    drawHardDropImpactRings(board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawAllClearFx(theme, board_left, board_top);
+    drawQuadClearFx(theme, board_left, board_top);
+    drawLockEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawLineClearEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+}
+
+fun drawBotBoardBackgroundTargetLayer(theme: Theme) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+
+    drawHighStackSpawnZone(theme, board_x, board_y);
+    fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
+}
+
+fun drawBotBoardUiTargetLayer(theme: Theme, font: Font) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+
+    strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+    drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+
+    f32 bot_apm = 0.0;
+    if g_rt.run_timer > 0.001 {bot_apm = ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;}
+    drawTextColor(font, TextFormat("APM %.1f / %.1f", bot_apm, g_bot_setup.target_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
+    drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+}
+
+fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = SIDEBAR_X;
+        if isVsBotMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        fillRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
+        fillRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
+
+        fillRect(right_panel_x, 120, 178, 510, theme.panel_bg);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            fillRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
+        }
+
+        if isVsBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+            fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                fillRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
+            }
+        }
+        return;
+    }
+
+    fillRect(SIDEBAR_X, 82, 178, 756, theme.panel_bg);
+    fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        fillRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
+    }
+}
+
+fun drawBotBoardBlocksTargetLayer(theme: Theme) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 cell = botBoardGet(x, y);
+            if cell == 0 {continue;}
+
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !g_bot.game_over {
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, botGhostY() as i64, board_x, board_y, ghostColor(pieceColor(theme, g_bot.piece_kind)));
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
+    }
+
+    drawHardDropImpactRings(board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLockEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLineClearEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+}
+
+fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = SIDEBAR_X;
+        if isVsBotMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, left_panel_x + 36, 256, 112, 112, 16);}
+
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            drawMiniPieceCentered(theme, g_queue[i], right_panel_x + 35, panel_y, 108, 72, 13);
+        }
+
+        if isVsBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                drawMiniPieceCentered(theme, g_bot_queue[i], bot_panel_x + 35, panel_y, 108, 72, 13);
+            }
+        }
+        return;
+    }
+
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        drawMiniPieceCentered(theme, g_queue[i], SIDEBAR_X + 20, panel_y, 88, 70, 12);
+    }
+}
+
+fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> void {
+    if (split_layout) {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = SIDEBAR_X;
+        if isVsBotMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        strokeRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", left_panel_x + 20, 230, 14, theme.text_main);
+        strokeRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
+        drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
+        drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
+        if isFreePlayMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 560, 11, theme.panel_stroke);}
+        if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
+        if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+        if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+
+        strokeRect(right_panel_x, 120, 178, 510, theme.panel_stroke);
+        drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            strokeRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
+        }
+
+        if isVsBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+
+            strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
+            drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                strokeRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
+            }
+        }
+        return;
+    }
+
+    strokeRect(SIDEBAR_X, 82, 178, 756, theme.panel_stroke);
+
+    drawTextColor(font, "ZLTRIS", SIDEBAR_X + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", SIDEBAR_X + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", SIDEBAR_X + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
+    strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 308, 10, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), SIDEBAR_X + 20, 320, 10, theme.panel_stroke);}
+
+    drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        strokeRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.panel_stroke, 0.55));
+    }
+
+    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
+}
+
+fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
+    drawGameBackgroundLayer(theme);
+    if shouldDrawGameWidthPopup() {return;}
+    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    drawPlayerBoardBackgroundTargetLayer(theme);
+    if isVsBotMode() {drawBotBoardBackgroundTargetLayer(theme);}
+    drawSidebarBackgroundTargetLayer(theme, split_layout);
+}
+
+fun drawGameBlocksTargetLayer(theme: Theme) >> void {
+    if shouldDrawGameWidthPopup() {return;}
+    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    drawPlayerBoardBlocksTargetLayer(theme);
+    if isVsBotMode() {drawBotBoardBlocksTargetLayer(theme);}
+    drawSidebarPiecesTargetLayer(theme, split_layout);
+}
+
+fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
+    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    f32 hint_alpha = 1.0;
+    if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
+
+    if shouldDrawGameWidthPopup() {
+        drawBotWidthPopup(font, theme, false);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    drawPlayerBoardUiTargetLayer(theme);
+    if isVsBotMode() {drawBotBoardUiTargetLayer(theme, font);}
+    drawSidebarUiTargetLayer(font, theme, split_layout);
+    if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
+
+    if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
+        drawTextColor(font, "LEFT/RIGHT move", 48, 24, 12, theme.text_muted);
+        drawTextColor(font, "TAB settings  F3 color debug", 48, 42, 12, theme.text_muted);
+        drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
+        drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
+    }
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    drawAllClearFxLabel(font, theme, board_left, board_top);
+
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
         fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
         strokeRect(board_left + 24, board_top + 224, 272, 140, pieceColor(theme, PIECE_Z));
