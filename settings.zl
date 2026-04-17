@@ -10,12 +10,11 @@ use zltris.theme
 #define SETTINGS_ROW_DCD 3
 #define SETTINGS_ROW_SDF 4
 #define SETTINGS_ROW_INSTANT_RESTART 5
-#define SETTINGS_ROW_BOARD_BOUNCINESS 6
-
-#define SETTINGS_ROW_SECTION_VIDEO 7
-#define SETTINGS_ROW_THEME 8
-#define SETTINGS_ROW_SHADER 9
-#define SETTINGS_ROW_CHOOSE_SHADER 10
+#define SETTINGS_ROW_SECTION_VIDEO 6
+#define SETTINGS_ROW_THEME 7
+#define SETTINGS_ROW_SHADER 8
+#define SETTINGS_ROW_CHOOSE_SHADER 9
+#define SETTINGS_ROW_BOARD_BOUNCINESS 10
 #define SETTINGS_ROW_CRT_CURVATURE 11
 #define SETTINGS_ROW_CRT_BRIGHTNESS 12
 #define SETTINGS_ROW_VHS_WAVES 13
@@ -68,6 +67,9 @@ struct SettingsState {
     picker_selected i32,
     picker_count i32,
     picker_names arr<u8, 6144>,
+    mouse_last_x f32,
+    mouse_last_y f32,
+    keyboard_nav_lock bool,
 }
 
 fun init(self: SettingsState) >> SettingsState {
@@ -84,6 +86,9 @@ fun init(self: SettingsState) >> SettingsState {
     next.picker_scroll = 0.0 as f32;
     next.picker_selected = 0;
     next.picker_count = 0;
+    next.mouse_last_x = 0.0 as f32;
+    next.mouse_last_y = 0.0 as f32;
+    next.keyboard_nav_lock = false;
     return next;
 }
 
@@ -684,7 +689,7 @@ fun closeShaderPicker() >> void {
 }
 
 fun sectionAnimForRow(row: i32) >> f32 {
-    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_BOARD_BOUNCINESS {return g_settings.controls_anim;}
+    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_INSTANT_RESTART {return g_settings.controls_anim;}
     if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_HARD_DROP_RING {return g_settings.video_anim;}
     if row == SETTINGS_ROW_MUSIC_VOLUME {return g_settings.audio_anim;}
     return 1.0 as f32;
@@ -698,7 +703,7 @@ fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
     if row == SETTINGS_ROW_BACK {return true;}
     if row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO {return true;}
 
-    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_BOARD_BOUNCINESS {return g_settings.controls_expanded;}
+    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_INSTANT_RESTART {return g_settings.controls_expanded;}
 
     if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_HARD_DROP_RING {
         if !g_settings.video_expanded {return false;}
@@ -958,7 +963,7 @@ fun drawBackRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_m
 
 fun settingsEnsureSelectedVisible(bg_stars_mode: i32, shader_mode: i32) >> void {
     if rowVisible(g_settings.selected_row, bg_stars_mode, shader_mode) {return;}
-    if g_settings.selected_row >= SETTINGS_ROW_ARR && g_settings.selected_row <= SETTINGS_ROW_BOARD_BOUNCINESS {
+    if g_settings.selected_row >= SETTINGS_ROW_ARR && g_settings.selected_row <= SETTINGS_ROW_INSTANT_RESTART {
         g_settings.selected_row = SETTINGS_ROW_SECTION_CONTROLS;
         return;
     }
@@ -998,20 +1003,23 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
         if g_settings.picker_scroll > max_scroll as f32 {g_settings.picker_scroll = max_scroll as f32;}
 
         i64 row_h = 68;
+        i64 row_inner_h = 56;
+        i64 row_inner_off = (row_h - row_inner_h) / 2;
         i64 start_y = 298;
         for i32 i = 0; i < g_settings.picker_count; i++ {
             i64 y = start_y + ((i as f32 - g_settings.picker_scroll) * (row_h as f32)) as i64;
             if y < 290 || y > 770 {continue;}
+            i64 iy = y + row_inner_off;
 
             bool sel = i == g_settings.picker_selected;
             u32 stroke = alphaColor(theme.text_muted, 0.38 as f32);
             if sel {
                 stroke = theme.panel_stroke;
-                drawSelectionGlow(theme, y + 3, 1.0 as f32);
+                drawSelectionGlow(theme, iy - 3, 1.0 as f32);
             }
-            fillRect(130, y, 388, 56, alphaColor(theme.board_bg, 0.74 as f32));
-            strokeRect(130, y, 388, 56, stroke);
-            drawTextColor(font, pickerNamePtr(i), 148, y + 18, 14, theme.text_main);
+            fillRect(130, iy, 388, row_inner_h, alphaColor(theme.board_bg, 0.74 as f32));
+            strokeRect(130, iy, 388, row_inner_h, stroke);
+            drawTextColor(font, pickerNamePtr(i), 148, iy + 20, 14, theme.text_main);
         }
 
         i64 by = 806;
@@ -1040,7 +1048,6 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     if rowVisible(SETTINGS_ROW_DCD, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DCD, bg_stars_mode, shader_mode, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);}
     if rowVisible(SETTINGS_ROW_SDF, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_SDF, bg_stars_mode, shader_mode, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);}
     if rowVisible(SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode, "Instant restart", instant_restart);}
-    if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);}
 
     drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, bg_stars_mode, shader_mode);
     if rowVisible(SETTINGS_ROW_THEME, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, bg_stars_mode, shader_mode, "Theme", themeName(theme_index));}
@@ -1048,6 +1055,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     if rowVisible(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode) {
         drawButtonRow(font, theme, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode, "CHOOSE CUSTOM SHADER");
     }
+    if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);}
     if rowVisible(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode, "CRT curvature", TextFormat("%i%%", (crt_curvature * 100.0 as f32) as i32), crt_curvature, 0.2, 1.4);}
     if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode, "CRT brightness", TextFormat("%i%%", (crt_brightness * 100.0 as f32) as i32), crt_brightness, 0.6, 1.8);}
     if rowVisible(SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode, "VHS waves", TextFormat("%i%%", (vhs_waves * 100.0 as f32) as i32), vhs_waves, 0.0, 1.4);}
@@ -1133,6 +1141,12 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
 
     updateSectionAnimations(GetFrameTime());
 
+    Vector2 mouse = GetMousePosition();
+    bool mouse_moved = absf(mouse.x - g_settings.mouse_last_x) > (0.5 as f32) || absf(mouse.y - g_settings.mouse_last_y) > (0.5 as f32);
+    if mouse_moved {g_settings.keyboard_nav_lock = false;}
+    g_settings.mouse_last_x = mouse.x;
+    g_settings.mouse_last_y = mouse.y;
+
     if g_settings.picker_open {
         if IsKeyPressed(KEY_ESCAPE) {closeShaderPicker(); return SETTINGS_ACTION_NONE;}
 
@@ -1140,10 +1154,12 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         if IsKeyPressed(KEY_UP) {
             g_settings.picker_selected -= 1;
             if g_settings.picker_selected < 0 {g_settings.picker_selected = max_sel;}
+            g_settings.keyboard_nav_lock = true;
         }
         if IsKeyPressed(KEY_DOWN) {
             g_settings.picker_selected += 1;
             if g_settings.picker_selected > max_sel {g_settings.picker_selected = 0;}
+            g_settings.keyboard_nav_lock = true;
         }
 
         i32 visible = 7;
@@ -1157,15 +1173,15 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         if g_settings.picker_scroll < 0.0 as f32 {g_settings.picker_scroll = 0.0 as f32;}
         if g_settings.picker_scroll > max_scroll as f32 {g_settings.picker_scroll = max_scroll as f32;}
 
-        Vector2 mouse = GetMousePosition();
-        if pointInBaseRect(mouse.x, mouse.y, 130, 298, 388, 56 * 7) {
+        if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 298, 388, 68 * visible) {
             i32 idx = (((mouse.y - uiY(298) as f32) / (uiS(68) as f32)) + g_settings.picker_scroll) as i32;
             if idx >= 0 && idx < g_settings.picker_count {g_settings.picker_selected = idx;}
         }
-        if pointInBaseRect(mouse.x, mouse.y, 130, 806, 388, 56) {g_settings.picker_selected = g_settings.picker_count;}
+        if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 806, 388, 56) {g_settings.picker_selected = g_settings.picker_count;}
 
         bool choose = IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
         if choose {
+            g_settings.keyboard_nav_lock = false;
             if g_settings.picker_selected == g_settings.picker_count {
                 closeShaderPicker();
                 return SETTINGS_ACTION_NONE;
@@ -1197,6 +1213,7 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         order -= 1;
         if order < 0 {order = item_count - 1;}
         g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.keyboard_nav_lock = true;
     }
     if IsKeyPressed(KEY_DOWN) {
         i32 order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
@@ -1204,6 +1221,7 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         order += 1;
         if order >= item_count {order = 0;}
         g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.keyboard_nav_lock = true;
     }
 
     i32 sel_order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
@@ -1214,16 +1232,19 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
 
     if IsKeyPressed(KEY_LEFT) {
+        g_settings.keyboard_nav_lock = true;
         i32 act = settingsNudgeRow(g_settings.selected_row, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
         settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
         if act != SETTINGS_ACTION_NONE {return act;}
     }
     if IsKeyPressed(KEY_RIGHT) {
+        g_settings.keyboard_nav_lock = true;
         i32 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
         settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
         if act != SETTINGS_ACTION_NONE {return act;}
     }
     if IsKeyPressed(KEY_ENTER) {
+        g_settings.keyboard_nav_lock = true;
         if rowIsSectionHeader(g_settings.selected_row) {
             toggleSection(g_settings.selected_row);
             settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
@@ -1236,11 +1257,10 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         }
     }
 
-    Vector2 mouse = GetMousePosition();
     i32 visible_rows = item_count;
     if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
-    if pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base) {
+    if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base) {
         f32 row_h = uiS(78) as f32;
         f32 local = (mouse.y - (uiY(246) as f32)) / row_h;
         i32 hovered_order = (local + g_settings.scroll) as i32;
@@ -1250,6 +1270,7 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     }
 
     if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        g_settings.keyboard_nav_lock = false;
         if rowIsSectionHeader(g_settings.selected_row) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
             toggleSection(g_settings.selected_row);
             settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
