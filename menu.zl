@@ -22,6 +22,9 @@ struct MenuState {
     index i32,
     notice i32,
     notice_timer f32,
+    mouse_last_x f32,
+    mouse_last_y f32,
+    keyboard_nav_lock bool,
 }
 
 fun init(self: MenuState) >> MenuState {
@@ -29,7 +32,15 @@ fun init(self: MenuState) >> MenuState {
     next.index = 0;
     next.notice = -1;
     next.notice_timer = 0.0;
+    next.mouse_last_x = 0.0;
+    next.mouse_last_y = 0.0;
+    next.keyboard_nav_lock = false;
     return next;
+}
+
+fun absf(v: f32) >> f32 {
+    if v < 0.0 {return -v;}
+    return v;
 }
 
 fun tick_notice(self: MenuState, dt: f32) >> MenuState {
@@ -268,15 +279,28 @@ fun menuUpdate() >> i32 {
     f32 dt = GetFrameTime();
     g_menu = g_menu.tick_notice(dt);
 
-    if IsKeyPressed(KEY_UP) {g_menu = g_menu.move_index(-1);}
-    if IsKeyPressed(KEY_DOWN) {g_menu = g_menu.move_index(1);}
-
     Vector2 mouse = GetMousePosition();
+    bool mouse_moved = absf(mouse.x - g_menu.mouse_last_x) > 0.5 || absf(mouse.y - g_menu.mouse_last_y) > 0.5;
+    if mouse_moved {g_menu.keyboard_nav_lock = false;}
+    g_menu.mouse_last_x = mouse.x;
+    g_menu.mouse_last_y = mouse.y;
+
+    if IsKeyPressed(KEY_UP) {
+        g_menu = g_menu.move_index(-1);
+        g_menu.keyboard_nav_lock = true;
+    }
+    if IsKeyPressed(KEY_DOWN) {
+        g_menu = g_menu.move_index(1);
+        g_menu.keyboard_nav_lock = true;
+    }
+
     i32 count = menuButtonCount();
     for i32 i = 0; i < count; i++ {
         if (pointInBaseRect(mouse.x, mouse.y, 148, menuButtonY(i), 352, 72)) {
-            g_menu.index = i;
+            if !g_menu.keyboard_nav_lock {g_menu.index = i;}
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                g_menu.keyboard_nav_lock = false;
+                g_menu.index = i;
                 if i == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
                 if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
                 if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
@@ -289,6 +313,7 @@ fun menuUpdate() >> i32 {
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+        g_menu.keyboard_nav_lock = true;
         if g_menu.index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
         if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
         if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}

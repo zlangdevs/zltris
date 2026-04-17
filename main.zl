@@ -6218,6 +6218,24 @@ fun updateGameScreen() >> void {
     }
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
+        g_rt.restart_charge = 0.0;
+        g_rt.restart_hold_latched = false;
+        g_rt.hold_action = HOLD_ACTION_NONE;
+        g_rt.restart_afterglow = 0.0;
+        g_restart_hold_blocked = true;
+        restartCurrentModeWithShake();
+        return;
+    }
+
+    bool can_restart_now = g_play.game_over;
+    if isVsBotMode() && !g_duel_running {can_restart_now = true;}
+    if modeUsesRoundState() && g_play.round_state == ROUND_FINISHED {can_restart_now = true;}
+    if can_restart_now && IsKeyPressed(KEY_R) {
+        g_rt.restart_charge = 0.0;
+        g_rt.restart_hold_latched = false;
+        g_rt.hold_action = HOLD_ACTION_NONE;
+        g_rt.restart_afterglow = 0.0;
+        g_restart_hold_blocked = true;
         restartCurrentModeWithShake();
         return;
     }
