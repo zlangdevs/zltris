@@ -98,21 +98,24 @@ fun sndAbsf(v: f32) >> f32 {
     return v;
 }
 
+fun styleIsWave() >> bool { return g_star_music_style == STAR_MUSIC_STYLE_WAVE; }
+fun styleIsAggro() >> bool { return g_star_music_style == STAR_MUSIC_STYLE_AGGRO; }
+
 fun styleStrengthCurve(s: f32) >> f32 {
     f32 v = sndClamp01(s);
-    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {return sqrt(v as f64) as f32;}
-    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {return v * v * v;}
+    if styleIsWave() {return sqrt(v as f64) as f32;}
+    if styleIsAggro() {return v * v * v;}
     return v * v;
 }
 
 fun styleProximityWidth(interval: f32) >> f32 {
-    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {
+    if styleIsWave() {
         f32 width = interval * (0.70 as f32);
         if width < 0.09 as f32 {width = 0.09 as f32;}
         if width > 0.60 as f32 {width = 0.60 as f32;}
         return width;
     }
-    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {
+    if styleIsAggro() {
         f32 width = interval * (0.30 as f32);
         if width < 0.05 as f32 {width = 0.05 as f32;}
         if width > 0.30 as f32 {width = 0.30 as f32;}
@@ -126,8 +129,8 @@ fun styleProximityWidth(interval: f32) >> f32 {
 }
 
 fun styleLerpSpeed() >> f32 {
-    if g_star_music_style == STAR_MUSIC_STYLE_WAVE {return 0.015 as f32;}
-    if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {return 0.06 as f32;}
+    if styleIsWave() {return 0.015 as f32;}
+    if styleIsAggro() {return 0.06 as f32;}
     return 0.03 as f32;
 }
 

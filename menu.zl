@@ -1,5 +1,7 @@
 module zltris.menu;
 use raylib
+use zltris.scale
+use zltris.ui
 
 #define BOTDEVMODE false
 
@@ -36,11 +38,6 @@ fun init(self: MenuState) >> MenuState {
     next.mouse_last_y = 0.0;
     next.keyboard_nav_lock = false;
     return next;
-}
-
-fun absf(v: f32) >> f32 {
-    if v < 0.0 {return -v;}
-    return v;
 }
 
 fun tick_notice(self: MenuState, dt: f32) >> MenuState {
@@ -95,31 +92,6 @@ fun menuSettingsIndex() >> i32 {
     return MENU_BTN_BOT_DUELS;
 }
 
-fun toColor(color_rgba: u32) >> Color {
-    return Color{
-        r = (color_rgba & 255) as u8,
-        g = ((color_rgba >> 8) & 255) as u8,
-        b = ((color_rgba >> 16) & 255) as u8,
-        a = ((color_rgba >> 24) & 255) as u8,
-    };
-}
-
-fun alphaColor(base: u32, alpha: f32) >> u32 {
-    i32 a = ((base >> 24) & 255) as i32;
-    i32 scaled = ((a as f32) * alpha) as i32;
-    if scaled < 0 {scaled = 0;}
-    if scaled > 255 {scaled = 255;}
-    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
-}
-
-fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
-    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
-}
-
-fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
-    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
-}
-
 fun drawLineBase(x1: i64, y1: i64, x2: i64, y2: i64, color_rgba: u32) >> void {
     DrawLine(uiX(x1), uiY(y1), uiX(x2), uiY(y2), toColor(color_rgba));
 }
@@ -134,22 +106,6 @@ fun drawFloorTintFullWidth(base_y: i64, color_rgba: u32) >> void {
     i32 h = GetScreenHeight() - sy;
     if h < 0 {h = 0;}
     DrawRectangle(0, sy, GetScreenWidth(), h, toColor(color_rgba));
-}
-
-fun visibleBaseLeft() >> i64 {
-    f32 scale = uiScale();
-    i32 ox = uiOffsetX(scale);
-    return (((0 - ox) as f32) / scale) as i64;
-}
-
-fun visibleBaseRight() >> i64 {
-    f32 scale = uiScale();
-    i32 ox = uiOffsetX(scale);
-    return (((GetScreenWidth() - ox) as f32) / scale) as i64;
-}
-
-fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
-    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
 }
 
 fun menuLabel(index: i32) >> ptr<u8> {
@@ -171,16 +127,21 @@ fun menuButtonY(index: i32) >> i64 {
     return 312 + (index as i64) * 90;
 }
 
-fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
-    i32 rx = uiX(x);
-    i32 ry = uiY(y);
-    i32 rw = uiS(w);
-    i32 rh = uiS(h);
-    if px < rx as f32 {return false;}
-    if py < ry as f32 {return false;}
-    if px > (rx + rw) as f32 {return false;}
-    if py > (ry + rh) as f32 {return false;}
-    return true;
+fun menuActionForIndex(index: i32) >> i32 {
+    if index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
+    if index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
+    if index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
+    if index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
+    if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
+    if index == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
+    return MENU_ACTION_NONE;
+}
+
+fun selectMenuIndex(index: i32) >> i32 {
+    i32 action = menuActionForIndex(index);
+    if action != MENU_ACTION_NONE {return action;}
+    g_menu = g_menu.show_notice(index);
+    return MENU_ACTION_NONE;
 }
 
 fun drawRetroGrid(theme: Theme) >> void {
@@ -301,26 +262,14 @@ fun menuUpdate() >> i32 {
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 g_menu.keyboard_nav_lock = false;
                 g_menu.index = i;
-                if i == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
-                if i == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
-                if i == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
-                if i == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
-                if BOTDEVMODE && i == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
-                if i == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
-                g_menu = g_menu.show_notice(i);
+                return selectMenuIndex(i);
             }
         }
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
         g_menu.keyboard_nav_lock = true;
-        if g_menu.index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
-        if g_menu.index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
-        if g_menu.index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
-        if g_menu.index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
-        if BOTDEVMODE && g_menu.index == MENU_BTN_BOT_DUELS {return MENU_ACTION_START_BOT_DUELS;}
-        if g_menu.index == menuSettingsIndex() {return MENU_ACTION_OPEN_SETTINGS;}
-        g_menu = g_menu.show_notice(g_menu.index);
+        return selectMenuIndex(g_menu.index);
     }
 
     return MENU_ACTION_NONE;

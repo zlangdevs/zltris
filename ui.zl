@@ -1,0 +1,74 @@
+module zltris.ui;
+use raylib
+use zltris.scale
+
+fun toColor(color_rgba: u32) >> Color {
+    return Color{
+        r = (color_rgba & 255) as u8,
+        g = ((color_rgba >> 8) & 255) as u8,
+        b = ((color_rgba >> 16) & 255) as u8,
+        a = ((color_rgba >> 24) & 255) as u8,
+    };
+}
+
+fun alphaColor(base: u32, alpha: f32) >> u32 {
+    i32 a = ((base >> 24) & 255) as i32;
+    i32 scaled = ((a as f32) * alpha) as i32;
+    if scaled < 0 {scaled = 0;}
+    if scaled > 255 {scaled = 255;}
+    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
+}
+
+fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
+    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
+}
+
+fun absf(v: f32) >> f32 {
+    if v < 0.0 {return -v;}
+    return v;
+}
+
+fun clamp01(v: f32) >> f32 {
+    if v < 0.0 {return 0.0;}
+    if v > 1.0 {return 1.0;}
+    return v;
+}
+
+fun fractf(v: f32) >> f32 {
+    i32 whole = v as i32;
+    f32 f = v - (whole as f32);
+    if f < 0.0 {f += 1.0;}
+    return f;
+}
+
+fun visibleBaseLeft() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((0 - ox) as f32) / scale) as i64;
+}
+
+fun visibleBaseRight() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((GetScreenWidth() - ox) as f32) / scale) as i64;
+}
+
+fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
+    i32 rx = uiX(x);
+    i32 ry = uiY(y);
+    i32 rw = uiS(w);
+    i32 rh = uiS(h);
+    if px < rx as f32 {return false;}
+    if py < ry as f32 {return false;}
+    if px > (rx + rw) as f32 {return false;}
+    if py > (ry + rh) as f32 {return false;}
+    return true;
+}
