@@ -1,0 +1,468 @@
+module zltris;
+use raylib
+
+#define SCREEN_GAME 1
+#define SCREEN_SETTINGS 2
+
+#define BOARD_CELLS 220
+#define BOARD_W 10
+#define BOARD_H 22
+
+#define BLITZ_DURATION_SECONDS 120.0
+
+#define ROUND_RUNNING 0
+#define ROUND_COUNTDOWN 1
+#define ROUND_FINISHED 2
+
+#define HOLD_ACTION_NONE 0
+#define HOLD_ACTION_RESTART 1
+#define HOLD_ACTION_MENU 2
+
+#define HOLD_RESTART_SECONDS 1.04
+#define HOLD_MENU_SECONDS 2.08
+
+#define DUEL_RESULT_PLAYING 0
+#define DUEL_RESULT_PLAYER_WIN 1
+#define DUEL_RESULT_PLAYER_LOSE 2
+
+#define BOT_ACTION_LEFT 1
+#define BOT_ACTION_RIGHT 2
+#define BOT_ACTION_CW 3
+#define BOT_ACTION_CCW 4
+#define BOT_ACTION_DROP 5
+#define BOT_ACTION_DOWN 6
+
+#define BOT_APM_MIN 10.0
+#define BOT_APM_MAX 200.0
+#define BOT_SIMPLE_PLAN true
+
+#define LINE_FX_BOARD_BOT 1
+
+fun updateHorizontalInput(dt: f32) >> void {
+    if IsKeyPressed(KEY_LEFT) {g_rt.last_horizontal_press = -1;}
+    if IsKeyPressed(KEY_RIGHT) {g_rt.last_horizontal_press = 1;}
+
+    bool left_down = IsKeyDown(KEY_LEFT);
+    bool right_down = IsKeyDown(KEY_RIGHT);
+
+    i32 desired_dir = 0;
+    if (left_down && !right_down) {
+        desired_dir = -1;
+    } else if (right_down && !left_down) {
+        desired_dir = 1;
+    } else if (left_down && right_down) {
+        desired_dir = g_rt.last_horizontal_press;
+    }
+
+    if (desired_dir == 0) {
+        g_rt.shift_dir = 0;
+        g_rt.shift_hold_timer = 0.0;
+        g_rt.shift_repeat_timer = 0.0;
+        return;
+    }
+
+    if (desired_dir != g_rt.shift_dir) {
+        g_rt.shift_dir = desired_dir;
+        g_rt.shift_hold_timer = 0.0;
+        g_rt.shift_repeat_timer = 0.0;
+        tryMove(desired_dir, 0);
+        return;
+    }
+
+    if (g_rt.dcd_timer > 0.0) {
+        g_rt.dcd_timer -= dt;
+        if g_rt.dcd_timer < 0.0 {g_rt.dcd_timer = 0.0;}
+        return;
+    }
+
+    f32 das_seconds = handlingDasSeconds();
+    f32 arr_seconds = handlingArrSeconds();
+
+    f32 prev_hold = g_rt.shift_hold_timer;
+    g_rt.shift_hold_timer += dt;
+
+    if (prev_hold < das_seconds && g_rt.shift_hold_timer >= das_seconds) {
+        if (arr_seconds <= 0.0001) {
+            for (tryMove(desired_dir, 0)) {}
+            return;
+        }
+        tryMove(desired_dir, 0);
+        g_rt.shift_repeat_timer = 0.0;
+    }
+
+    if g_rt.shift_hold_timer < das_seconds {return;}
+
+    if (arr_seconds <= 0.0001) {
+        for (tryMove(desired_dir, 0)) {}
+        return;
+    }
+
+    g_rt.shift_repeat_timer += dt;
+    for (g_rt.shift_repeat_timer >= arr_seconds) {
+        if (!tryMove(desired_dir, 0)) {
+            g_rt.shift_repeat_timer = 0.0;
+            break;
+        }
+        g_rt.shift_repeat_timer -= arr_seconds;
+    }
+}
+
+fun updateMovementInput(dt: f32) >> void {
+    updateHorizontalInput(dt);
+
+    if IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X) {tryRotate(1);}
+    if IsKeyPressed(KEY_Z) {tryRotate(-1);}
+    if IsKeyPressed(KEY_C) {holdCurrent();}
+    if IsKeyPressed(KEY_SPACE) {hardDrop();}
+}
+
+fun updateSoftDrop(dt: f32) >> void {
+    if (!IsKeyDown(KEY_DOWN)) {
+        g_rt.soft_timer = 0.0;
+        return;
+    }
+
+    g_rt.soft_timer += dt;
+    f32 soft_interval = gravityInterval() / g_sdf_multiplier;
+    if soft_interval < 0.005 {soft_interval = 0.005;}
+    for (g_rt.soft_timer >= soft_interval) {
+        if (tryMove(0, 1)) {
+            g_play.score += 1;
+            g_rt.soft_timer -= soft_interval;
+        } else {
+            break;
+        }
+    }
+}
+
+fun updateGravity(dt: f32) >> void {
+    g_rt.gravity_timer += dt;
+    f32 interval = gravityInterval();
+    for (g_rt.gravity_timer >= interval) {
+        if (tryMove(0, 1)) {
+            g_rt.gravity_timer -= interval;
+        } else {
+            break;
+        }
+    }
+}
+
+fun updateLock(dt: f32) >> void {
+    if (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y + 1)) {
+        g_rt.lock_timer = 0.0;
+        return;
+    }
+
+    g_rt.lock_timer += dt;
+    if g_rt.lock_timer >= 0.45 {stepLock();}
+}
+
+fun botLevel() >> i32 {
+    i32 level = (g_bot.lines / 10) + 1;
+    if level < 1 {level = 1;}
+    return level;
+}
+
+fun botCurrentApm() >> f32 {
+    return aiBotCurrentApm(g_bot.attack_sent, g_rt.run_timer);
+}
+
+fun botAttackPerPiece() >> f32 {
+    return aiBotAttackPerPiece(g_bot.attack_sent, g_bot.pieces_placed);
+}
+
+fun botActionsPerPiece() >> f32 {
+    return aiBotActionsPerPiece(g_bot.actions_taken, g_bot.pieces_placed);
+}
+
+fun botActionRate(dt: f32) >> f32 {
+    f32 raw_rate = aiBotActionRate(&g_bot_board[0], g_bot_setup.target_apm, g_bot_pending_garbage, g_bot.attack_sent, g_bot.pieces_placed, g_bot.actions_taken, g_rt.run_timer, g_bot_setup.panic_burst_enabled);
+    if g_bot.rate_smooth <= 0.01 {g_bot.rate_smooth = raw_rate;}
+
+    f32 smooth_gain = planTune(31) as f32;
+    if !g_bot_setup.panic_burst_enabled {smooth_gain = planTune(32) as f32;}
+    f32 smooth_alpha = dt * smooth_gain;
+    f32 smooth_min = (planTune(33) as f32) * 0.01;
+    if smooth_alpha < smooth_min {smooth_alpha = smooth_min;}
+    if smooth_alpha > 0.40 {smooth_alpha = 0.40;}
+    g_bot.rate_smooth += (raw_rate - g_bot.rate_smooth) * smooth_alpha;
+    return g_bot.rate_smooth;
+}
+
+fun botLockCurrentPiece() >> void {
+    for i32 i = 0; i < 4; i++ {
+        i32 x = g_bot.piece_x + minoX(g_bot.piece_kind, g_bot.piece_rotation, i);
+        i32 y = g_bot.piece_y + minoY(g_bot.piece_kind, g_bot.piece_rotation, i);
+        if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {botBoardSet(x, y, g_bot.piece_kind + 1);}
+    }
+}
+
+fun botApplyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) >> void {
+    i32 level = botLevel();
+
+    i32 base = 0;
+    if spin {
+        if mini {base = miniSpinBasePoints(lines_cleared);} else {base = spinBasePoints(lines_cleared);}
+    } else {
+        base = lineBasePoints(lines_cleared);
+    }
+
+    bool difficult = false;
+    if lines_cleared == 4 {difficult = true;}
+    if spin && lines_cleared > 0 {difficult = true;}
+    bool b2b_chain = g_bot.back_to_back_count > 0;
+
+    i32 clear_points = base;
+    if difficult && b2b_chain {clear_points = (clear_points * 3) / 2;}
+
+    if lines_cleared > 0 {g_bot.combo += 1;} else {g_bot.combo = -1;}
+
+    i32 combo_points = 0;
+    if lines_cleared > 0 {combo_points = g_bot.combo * 50;}
+    i32 all_clear_points = 0;
+    if all_clear {all_clear_points = 3500;}
+    g_bot.score += (clear_points + combo_points + all_clear_points) * level;
+
+    i32 attack = lockAttack(lines_cleared, spin, mini, difficult, b2b_chain, g_bot.combo, all_clear);
+    g_bot.attack_sent += attack;
+    routeBotAttack(attack);
+
+    if difficult {g_bot.back_to_back_count += 1;} else if lines_cleared > 0 {g_bot.back_to_back_count = 0;}
+    g_bot.last_rotate_success = false;
+}
+
+fun botStepLock() >> void {
+    botLockCurrentPiece();
+    spawnLockEffectPiece(LINE_FX_BOARD_BOT, g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, g_bot.piece_y);
+    g_bot.pieces_placed += 1;
+    bool spin = botIsTSpin(g_bot.piece_kind, g_bot.piece_x, g_bot.piece_y);
+    i32 lines_cleared = botClearLines();
+    bool mini = false;
+    bool all_clear = lines_cleared > 0 && botBoardIsEmpty();
+    aiLog(TextFormat(" lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i attack_before=%i", g_bot.piece_kind, g_bot.piece_x, g_bot.piece_rotation, lines_cleared, spin as i32, all_clear as i32, g_bot.attack_sent));
+    botApplyLockScore(lines_cleared, spin, mini, all_clear);
+
+    if g_bot_pending_garbage > 0 {
+        insertGarbageIntoBot(g_bot_pending_garbage);
+        g_bot_pending_garbage = 0;
+        if g_bot.game_over {return;}
+    }
+
+    botSpawnNextPiece();
+}
+
+fun botApplyPlannedLock() >> void {
+    g_bot.pieces_placed += 1;
+    spawnLockEffectPiece(LINE_FX_BOARD_BOT, g_bot.piece_kind, g_bot.target_rotation, g_bot.target_x, g_bot.target_y);
+    if g_bot_planned_lines > 0 {
+        arr<i32, BOARD_CELLS> temp = {0};
+        for i32 i = 0; i < BOARD_CELLS; i++ {temp[i] = g_bot_board[i];}
+
+        for i32 idx = 0; idx < 4; idx++ {
+            i32 x = g_bot.target_x + minoX(g_bot.piece_kind, g_bot.target_rotation, idx);
+            i32 y = g_bot.target_y + minoY(g_bot.piece_kind, g_bot.target_rotation, idx);
+            if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {temp[boardIndex(x, y)] = g_bot.piece_kind + 1;}
+        }
+
+        i32 fx_rows = 0;
+        for i32 y = BOARD_H - 1; y >= 0; y-- {
+            bool full = true;
+            for i32 x = 0; x < BOARD_W; x++ {
+                if temp[boardIndex(x, y)] == 0 {full = false;}
+            }
+            if full {
+                spawnBotLineClearEffectsForRow(y);
+                fx_rows += 1;
+                if fx_rows >= g_bot_planned_lines {break;}
+            }
+        }
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_board[i] = g_bot_planned_board[i];}
+    if g_bot_planned_lines > 0 {g_bot.lines += g_bot_planned_lines;}
+    aiLog(TextFormat(" lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i attack_before=%i", g_bot.piece_kind, g_bot.target_x, g_bot.target_rotation, g_bot_planned_lines, g_bot_planned_spin as i32, g_bot_planned_all_clear as i32, g_bot.attack_sent));
+    botApplyLockScore(g_bot_planned_lines, g_bot_planned_spin, false, g_bot_planned_all_clear);
+
+    botSpawnNextPiece();
+}
+
+fun updateDuelBot(dt: f32) >> void {
+    if !isVsBotMode() {return;}
+    if !g_duel_running {return;}
+    if g_bot.game_over || g_play.game_over {return;}
+
+    g_bot.place_meter += dt * botActionRate(dt);
+    if g_bot.place_meter > 12.0 {g_bot.place_meter = 12.0;}
+
+    for (g_bot.place_meter >= 1.0) {
+        g_bot.place_meter -= 1.0;
+
+        if !botPerformPlannedAction() {
+            g_bot.game_over = true;
+            break;
+        }
+        g_bot.actions_taken += 1;
+        if g_bot.game_over {break;}
+    }
+}
+
+fun updateAiBot() >> void {
+    if !g_ai_enabled {return;}
+
+    i32 level = (g_play.lines / 10) + 1;
+    bool b2b = g_rt.back_to_back_count > 0;
+    i32 lookahead_count = g_play.queue_count;
+    if lookahead_count < 0 {lookahead_count = 0;}
+
+    i32 max_h = 0;
+    i32 holes = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+
+    AiMove move = findBestMove(&g_board[0], g_piece_kind, g_piece_y, &g_queue[0], lookahead_count, g_rt.combo, b2b, level, 0, 0, 0);
+
+    if !move.valid {
+        aiLog(TextFormat("fp plan invalid kind=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
+        hardDrop();
+        return;
+    }
+
+    aiLog(TextFormat("fp plan kind=%i x=%i rot=%i tspin=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i lookahead=%i", g_piece_kind, move.x, move.rotation, move.tspin as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access, lookahead_count));
+
+    g_piece_rotation = move.rotation;
+    g_piece_x = move.x;
+    if move.tspin {
+        g_rt.last_rotate_success = true;
+        g_rt.last_rotate_kick_test = 1;
+    } else {
+        g_rt.last_rotate_success = false;
+        g_rt.last_rotate_kick_test = -1;
+    }
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {
+        hardDrop();
+        return;
+    }
+
+    g_piece_y = currentGhostY();
+    stepLock();
+}
+
+fun updateGameScreen() >> void {
+    f32 dt = GetFrameTime();
+    updateBackgroundStarReaction(dt);
+    updateBoardShake(dt);
+    updateRestartBoardEffects(dt);
+    updateHardDropImpactRings(dt);
+    updateAllClearFx(dt);
+    updateQuadClearFx(dt);
+    updateLockEffects(dt);
+    updateLineClearEffects(dt);
+    updateRestartAfterglow(dt);
+
+    if isVsBotMode() && !canOpenBotSetupUi() {
+        if IsKeyPressed(KEY_ESCAPE) {enterMenuFromGame();}
+        return;
+    }
+
+    if (g_instant_restart && IsKeyPressed(KEY_R)) {
+        triggerImmediateRestart(true);
+        return;
+    }
+
+    if canRestartNowByHotkey() && IsKeyPressed(KEY_R) {
+        triggerImmediateRestart(true);
+        return;
+    }
+
+    if (IsKeyPressed(KEY_TAB)) {
+        resetRestartHoldState(false);
+        g_game = g_game.with_settings_return_screen(SCREEN_GAME);
+        settingsInit();
+        g_game = g_game.with_screen(SCREEN_SETTINGS);
+        return;
+    }
+
+    if (!canShowHoldRestartEffect()) {
+        resetRestartHoldState(false);
+        if (IsKeyPressed(KEY_ESCAPE)) {enterMenuFromGame(); return;}
+    }
+
+    if canShowHoldRestartEffect() && updateRestartCharge(dt) {return;}
+
+    if (modeUsesRoundState()) {
+        if (g_play.round_state == ROUND_COUNTDOWN) {
+            g_rt.countdown_timer -= dt;
+            if (g_rt.countdown_timer <= 0.0) {
+                g_rt.countdown_timer = 0.0;
+                g_play = g_play.with_round_state(ROUND_RUNNING);
+                g_rt.mode_timer = 0.0;
+            }
+            return;
+        }
+
+        if (g_play.round_state == ROUND_FINISHED) {
+            return;
+        }
+
+        g_rt.mode_timer += dt;
+        if (isBlitzMode() && g_rt.mode_timer >= BLITZ_DURATION_SECONDS) {
+            g_rt.mode_timer = BLITZ_DURATION_SECONDS;
+            g_play = g_play.with_round_state(ROUND_FINISHED);
+            return;
+        }
+    }
+
+    if (!g_play.game_over && !isBotDuelsMode()) {
+        if !modeUsesRoundState() || g_play.round_state == ROUND_RUNNING {g_rt.run_timer += dt;}
+    }
+
+    if isBotDuelsMode() {
+        updateBotDuelsMode(dt);
+        return;
+    }
+
+    if isVsBotMode() && g_duel_running {updateDuelBot(dt);}
+    if isVsBotMode() && g_duel_running {
+        if g_bot.game_over {
+            g_duel_running = false;
+            g_duel_result = DUEL_RESULT_PLAYER_WIN;
+        } else if g_play.game_over {
+            g_duel_running = false;
+            g_duel_result = DUEL_RESULT_PLAYER_LOSE;
+        }
+    }
+
+    if isVsBotMode() && !g_duel_running {
+        return;
+    }
+
+    if (g_play.game_over) {
+        return;
+    }
+
+    if isFreePlayMode() && IsKeyPressed(KEY_L) {
+        addFreePlayGarbageLine();
+        if g_play.game_over {return;}
+    }
+
+    if g_ai_enabled {
+        updateAiBot();
+        return;
+    }
+
+    updateMovementInput(dt);
+    if g_play.game_over {return;}
+
+    updateSoftDrop(dt);
+    updateGravity(dt);
+    if !g_play.game_over {updateLock(dt);}
+}
+
+fun shouldQuitApp() >> bool {
+    bool ctrl_down = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    if ctrl_down && IsKeyPressed(KEY_Q) {return true;}
+    return false;
+}

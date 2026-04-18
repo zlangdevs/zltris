@@ -1,0 +1,465 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.sound
+use zltris.theme
+
+#define STAR_MODE_NONE 0
+#define STAR_MODE_MUSIC 2
+
+#define SHADER_MODE_NONE 0
+#define SHADER_MODE_LIGHT_CRT 1
+#define SHADER_MODE_CRT 2
+#define SHADER_MODE_VHS 3
+#define SHADER_MODE_CUSTOM 4
+
+#define CUSTOM_SHADER_NAME_MAX 96
+#define SETTINGS_FILE_PATH "zltris.cfg"
+
+fun trimLeftSpaces(s: ptr<u8>) >> ptr<u8> {
+    ptr<u8> p = s;
+    for (p[0] == (' ' as u8) || p[0] == ('\t' as u8)) {
+        p = p + 1;
+    }
+    return p;
+}
+
+fun trimRightSpacesInPlace(s: ptr<u8>) >> void {
+    i32 len = strlen(s) as i32;
+    for (len > 0) {
+        u8 c = s[len - 1];
+        if (c == (' ' as u8) || c == ('\t' as u8) || c == ('\r' as u8) || c == ('\n' as u8)) {
+            s[len - 1] = 0;
+            len -= 1;
+            continue;
+        }
+        break;
+    }
+}
+
+fun parseBoolValue(s: ptr<u8>, fallback: bool) >> bool {
+    ptr<u8> v = trimLeftSpaces(s);
+    trimRightSpacesInPlace(v);
+    if strEq(v, "1") || strEq(v, "true") || strEq(v, "TRUE") || strEq(v, "on") || strEq(v, "ON") {return true;}
+    if strEq(v, "0") || strEq(v, "false") || strEq(v, "FALSE") || strEq(v, "off") || strEq(v, "OFF") {return false;}
+    return fallback;
+}
+
+fun parseFloatValue(s: ptr<u8>, fallback: f32) >> f32 {
+    ptr<u8> p = trimLeftSpaces(s);
+    i32 sign = 1;
+    if (p[0] == ('-' as u8)) {
+        sign = -1;
+        p = p + 1;
+    } else if (p[0] == ('+' as u8)) {
+        p = p + 1;
+    }
+
+    i32 int_part = 0;
+    i32 frac_part = 0;
+    i32 frac_div = 1;
+    bool seen_digit = false;
+
+    for (p[0] >= ('0' as u8) && p[0] <= ('9' as u8)) {
+        int_part = int_part * 10 + ((p[0] as i32) - ('0' as i32));
+        p = p + 1;
+        seen_digit = true;
+    }
+
+    if (p[0] == ('.' as u8)) {
+        p = p + 1;
+        for (p[0] >= ('0' as u8) && p[0] <= ('9' as u8)) {
+            frac_part = frac_part * 10 + ((p[0] as i32) - ('0' as i32));
+            frac_div = frac_div * 10;
+            p = p + 1;
+            seen_digit = true;
+        }
+    }
+
+    if !seen_digit {return fallback;}
+
+    f32 value = (int_part as f32) + (frac_part as f32) / (frac_div as f32);
+    if sign < 0 {value = -value;}
+    return value;
+}
+
+fun clampSettings() >> void {
+    if g_game.theme_index < 0 {g_game.theme_index = 0;}
+    if g_game.theme_index >= themeCount() {g_game.theme_index = themeCount() - 1;}
+    if g_arr_frames < 0.0 {g_arr_frames = 0.0;}
+    if g_arr_frames > 8.0 {g_arr_frames = 8.0;}
+    if g_das_frames < 0.0 {g_das_frames = 0.0;}
+    if g_das_frames > 20.0 {g_das_frames = 20.0;}
+    if g_dcd_frames < 0.0 {g_dcd_frames = 0.0;}
+    if g_dcd_frames > 10.0 {g_dcd_frames = 10.0;}
+    if g_sdf_multiplier < 1.0 {g_sdf_multiplier = 1.0;}
+    if g_sdf_multiplier > 40.0 {g_sdf_multiplier = 40.0;}
+    if g_bg_stars_amount < 0 {g_bg_stars_amount = 0;}
+    if g_bg_stars_amount > 150 {g_bg_stars_amount = 150;}
+    if g_bg_star_react_mode < STAR_MODE_NONE {g_bg_star_react_mode = STAR_MODE_NONE;}
+    if g_bg_star_react_mode > STAR_MODE_MUSIC {g_bg_star_react_mode = STAR_MODE_MUSIC;}
+    if g_star_peak_target_dps < 0.5 {g_star_peak_target_dps = 0.5;}
+    if g_star_peak_target_dps > 3.5 {g_star_peak_target_dps = 3.5;}
+    if g_star_intensity < 0.1 {g_star_intensity = 0.1;}
+    if g_star_intensity > 1.0 {g_star_intensity = 1.0;}
+    clampSoundSettings();
+    if g_board_bounciness < 0 {g_board_bounciness = 0;}
+    if g_board_bounciness > 100 {g_board_bounciness = 100;}
+    if g_post_shader_mode < SHADER_MODE_NONE {g_post_shader_mode = SHADER_MODE_NONE;}
+    if g_post_shader_mode > SHADER_MODE_CUSTOM {g_post_shader_mode = SHADER_MODE_CUSTOM;}
+    if g_crt_curvature < 0.20 {g_crt_curvature = 0.20;}
+    if g_crt_curvature > 1.40 {g_crt_curvature = 1.40;}
+    if g_crt_brightness < 0.60 {g_crt_brightness = 0.60;}
+    if g_crt_brightness > 1.80 {g_crt_brightness = 1.80;}
+    if g_vhs_waves < 0.0 {g_vhs_waves = 0.0;}
+    if g_vhs_waves > 1.4 {g_vhs_waves = 1.4;}
+    if g_vhs_damage < 0.0 {g_vhs_damage = 0.0;}
+    if g_vhs_damage > 1.5 {g_vhs_damage = 1.5;}
+}
+
+fun copyCustomShaderName(dst: ptr<u8>, src: ptr<u8>) >> void {
+    i32 i = 0;
+    for (i < CUSTOM_SHADER_NAME_MAX - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun saveSettingsFile() >> void {
+    i32 fd = openForWrite(SETTINGS_FILE_PATH);
+    if fd < 0 {return;}
+
+    writeLineFd(fd, TextFormat("theme=%i", g_game.theme_index));
+    writeLineFd(fd, TextFormat("shader_mode=%i", g_post_shader_mode));
+    writeLineFd(fd, TextFormat("custom_shader=%s", &g_custom_shader_name[0]));
+    writeLineFd(fd, TextFormat("crt_curvature=%.2f", g_crt_curvature));
+    writeLineFd(fd, TextFormat("crt_brightness=%.2f", g_crt_brightness));
+    writeLineFd(fd, TextFormat("vhs_waves=%.2f", g_vhs_waves));
+    writeLineFd(fd, TextFormat("vhs_damage=%.2f", g_vhs_damage));
+    writeLineFd(fd, TextFormat("arr=%.2f", g_arr_frames));
+    writeLineFd(fd, TextFormat("das=%.2f", g_das_frames));
+    writeLineFd(fd, TextFormat("dcd=%.2f", g_dcd_frames));
+    writeLineFd(fd, TextFormat("sdf=%.2f", g_sdf_multiplier));
+    i32 double_row_flag = 0;
+    if g_double_row_ui {double_row_flag = 1;}
+    i32 instant_restart_flag = 0;
+    if g_instant_restart {instant_restart_flag = 1;}
+    i32 hard_drop_ring_flag = 0;
+    if g_hard_drop_ring {hard_drop_ring_flag = 1;}
+
+    writeLineFd(fd, TextFormat("double_row_ui=%i", double_row_flag));
+    writeLineFd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
+    writeLineFd(fd, TextFormat("hard_drop_ring=%i", hard_drop_ring_flag));
+    writeLineFd(fd, TextFormat("bg_stars_amount=%i", g_bg_stars_amount));
+    writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
+    writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
+    writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
+    writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
+    writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
+    writeLineFd(fd, TextFormat("music_volume=%.2f", g_music_volume));
+    writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
+
+    close(fd);
+}
+
+fun loadSettingsFile() >> void {
+    i32 fd = openForRead(SETTINGS_FILE_PATH);
+    if fd < 0 {return;}
+
+    arr<u8, 262144> data = {0};
+    i64 bytes_read = readAll(fd, &data[0], 262143);
+    close(fd);
+    if bytes_read <= 0 {return;}
+    data[bytes_read as i32] = 0;
+
+    ptr<u8> line = &data[0];
+    for (line[0] != 0) {
+        ptr<u8> next = line;
+        for (next[0] != 0 && next[0] != ('\n' as u8)) {
+            next = next + 1;
+        }
+        if (next[0] == ('\n' as u8)) {
+            next[0] = 0;
+            next = next + 1;
+        }
+
+        ptr<u8> raw = trimLeftSpaces(line);
+        trimRightSpacesInPlace(raw);
+        if (raw[0] != 0 && raw[0] != ('#' as u8) && raw[0] != (';' as u8)) {
+            ptr<u8> eq = raw;
+            for (eq[0] != 0 && eq[0] != ('=' as u8)) {
+                eq = eq + 1;
+            }
+            if (eq[0] == ('=' as u8)) {
+                eq[0] = 0;
+                ptr<u8> key = trimLeftSpaces(raw);
+                trimRightSpacesInPlace(key);
+                ptr<u8> value = trimLeftSpaces(eq + 1);
+                trimRightSpacesInPlace(value);
+
+                if (strEq(key, "theme")) {
+                    g_game.theme_index = atoi(value);
+                } else if (strEq(key, "shader_mode")) {
+                    g_post_shader_mode = atoi(value);
+                } else if (strEq(key, "custom_shader")) {
+                    copyCustomShaderName(&g_custom_shader_name[0], value);
+                } else if (strEq(key, "crt_curvature")) {
+                    g_crt_curvature = parseFloatValue(value, g_crt_curvature);
+                } else if (strEq(key, "crt_brightness")) {
+                    g_crt_brightness = parseFloatValue(value, g_crt_brightness);
+                } else if (strEq(key, "vhs_waves")) {
+                    g_vhs_waves = parseFloatValue(value, g_vhs_waves);
+                } else if (strEq(key, "vhs_damage")) {
+                    g_vhs_damage = parseFloatValue(value, g_vhs_damage);
+                } else if (strEq(key, "arr")) {
+                    g_arr_frames = parseFloatValue(value, g_arr_frames);
+                } else if (strEq(key, "das")) {
+                    g_das_frames = parseFloatValue(value, g_das_frames);
+                } else if (strEq(key, "dcd")) {
+                    g_dcd_frames = parseFloatValue(value, g_dcd_frames);
+                } else if (strEq(key, "sdf")) {
+                    g_sdf_multiplier = parseFloatValue(value, g_sdf_multiplier);
+                } else if (strEq(key, "double_row_ui")) {
+                    g_double_row_ui = parseBoolValue(value, g_double_row_ui);
+                } else if (strEq(key, "instant_restart")) {
+                    g_instant_restart = parseBoolValue(value, g_instant_restart);
+                } else if (strEq(key, "hard_drop_ring")) {
+                    g_hard_drop_ring = parseBoolValue(value, g_hard_drop_ring);
+                } else if (strEq(key, "bg_stars_amount")) {
+                    g_bg_stars_amount = atoi(value);
+                } else if (strEq(key, "bg_star_react_mode")) {
+                    g_bg_star_react_mode = atoi(value);
+                } else if (strEq(key, "star_peak_target_dps")) {
+                    g_star_peak_target_dps = parseFloatValue(value, g_star_peak_target_dps);
+                } else if (strEq(key, "star_intensity")) {
+                    g_star_intensity = parseFloatValue(value, g_star_intensity);
+                } else if (strEq(key, "star_music_intensity")) {
+                    g_star_music_intensity = parseFloatValue(value, g_star_music_intensity);
+                } else if (strEq(key, "star_music_style")) {
+                    g_star_music_style = atoi(value);
+                } else if (strEq(key, "music_volume")) {
+                    g_music_volume = parseFloatValue(value, g_music_volume);
+                } else if (strEq(key, "board_bounciness")) {
+                    g_board_bounciness = atoi(value);
+                }
+            }
+        }
+
+        line = next;
+    }
+
+    clampSettings();
+}
+
+fun loadPostEffects() >> void {
+    g_light_crt_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/crt_light.frag");
+    g_light_crt_shader_ready = IsShaderValid(g_light_crt_shader);
+    if g_light_crt_shader_ready {
+        printf("[zltris] loaded light CRT shader\n");
+    } else {
+        printf("[zltris] failed to load light CRT shader\n");
+    }
+
+    g_crt_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/crt.frag");
+    g_crt_shader_ready = IsShaderValid(g_crt_shader);
+    if g_crt_shader_ready {
+        printf("[zltris] loaded CRT shader\n");
+        g_crt_curvature_loc = GetShaderLocation(g_crt_shader, "uCurvature");
+        g_crt_brightness_loc = GetShaderLocation(g_crt_shader, "uBrightness");
+    } else {
+        printf("[zltris] failed to load CRT shader, fallback to none\n");
+        g_crt_curvature_loc = -1;
+        g_crt_brightness_loc = -1;
+    }
+
+    g_vhs_shader = LoadShader("assets/shaders/default/crt.vert", "assets/shaders/default/vhs.frag");
+    g_vhs_shader_ready = IsShaderValid(g_vhs_shader);
+    if g_vhs_shader_ready {
+        g_vhs_time_loc = GetShaderLocation(g_vhs_shader, "uTime");
+        g_vhs_waves_loc = GetShaderLocation(g_vhs_shader, "uWave");
+        g_vhs_damage_loc = GetShaderLocation(g_vhs_shader, "uDamage");
+        printf("[zltris] loaded VHS shader\n");
+    } else {
+        g_vhs_time_loc = -1;
+        g_vhs_waves_loc = -1;
+        g_vhs_damage_loc = -1;
+        printf("[zltris] failed to load VHS shader\n");
+    }
+
+    if g_custom_shader_ready {
+        UnloadShader(g_custom_shader);
+        g_custom_shader_ready = false;
+    }
+    g_custom_shader_warned = false;
+    g_custom_sampler_warned = false;
+    if g_custom_shader_name[0] != 0 {
+        ptr<u8> custom_path = TextFormat("assets/shaders/%s", &g_custom_shader_name[0]);
+        printf("[zltris] custom shader requested: '%s'\n", &g_custom_shader_name[0]);
+        printf("[zltris] custom shader path: %s\n", custom_path);
+        g_custom_shader = LoadShader("assets/shaders/default/crt.vert", custom_path);
+        g_custom_shader_ready = IsShaderValid(g_custom_shader);
+        if g_custom_shader_ready {
+            g_custom_time_loc = GetShaderLocation(g_custom_shader, "uTime");
+            g_custom_bg_tex_loc = GetShaderLocation(g_custom_shader, "uBackgroundTex");
+            g_custom_blocks_tex_loc = GetShaderLocation(g_custom_shader, "uBlocksTex");
+            g_custom_ui_tex_loc = GetShaderLocation(g_custom_shader, "uUiTex");
+            g_custom_layered_loc = GetShaderLocation(g_custom_shader, "uLayeredTargets");
+            printf("[zltris] loaded custom shader: %s (uTime=%i bg=%i blocks=%i ui=%i layered=%i)\n", custom_path, g_custom_time_loc, g_custom_bg_tex_loc, g_custom_blocks_tex_loc, g_custom_ui_tex_loc, g_custom_layered_loc);
+        } else {
+            g_custom_time_loc = -1;
+            g_custom_bg_tex_loc = -1;
+            g_custom_blocks_tex_loc = -1;
+            g_custom_ui_tex_loc = -1;
+            g_custom_layered_loc = -1;
+            printf("[zltris] failed to load custom shader: %s\n", custom_path);
+        }
+    } else {
+        g_custom_time_loc = -1;
+        g_custom_bg_tex_loc = -1;
+        g_custom_blocks_tex_loc = -1;
+        g_custom_ui_tex_loc = -1;
+        g_custom_layered_loc = -1;
+        printf("[zltris] custom shader not set (empty name)\n");
+    }
+}
+
+fun ensurePostFxTarget(width: i32, height: i32) >> void {
+    if width <= 0 || height <= 0 {return;}
+    if g_post_fx_target_ready && g_post_fx_target_w == width && g_post_fx_target_h == height {return;}
+
+    if g_post_fx_target_ready {
+        UnloadRenderTexture(g_post_fx_target);
+        g_post_fx_target_ready = false;
+        g_post_fx_target_w = 0;
+        g_post_fx_target_h = 0;
+    }
+
+    g_post_fx_target = LoadRenderTexture(width, height);
+    if g_post_fx_target.texture.id == (0 as u32) {
+        printf("[zltris] failed to create post fx target %ix%i\n", width, height);
+        return;
+    }
+    g_post_fx_target_ready = true;
+    g_post_fx_target_w = width;
+    g_post_fx_target_h = height;
+    SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_BILINEAR);
+}
+
+fun ensureLayerTargets(width: i32, height: i32) >> void {
+    if width <= 0 || height <= 0 {return;}
+    if g_layer_targets_ready && g_layer_targets_w == width && g_layer_targets_h == height {return;}
+
+    if g_layer_targets_ready {
+        UnloadRenderTexture(g_layer_bg_target);
+        UnloadRenderTexture(g_layer_blocks_target);
+        UnloadRenderTexture(g_layer_ui_target);
+        g_layer_targets_ready = false;
+        g_layer_targets_w = 0;
+        g_layer_targets_h = 0;
+    }
+
+    g_layer_bg_target = LoadRenderTexture(width, height);
+    g_layer_blocks_target = LoadRenderTexture(width, height);
+    g_layer_ui_target = LoadRenderTexture(width, height);
+
+    if g_layer_bg_target.texture.id == (0 as u32) || g_layer_blocks_target.texture.id == (0 as u32) || g_layer_ui_target.texture.id == (0 as u32) {
+        printf("[zltris] failed to create layer targets %ix%i\n", width, height);
+        if g_layer_bg_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_bg_target);}
+        if g_layer_blocks_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_blocks_target);}
+        if g_layer_ui_target.texture.id != (0 as u32) {UnloadRenderTexture(g_layer_ui_target);}
+        return;
+    }
+
+    g_layer_targets_ready = true;
+    g_layer_targets_w = width;
+    g_layer_targets_h = height;
+    SetTextureFilter(g_layer_bg_target.texture, TEXTURE_FILTER_POINT);
+    SetTextureFilter(g_layer_blocks_target.texture, TEXTURE_FILTER_POINT);
+    SetTextureFilter(g_layer_ui_target.texture, TEXTURE_FILTER_POINT);
+}
+
+fun ensureLayerFallbackTexture() >> void {
+    if g_layer_empty_texture_ready {return;}
+    Image img = @GenImageColor(1, 1, rgba(0, 0, 0, 0));
+    g_layer_empty_texture = LoadTextureFromImage(img);
+    UnloadImage(img);
+    if g_layer_empty_texture.id == (0 as u32) {
+        printf("[zltris] failed to create layer fallback texture\n");
+        return;
+    }
+    g_layer_empty_texture_ready = true;
+    SetTextureFilter(g_layer_empty_texture, TEXTURE_FILTER_POINT);
+}
+
+fun unloadPostEffects() >> void {
+    if g_post_fx_target_ready {
+        UnloadRenderTexture(g_post_fx_target);
+        g_post_fx_target_ready = false;
+        g_post_fx_target_w = 0;
+        g_post_fx_target_h = 0;
+    }
+    if g_layer_targets_ready {
+        UnloadRenderTexture(g_layer_bg_target);
+        UnloadRenderTexture(g_layer_blocks_target);
+        UnloadRenderTexture(g_layer_ui_target);
+        g_layer_targets_ready = false;
+        g_layer_targets_w = 0;
+        g_layer_targets_h = 0;
+    }
+    if g_layer_empty_texture_ready {
+        UnloadTexture(g_layer_empty_texture);
+        g_layer_empty_texture_ready = false;
+    }
+    if g_crt_shader_ready {
+        UnloadShader(g_crt_shader);
+        g_crt_shader_ready = false;
+    }
+    if g_light_crt_shader_ready {
+        UnloadShader(g_light_crt_shader);
+        g_light_crt_shader_ready = false;
+    }
+    if g_vhs_shader_ready {
+        UnloadShader(g_vhs_shader);
+        g_vhs_shader_ready = false;
+    }
+    if g_custom_shader_ready {
+        UnloadShader(g_custom_shader);
+        g_custom_shader_ready = false;
+    }
+    g_custom_time_loc = -1;
+    g_custom_bg_tex_loc = -1;
+    g_custom_blocks_tex_loc = -1;
+    g_custom_ui_tex_loc = -1;
+    g_custom_layered_loc = -1;
+    g_custom_shader_warned = false;
+    g_custom_sampler_warned = false;
+    g_crt_curvature_loc = -1;
+    g_crt_brightness_loc = -1;
+    g_vhs_time_loc = -1;
+    g_vhs_waves_loc = -1;
+    g_vhs_damage_loc = -1;
+}
+
+fun setShaderCommonUniforms(shader: Shader) >> void {
+    i32 time_loc = GetShaderLocation(shader, "uTime");
+    if time_loc >= 0 {
+        f32 t = GetTime() as f32;
+        SetShaderValue(shader, time_loc, (&t) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+
+    i32 res_loc = GetShaderLocation(shader, "uResolution");
+    if res_loc >= 0 {
+        arr<f32, 2> res = {0.0};
+        if g_post_fx_target_ready {
+            res[0] = g_post_fx_target_w as f32;
+            res[1] = g_post_fx_target_h as f32;
+        } else {
+            res[0] = GetScreenWidth() as f32;
+            res[1] = GetScreenHeight() as f32;
+        }
+        SetShaderValue(shader, res_loc, (&res[0]) as ptr<void>, SHADER_UNIFORM_VEC2 as i32);
+    }
+}

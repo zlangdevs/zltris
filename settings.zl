@@ -3,6 +3,7 @@ use raylib
 use std.fs
 use zltris.scale
 use zltris.theme
+use zltris.ui
 
 #define SETTINGS_ROW_SECTION_CONTROLS 0
 #define SETTINGS_ROW_ARR 1
@@ -104,52 +105,6 @@ fun settingsInit() >> void {
 fun settingsActionNone() >> i32 { return SETTINGS_ACTION_NONE; }
 fun settingsActionBack() >> i32 { return SETTINGS_ACTION_BACK; }
 
-fun toColor(color_rgba: u32) >> Color {
-    return Color{
-        r = (color_rgba & 255) as u8,
-        g = ((color_rgba >> 8) & 255) as u8,
-        b = ((color_rgba >> 16) & 255) as u8,
-        a = ((color_rgba >> 24) & 255) as u8,
-    };
-}
-
-fun alphaColor(base: u32, alpha: f32) >> u32 {
-    i32 a = ((base >> 24) & 255) as i32;
-    i32 scaled = ((a as f32) * alpha) as i32;
-    if scaled < 0 {scaled = 0;}
-    if scaled > 255 {scaled = 255;}
-    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
-}
-
-fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
-    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
-}
-
-fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
-    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
-}
-
-fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
-    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
-}
-
-fun bgVisibleLeft() >> i64 {
-    f32 scale = uiScale();
-    i32 ox = uiOffsetX(scale);
-    return (((0 - ox) as f32) / scale) as i64;
-}
-
-fun bgVisibleRight() >> i64 {
-    f32 scale = uiScale();
-    i32 ox = uiOffsetX(scale);
-    return (((GetScreenWidth() - ox) as f32) / scale) as i64;
-}
-
-fun absf(v: f32) >> f32 {
-    if v < (0.0 as f32) {return -v;}
-    return v;
-}
-
 fun absi(v: i32) >> i32 {
     if v < 0 {return -v;}
     return v;
@@ -163,19 +118,6 @@ fun maxi(a: i32, b: i32) >> i32 {
 fun maxf(a: f32, b: f32) >> f32 {
     if a > b {return a;}
     return b;
-}
-
-fun clamp01(v: f32) >> f32 {
-    if v < (0.0 as f32) {return 0.0 as f32;}
-    if v > (1.0 as f32) {return 1.0 as f32;}
-    return v;
-}
-
-fun fractf(v: f32) >> f32 {
-    i32 whole = v as i32;
-    f32 f = v - (whole as f32);
-    if f < (0.0 as f32) {f += 1.0 as f32;}
-    return f;
 }
 
 fun posMod(v: i32, m: i32) >> i32 {
@@ -245,8 +187,8 @@ fun chevronGlyphFilled(right_dir: bool, col: i32, row: i32) >> bool {
 }
 
 fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
-    i64 left = bgVisibleLeft();
-    i64 right = bgVisibleRight();
+    i64 left = visibleBaseLeft();
+    i64 right = visibleBaseRight();
     i64 top = 0;
     i64 bottom = 920;
     i64 step = SETTINGS_BG_GRID;
@@ -585,18 +527,6 @@ fun drawImpulseGridBackground(font: Font, theme: Theme) >> void {
     font;
 }
 
-fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
-    i32 rx = uiX(x);
-    i32 ry = uiY(y);
-    i32 rw = uiS(w);
-    i32 rh = uiS(h);
-    if px < rx as f32 {return false;}
-    if py < ry as f32 {return false;}
-    if px > (rx + rw) as f32 {return false;}
-    if py > (ry + rh) as f32 {return false;}
-    return true;
-}
-
 fun clampf(v: f32, min_v: f32, max_v: f32) >> f32 {
     if v < min_v {return min_v;}
     if v > max_v {return max_v;}
@@ -795,6 +725,39 @@ fun sliderValueFromMouse(px: f32, x: i64, w: i64, min_v: f32, max_v: f32) >> f32
     f32 t = (px - left) / width;
     t = clampf(t, 0.0, 1.0);
     return min_v + (max_v - min_v) * t;
+}
+
+fun sliderTrackHit(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+    if !rowVisible(row, bg_stars_mode, shader_mode) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(row, bg_stars_mode, shader_mode) + 40, 372, 10);
+}
+
+fun dragSliderF32(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<f32>, min_v: f32, max_v: f32) >> void {
+    if !sliderTrackHit(mouse, row, bg_stars_mode, shader_mode) {return;}
+    target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v);
+}
+
+fun dragSliderI32(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<i32>, min_v: f32, max_v: f32) >> void {
+    if !sliderTrackHit(mouse, row, bg_stars_mode, shader_mode) {return;}
+    target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v) as i32;
+}
+
+fun rowBodyHit(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+    if !rowVisible(row, bg_stars_mode, shader_mode) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(row, bg_stars_mode, shader_mode), 412, 62);
+}
+
+fun selectorDirectionFromMouse(mouse_x: f32) >> i32 {
+    if mouse_x < uiX(336) as f32 {return -1;}
+    return 1;
+}
+
+fun rowUsesSelectorMouseNudge(row: i32) >> bool {
+    return row == SETTINGS_ROW_SHADER || row == SETTINGS_ROW_BG_STARS_MODE || row == SETTINGS_ROW_MUSIC_STYLE;
+}
+
+fun rowUsesToggleMouseNudge(row: i32) >> bool {
+    return row == SETTINGS_ROW_DOUBLE_ROW || row == SETTINGS_ROW_INSTANT_RESTART || row == SETTINGS_ROW_HARD_DROP_RING;
 }
 
 fun measureTextWidthBase(font: Font, text: ptr<u8>, size: i64) >> i64 {
@@ -1271,20 +1234,20 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
 
     if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
         g_settings.keyboard_nav_lock = false;
-        if rowIsSectionHeader(g_settings.selected_row) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+        if rowIsSectionHeader(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
             toggleSection(g_settings.selected_row);
             settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
         } else {
             i32 act = SETTINGS_ACTION_NONE;
-            if g_settings.selected_row == SETTINGS_ROW_THEME && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_THEME, bg_stars_mode[0], shader_mode[0]), 412, 62) {
-                if mouse.x < uiX(336) as f32 {act = settingsNudgeRow(SETTINGS_ROW_THEME, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);} else {act = settingsNudgeRow(SETTINGS_ROW_THEME, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-            } else if (g_settings.selected_row == SETTINGS_ROW_SHADER || g_settings.selected_row == SETTINGS_ROW_BG_STARS_MODE || g_settings.selected_row == SETTINGS_ROW_MUSIC_STYLE) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
-                if mouse.x < uiX(336) as f32 {act = settingsNudgeRow(g_settings.selected_row, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);} else {act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);}
-            } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+            if g_settings.selected_row == SETTINGS_ROW_THEME && rowBodyHit(mouse, SETTINGS_ROW_THEME, bg_stars_mode[0], shader_mode[0]) {
+                act = settingsNudgeRow(SETTINGS_ROW_THEME, selectorDirectionFromMouse(mouse.x), theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+            } else if rowUsesSelectorMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
+                act = settingsNudgeRow(g_settings.selected_row, selectorDirectionFromMouse(mouse.x), theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
+            } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && rowBodyHit(mouse, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode[0], shader_mode[0]) {
                 openShaderPicker(custom_shader_name);
-            } else if (g_settings.selected_row == SETTINGS_ROW_DOUBLE_ROW || g_settings.selected_row == SETTINGS_ROW_INSTANT_RESTART || g_settings.selected_row == SETTINGS_ROW_HARD_DROP_RING) && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+            } else if rowUsesToggleMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
                 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring);
-            } else if g_settings.selected_row == SETTINGS_ROW_BACK && pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(SETTINGS_ROW_BACK, bg_stars_mode[0], shader_mode[0]), 412, 62) {
+            } else if g_settings.selected_row == SETTINGS_ROW_BACK && rowBodyHit(mouse, SETTINGS_ROW_BACK, bg_stars_mode[0], shader_mode[0]) {
                 return SETTINGS_ACTION_BACK;
             }
             if act != SETTINGS_ACTION_NONE {return act;}
@@ -1292,20 +1255,20 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     }
 
     if IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
-        if rowVisible(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {crt_curvature[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.2, 1.4);}
-        if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {crt_brightness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.6, 1.8);}
-        if rowVisible(SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {vhs_waves[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.4);}
-        if rowVisible(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {vhs_damage[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.5);}
-        if rowVisible(SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {arr[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 8.0);}
-        if rowVisible(SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {das[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 20.0);}
-        if rowVisible(SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {dcd[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 10.0);}
-        if rowVisible(SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {sdf[0] = sliderValueFromMouse(mouse.x, 136, 372, 1.0, 40.0);}
-        if rowVisible(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {music_volume[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 1.0);}
-        if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {board_bounciness[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 100.0) as i32;}
-        if rowVisible(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {bg_stars_amount[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.0, 150.0) as i32;}
-        if rowVisible(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_peak_target_dps[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.5, 3.5);}
-        if rowVisible(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
-        if rowVisible(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0]) && pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0]) + 40, 372, 10) {star_music_intensity[0] = sliderValueFromMouse(mouse.x, 136, 372, 0.1, 1.0);}
+        dragSliderF32(mouse, SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0], crt_curvature, 0.2, 1.4);
+        dragSliderF32(mouse, SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0], crt_brightness, 0.6, 1.8);
+        dragSliderF32(mouse, SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0], vhs_waves, 0.0, 1.4);
+        dragSliderF32(mouse, SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0], vhs_damage, 0.0, 1.5);
+        dragSliderF32(mouse, SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0], arr, 0.0, 8.0);
+        dragSliderF32(mouse, SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0], das, 0.0, 20.0);
+        dragSliderF32(mouse, SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0], dcd, 0.0, 10.0);
+        dragSliderF32(mouse, SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0], sdf, 1.0, 40.0);
+        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0], music_volume, 0.0, 1.0);
+        dragSliderI32(mouse, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0], board_bounciness, 0.0, 100.0);
+        dragSliderI32(mouse, SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0], bg_stars_amount, 0.0, 150.0);
+        dragSliderF32(mouse, SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0], star_peak_target_dps, 0.5, 3.5);
+        dragSliderF32(mouse, SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0], star_intensity, 0.1, 1.0);
+        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0], star_music_intensity, 0.1, 1.0);
     }
 
     settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);

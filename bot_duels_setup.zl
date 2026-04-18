@@ -1,0 +1,715 @@
+module zltris;
+use raylib
+use zltris.scale
+use zltris.theme
+use zltris.ui
+
+#define WINDOW_W 960
+#define WINDOW_H 920
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+
+#define SCREEN_MENU 0
+#define SCREEN_GAME 1
+
+#define MODE_FREE_PLAY 0
+#define MODE_VS_BOT 3
+#define MODE_BOT_DUELS 4
+
+#define DUEL_RESULT_PLAYING 0
+
+#define BOTDEVMODE false
+#define BOT_APM_MIN 10.0
+#define BOT_APM_MAX 200.0
+#define BOT_DUELS_SIM_STEPS 6
+#define BOT_ARENA_LEFT 0
+#define BOT_ARENA_RIGHT 1
+#define BOT_WEIGHTS_STOCK 0
+#define BOT_WEIGHTS_CHAMPION 1
+#define BOT_ARENA_STAGE_CHAMPION 0
+#define BOT_ARENA_STAGE_STOCK 1
+#define BOT_ARENA_CHAMP_MAX_LOSSES 1
+#define BOT_ARENA_CHAMP_MAX_ROUNDS 4
+#define BOT_ARENA_STOCK_MAX_LOSSES 1
+#define BOT_ARENA_STOCK_MAX_ROUNDS 4
+
+#define BOARD_CELLS 220
+#define QUEUE_CAP 14
+#define BAG_SIZE 7
+#define BOT_PLAN_MAX 128
+#define AI_TUNE_COUNT 221
+
+fun botSetupPanelHeight() >> i64 {
+    if BOTDEVMODE {return 636;}
+    return 560;
+}
+
+fun botSetupRowCount() >> i32 {
+    if BOTDEVMODE {return 6;}
+    return 5;
+}
+
+fun botSetupPanicRow() >> i32 {
+    return 2;
+}
+
+fun botSetupWeightsRow() >> i32 {
+    if BOTDEVMODE {return 3;}
+    return -1;
+}
+
+fun botSetupStartRow() >> i32 {
+    if BOTDEVMODE {return 4;}
+    return 3;
+}
+
+fun botSetupBackRow() >> i32 {
+    if BOTDEVMODE {return 5;}
+    return 4;
+}
+
+fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+
+    i64 panel_h = botSetupPanelHeight();
+    fillRect(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90));
+    strokeRect(126, 128, 396, panel_h, alphaColor(theme.panel_stroke, 0.88));
+    drawTextColor(font, "AGAINST BOT", 176, 164, 28, theme.text_main);
+    drawTextColor(font, "Duel setup", 176, 202, 12, theme.text_muted);
+
+    if !canOpenBotSetupUi() {
+        drawBotWidthPopup(font, theme, true);
+        return;
+    }
+
+    i64 slider_x = 176;
+    i64 slider_y = 309;
+    i64 slider_w = 296;
+    f32 apm_norm = (g_bot_setup.target_apm - (BOT_APM_MIN as f32)) / ((BOT_APM_MAX - BOT_APM_MIN) as f32);
+    if apm_norm < 0.0 {apm_norm = 0.0;}
+    if apm_norm > 1.0 {apm_norm = 1.0;}
+
+    i64 row_y0 = 270;
+    i64 row_h = 76;
+    i32 row_count = botSetupRowCount();
+    for i32 i = 0; i < row_count; i++ {
+        i64 y = row_y0 + (i as i64) * row_h;
+        u32 bg = alphaColor(theme.panel_bg, 0.88);
+        u32 st = alphaColor(theme.panel_stroke, 0.55);
+        if i == g_bot_setup.index {
+            bg = alphaColor(theme.board_bg, 0.98);
+            st = theme.panel_stroke;
+        }
+        fillRect(156, y, 336, 58, bg);
+        strokeRect(156, y, 336, 58, st);
+    }
+
+    drawTextColor(font, "Target APM", 176, 286, 13, theme.text_main);
+    drawTextColor(font, TextFormat("%.1f", g_bot_setup.target_apm), 426, 286, 13, theme.panel_stroke);
+    fillRect(slider_x, slider_y, slider_w, 8, alphaColor(theme.board_bg, 0.94));
+    strokeRect(slider_x, slider_y, slider_w, 8, alphaColor(theme.panel_stroke, 0.76));
+    i64 knob_x = slider_x + (((slider_w - 14) as f32) * apm_norm) as i64;
+    fillRect(knob_x, slider_y - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
+    strokeRect(knob_x, slider_y - 4, 14, 16, alphaColor(theme.text_main, 0.85));
+    f32 messiness_norm = g_bot_setup.garbage_messiness / 100.0;
+    if messiness_norm < 0.0 {messiness_norm = 0.0;}
+    if messiness_norm > 1.0 {messiness_norm = 1.0;}
+    drawTextColor(font, "Garbage messiness", 176, 362, 13, theme.text_main);
+    drawTextColor(font, TextFormat("%.0f%%", g_bot_setup.garbage_messiness), 420, 362, 13, theme.panel_stroke);
+    fillRect(slider_x, slider_y + row_h, slider_w, 8, alphaColor(theme.board_bg, 0.94));
+    strokeRect(slider_x, slider_y + row_h, slider_w, 8, alphaColor(theme.panel_stroke, 0.76));
+    i64 messiness_knob_x = slider_x + (((slider_w - 14) as f32) * messiness_norm) as i64;
+    fillRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
+    strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
+    ... Hidden temporarily.
+    drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
+    drawTextColor(font, "OFF", 384, 438, 13, theme.text_muted);
+    ...
+    drawTextColor(font, "Panic burst", 176, 438, 13, theme.text_main);
+    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 438, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 438, 13, theme.text_muted);}
+    if BOTDEVMODE {
+        drawTextColor(font, "Weights", 176, 514, 13, theme.text_main);
+        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
+        drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 718, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 733, 10, theme.text_muted);
+    } else {
+        drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 643, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 658, 10, theme.text_muted);
+    }
+}
+
+fun clampBotTargetApm() >> void {
+    if g_bot_setup.target_apm < BOT_APM_MIN {g_bot_setup.target_apm = BOT_APM_MIN as f32;}
+    if g_bot_setup.target_apm > BOT_APM_MAX {g_bot_setup.target_apm = BOT_APM_MAX as f32;}
+}
+
+fun setBotTargetApmNorm(norm: f32) >> void {
+    f32 n = norm;
+    if n < 0.0 {n = 0.0;}
+    if n > 1.0 {n = 1.0;}
+    g_bot_setup.target_apm = (BOT_APM_MIN as f32) + ((BOT_APM_MAX - BOT_APM_MIN) as f32) * n;
+    clampBotTargetApm();
+}
+
+fun mouseBaseX() >> f32 {
+    Vector2 mouse = GetMousePosition();
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return 0.0;}
+    i32 ox = uiOffsetX(scale);
+    return (mouse.x - (ox as f32)) / scale;
+}
+
+fun mouseBaseY() >> f32 {
+    Vector2 mouse = GetMousePosition();
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return 0.0;}
+    i32 oy = uiOffsetY(scale);
+    return (mouse.y - (oy as f32)) / scale;
+}
+
+fun pointInBaseRectLocal(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
+    if px < (x as f32) {return false;}
+    if py < (y as f32) {return false;}
+    if px > ((x + w) as f32) {return false;}
+    if py > ((y + h) as f32) {return false;}
+    return true;
+}
+
+fun initBotSetupDefaults() >> void {
+    if g_bot_setup.target_apm < 1.0 {g_bot_setup.target_apm = 65.0;}
+    if g_bot_setup.garbage_messiness < 0.5 {g_bot_setup.garbage_messiness = 35.0;}
+    g_bot_setup.high_stack_tolerance = false;
+    g_bot_setup.panic_burst_enabled = false;
+    g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;
+    clampBotTargetApm();
+    clampBotGarbageMessiness();
+    g_bot_setup.index = 0;
+}
+
+fun startBotDuel() >> void {
+    g_game = g_game.with_screen(SCREEN_GAME);
+    startGameMode(MODE_VS_BOT);
+}
+
+fun initBotArenaSide(side: i32, setup: BotSetupState, generation: i32) >> void {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    g_bot_setup = setup;
+    initBotMatch();
+
+    if side == BOT_ARENA_LEFT {
+        g_bot_arena_left.setup = setup;
+        g_bot_arena_left.generation = generation;
+        g_bot_arena_left.runtime = g_bot;
+        g_bot_arena_left.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_left.plan_len = g_bot_plan_len;
+        g_bot_arena_left.plan_index = g_bot_plan_index;
+        g_bot_arena_left.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_left.planned_lines = g_bot_planned_lines;
+        g_bot_arena_left.planned_spin = g_bot_planned_spin;
+        g_bot_arena_left.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_left.garbage_hole = g_bot_garbage_hole;
+    } else {
+        g_bot_arena_right.setup = setup;
+        g_bot_arena_right.generation = generation;
+        g_bot_arena_right.runtime = g_bot;
+        g_bot_arena_right.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_right.plan_len = g_bot_plan_len;
+        g_bot_arena_right.plan_index = g_bot_plan_index;
+        g_bot_arena_right.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_right.planned_lines = g_bot_planned_lines;
+        g_bot_arena_right.planned_spin = g_bot_planned_spin;
+        g_bot_arena_right.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_right.garbage_hole = g_bot_garbage_hole;
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        board[i] = g_bot_board[i];
+        planned_board[i] = g_bot_planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {queue[i] = g_bot_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {bag[i] = g_bot_bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {plan_actions[i] = g_bot_plan_actions[i];}
+}
+
+fun loadBotArenaSideIntoScratch(side: i32, opponent_pending: i32) >> void {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    if side == BOT_ARENA_LEFT {
+        g_bot_setup = g_bot_arena_left.setup;
+        g_bot = g_bot_arena_left.runtime;
+        g_bot.pending_garbage = g_bot_arena_left.runtime.pending_garbage;
+        g_bot_pending_garbage = g_bot_arena_left.runtime.pending_garbage;
+        g_bot_plan_len = g_bot_arena_left.plan_len;
+        g_bot_plan_index = g_bot_arena_left.plan_index;
+        g_bot_plan_pending_snapshot = g_bot_arena_left.plan_pending_snapshot;
+        g_bot_planned_lines = g_bot_arena_left.planned_lines;
+        g_bot_planned_spin = g_bot_arena_left.planned_spin;
+        g_bot_planned_all_clear = g_bot_arena_left.planned_all_clear;
+        g_bot_garbage_hole = g_bot_arena_left.garbage_hole;
+    } else {
+        g_bot_setup = g_bot_arena_right.setup;
+        g_bot = g_bot_arena_right.runtime;
+        g_bot.pending_garbage = g_bot_arena_right.runtime.pending_garbage;
+        g_bot_pending_garbage = g_bot_arena_right.runtime.pending_garbage;
+        g_bot_plan_len = g_bot_arena_right.plan_len;
+        g_bot_plan_index = g_bot_arena_right.plan_index;
+        g_bot_plan_pending_snapshot = g_bot_arena_right.plan_pending_snapshot;
+        g_bot_planned_lines = g_bot_arena_right.planned_lines;
+        g_bot_planned_spin = g_bot_arena_right.planned_spin;
+        g_bot_planned_all_clear = g_bot_arena_right.planned_all_clear;
+        g_bot_garbage_hole = g_bot_arena_right.garbage_hole;
+    }
+    g_player_pending_garbage = opponent_pending;
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        g_bot_board[i] = board[i];
+        g_bot_planned_board[i] = planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {g_bot_queue[i] = queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {g_bot_bag[i] = bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {g_bot_plan_actions[i] = plan_actions[i];}
+}
+
+fun saveScratchIntoBotArenaSide(side: i32) >> i32 {
+    ptr<i32> board = arenaBoardPtr(side);
+    ptr<i32> queue = arenaQueuePtr(side);
+    ptr<i32> bag = arenaBagPtr(side);
+    ptr<i32> plan_actions = arenaPlanActionsPtr(side);
+    ptr<i32> planned_board = arenaPlannedBoardPtr(side);
+    if side == BOT_ARENA_LEFT {
+        g_bot_arena_left.setup = g_bot_setup;
+        g_bot_arena_left.runtime = g_bot;
+        g_bot_arena_left.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_left.plan_len = g_bot_plan_len;
+        g_bot_arena_left.plan_index = g_bot_plan_index;
+        g_bot_arena_left.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_left.planned_lines = g_bot_planned_lines;
+        g_bot_arena_left.planned_spin = g_bot_planned_spin;
+        g_bot_arena_left.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_left.garbage_hole = g_bot_garbage_hole;
+    } else {
+        g_bot_arena_right.setup = g_bot_setup;
+        g_bot_arena_right.runtime = g_bot;
+        g_bot_arena_right.runtime.pending_garbage = g_bot_pending_garbage;
+        g_bot_arena_right.plan_len = g_bot_plan_len;
+        g_bot_arena_right.plan_index = g_bot_plan_index;
+        g_bot_arena_right.plan_pending_snapshot = g_bot_plan_pending_snapshot;
+        g_bot_arena_right.planned_lines = g_bot_planned_lines;
+        g_bot_arena_right.planned_spin = g_bot_planned_spin;
+        g_bot_arena_right.planned_all_clear = g_bot_planned_all_clear;
+        g_bot_arena_right.garbage_hole = g_bot_garbage_hole;
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        board[i] = g_bot_board[i];
+        planned_board[i] = g_bot_planned_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {queue[i] = g_bot_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {bag[i] = g_bot_bag[i];}
+    for i32 i = 0; i < BOT_PLAN_MAX; i++ {plan_actions[i] = g_bot_plan_actions[i];}
+
+    return g_player_pending_garbage;
+}
+
+fun syncBotArenaOpeningSequence(dst: i32, src: i32) >> void {
+    ptr<i32> dst_queue = arenaQueuePtr(dst);
+    ptr<i32> src_queue = arenaQueuePtr(src);
+    ptr<i32> dst_bag = arenaBagPtr(dst);
+    ptr<i32> src_bag = arenaBagPtr(src);
+    i32 src_queue_count = g_bot_arena_left.runtime.queue_count;
+    i32 src_bag_pos = g_bot_arena_left.runtime.bag_pos;
+    i32 src_piece_kind = g_bot_arena_left.runtime.piece_kind;
+    if src == BOT_ARENA_RIGHT {
+        src_queue_count = g_bot_arena_right.runtime.queue_count;
+        src_bag_pos = g_bot_arena_right.runtime.bag_pos;
+        src_piece_kind = g_bot_arena_right.runtime.piece_kind;
+    }
+
+    if dst == BOT_ARENA_LEFT {
+        g_bot_arena_left.runtime.queue_count = src_queue_count;
+        g_bot_arena_left.runtime.bag_pos = src_bag_pos;
+        g_bot_arena_left.runtime.piece_kind = src_piece_kind;
+        g_bot_arena_left.runtime.piece_rotation = 0;
+        g_bot_arena_left.runtime.piece_x = 3;
+        g_bot_arena_left.runtime.piece_y = 0;
+        g_bot_arena_left.runtime.target_x = 3;
+        g_bot_arena_left.runtime.target_y = 0;
+        g_bot_arena_left.runtime.target_rotation = 0;
+        g_bot_arena_left.runtime.target_valid = false;
+        g_bot_arena_left.runtime.target_last_rotate = false;
+        g_bot_arena_left.runtime.target_tspin = false;
+        g_bot_arena_left.plan_len = 0;
+        g_bot_arena_left.plan_index = 0;
+        g_bot_arena_left.plan_pending_snapshot = 0;
+    } else {
+        g_bot_arena_right.runtime.queue_count = src_queue_count;
+        g_bot_arena_right.runtime.bag_pos = src_bag_pos;
+        g_bot_arena_right.runtime.piece_kind = src_piece_kind;
+        g_bot_arena_right.runtime.piece_rotation = 0;
+        g_bot_arena_right.runtime.piece_x = 3;
+        g_bot_arena_right.runtime.piece_y = 0;
+        g_bot_arena_right.runtime.target_x = 3;
+        g_bot_arena_right.runtime.target_y = 0;
+        g_bot_arena_right.runtime.target_rotation = 0;
+        g_bot_arena_right.runtime.target_valid = false;
+        g_bot_arena_right.runtime.target_last_rotate = false;
+        g_bot_arena_right.runtime.target_tspin = false;
+        g_bot_arena_right.plan_len = 0;
+        g_bot_arena_right.plan_index = 0;
+        g_bot_arena_right.plan_pending_snapshot = 0;
+    }
+
+    for i32 i = 0; i < QUEUE_CAP; i++ {dst_queue[i] = src_queue[i];}
+    for i32 i = 0; i < BAG_SIZE; i++ {dst_bag[i] = src_bag[i];}
+}
+
+fun initBotArenaRound() >> void {
+    if !BOTDEVMODE {
+        g_duel_running = false;
+        return;
+    }
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+
+    bool fresh_generation = false;
+    if g_bot_arena.compare_stock {fresh_generation = true;}
+    else if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION && g_bot_arena.generation_round == 0 && g_bot_arena.gauntlet_target_index == 0 {fresh_generation = true;}
+    BotSetupState challenger_setup = g_bot_arena_right.setup;
+    i32 challenger_generation = g_bot_arena_right.generation;
+
+    if fresh_generation {
+        challenger_setup = mutateArenaSetup(g_bot_arena.champion_setup, g_bot_arena.total_matches);
+        challenger_generation = g_bot_arena.total_matches + 1;
+        if challenger_generation <= g_bot_arena.champion_generation {challenger_generation = g_bot_arena.champion_generation + 1;}
+
+        copyI32Array(&g_bot_arena_left_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+        if g_bot_arena.compare_stock {
+            aiFillDefaultTuning(&g_bot_arena_right_tuning[0]);
+            challenger_setup = defaultArenaChampionSetup();
+            challenger_generation = 0;
+        } else {
+            mutateArenaTuning(&g_bot_arena_champion_tuning[0], g_bot_arena.total_matches, &g_bot_arena_right_tuning[0]);
+        }
+
+        if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+            g_bot_arena.candidate_setup = challenger_setup;
+            g_bot_arena.candidate_generation = challenger_generation;
+            copyI32Array(&g_bot_arena_candidate_tuning[0], &g_bot_arena_right_tuning[0], AI_TUNE_COUNT);
+        }
+    }
+
+    BotSetupState left_setup = arenaTargetSetup(g_bot_arena.gauntlet_target_index);
+    i32 left_generation = arenaTargetGeneration(g_bot_arena.gauntlet_target_index);
+    ptr<i32> left_tuning = &g_bot_arena_left_tuning[0];
+    BotSetupState right_setup = challenger_setup;
+    i32 right_generation = challenger_generation;
+    ptr<i32> right_tuning = &g_bot_arena_right_tuning[0];
+
+    copyArenaTargetTuning(g_bot_arena.gauntlet_target_index, left_tuning);
+
+    if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        left_setup = g_bot_arena.candidate_setup;
+        left_generation = g_bot_arena.candidate_generation;
+        copyI32Array(left_tuning, &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
+        right_setup = defaultArenaChampionSetup();
+        right_generation = 0;
+        right_tuning = &g_bot_arena_right_tuning[0];
+        aiFillDefaultTuning(right_tuning);
+    }
+
+    copyI32Array(&g_bot_arena_right_tuning[0], right_tuning, AI_TUNE_COUNT);
+
+    initBotArenaSide(BOT_ARENA_LEFT, left_setup, left_generation);
+    initBotArenaSide(BOT_ARENA_RIGHT, right_setup, right_generation);
+    syncBotArenaOpeningSequence(BOT_ARENA_RIGHT, BOT_ARENA_LEFT);
+
+    g_rt.run_timer = 0.0;
+    g_duel_running = true;
+    g_duel_result = DUEL_RESULT_PLAYING;
+}
+
+fun resolveBotArenaMatch(winner_side: i32) >> void {
+    if !BOTDEVMODE {return;}
+    if g_bot_arena.compare_stock {
+        g_bot_arena.last_winner_side = winner_side;
+        if winner_side == 1 {g_bot_arena.last_winner_generation = g_bot_arena_left.generation;}
+        else {g_bot_arena.last_winner_generation = 0;}
+        if winner_side == 1 {g_bot_arena.compare_stock_wins += 1;} else {g_bot_arena.compare_stock_losses += 1;}
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.generation_round += 1;
+    if winner_side == 1 {g_bot_arena.generation_left_wins += 1;} else {g_bot_arena.generation_right_wins += 1;}
+
+    if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+        bool champion_stage_done = false;
+        if g_bot_arena.generation_right_wins >= arenaRequiredWins(BOT_ARENA_CHAMP_MAX_ROUNDS, BOT_ARENA_CHAMP_MAX_LOSSES) {champion_stage_done = true;}
+        if g_bot_arena.generation_left_wins >= (BOT_ARENA_CHAMP_MAX_LOSSES + 1) {champion_stage_done = true;}
+        if g_bot_arena.generation_round >= BOT_ARENA_CHAMP_MAX_ROUNDS {champion_stage_done = true;}
+
+        if !champion_stage_done {
+            initBotArenaRound();
+            return;
+        }
+
+        bool challenger_passed_champion_gate = g_bot_arena.generation_right_wins >= arenaRequiredWins(BOT_ARENA_CHAMP_MAX_ROUNDS, BOT_ARENA_CHAMP_MAX_LOSSES);
+
+        if challenger_passed_champion_gate {
+            g_bot_arena.gauntlet_target_index += 1;
+            if g_bot_arena.gauntlet_target_index >= arenaGauntletChampionCount() {
+                g_bot_arena.generation_stage = BOT_ARENA_STAGE_STOCK;
+                g_bot_arena.stock_round = 0;
+                g_bot_arena.stock_left_wins = 0;
+                g_bot_arena.stock_right_wins = 0;
+            }
+            g_bot_arena.generation_round = 0;
+            g_bot_arena.generation_left_wins = 0;
+            g_bot_arena.generation_right_wins = 0;
+            initBotArenaRound();
+            return;
+        }
+
+        g_bot_arena.total_matches += 1;
+        g_bot_arena.last_winner_side = 1;
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        g_bot_arena.champion_wins += 1;
+        g_bot_arena.last_winner_generation = g_bot_arena.champion_generation;
+        g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.gauntlet_target_index = 0;
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        g_bot_arena.stock_round = 0;
+        g_bot_arena.stock_left_wins = 0;
+        g_bot_arena.stock_right_wins = 0;
+        saveBotDuelsFile();
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.stock_round += 1;
+    if winner_side == 1 {g_bot_arena.stock_left_wins += 1;} else {g_bot_arena.stock_right_wins += 1;}
+
+    bool stock_stage_done = false;
+    if g_bot_arena.stock_left_wins >= arenaRequiredWins(BOT_ARENA_STOCK_MAX_ROUNDS, BOT_ARENA_STOCK_MAX_LOSSES) {stock_stage_done = true;}
+    if g_bot_arena.stock_right_wins >= (BOT_ARENA_STOCK_MAX_LOSSES + 1) {stock_stage_done = true;}
+    if g_bot_arena.stock_round >= BOT_ARENA_STOCK_MAX_ROUNDS {stock_stage_done = true;}
+
+    if !stock_stage_done {
+        initBotArenaRound();
+        return;
+    }
+
+    g_bot_arena.total_matches += 1;
+    bool challenger_passed_stock_gate = false;
+    challenger_passed_stock_gate = g_bot_arena.stock_left_wins >= arenaRequiredWins(BOT_ARENA_STOCK_MAX_ROUNDS, BOT_ARENA_STOCK_MAX_LOSSES);
+
+    if challenger_passed_stock_gate {
+        g_bot_arena.last_winner_side = 2;
+        pushChampionToHistory();
+        g_bot_arena.champion_setup = g_bot_arena.candidate_setup;
+        g_bot_arena.champion_generation = g_bot_arena.candidate_generation;
+        g_bot_arena.champion_wins = 1;
+        g_bot_arena.last_winner_generation = g_bot_arena.candidate_generation;
+        copyI32Array(&g_bot_arena_champion_tuning[0], &g_bot_arena_candidate_tuning[0], AI_TUNE_COUNT);
+    } else {
+        g_bot_arena.last_winner_side = 2;
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        g_bot_arena.champion_wins += 1;
+        g_bot_arena.last_winner_generation = g_bot_arena.champion_generation;
+    }
+
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+    saveBotDuelsFile();
+    initBotArenaRound();
+}
+
+fun startBotDuelsMode() >> void {
+    if !BOTDEVMODE {return;}
+    g_game = g_game.with_screen(SCREEN_GAME);
+    startGameMode(MODE_BOT_DUELS);
+}
+
+fun updateBotArenaSide(side: i32, opponent: i32, dt: f32) >> void {
+    i32 opponent_pending = g_bot_arena_left.runtime.pending_garbage;
+    if opponent == BOT_ARENA_RIGHT {opponent_pending = g_bot_arena_right.runtime.pending_garbage;}
+    applyAiTuning(arenaTuningPtr(side));
+    loadBotArenaSideIntoScratch(side, opponent_pending);
+
+    g_bot.place_meter += dt * botActionRate(dt);
+    if g_bot.place_meter > 12.0 {g_bot.place_meter = 12.0;}
+
+    for (g_bot.place_meter >= 1.0) {
+        g_bot.place_meter -= 1.0;
+
+        if !botPerformPlannedAction() {
+            g_bot.game_over = true;
+            break;
+        }
+        g_bot.actions_taken += 1;
+        if g_bot.game_over {break;}
+    }
+
+    if opponent == BOT_ARENA_LEFT {g_bot_arena_left.runtime.pending_garbage = saveScratchIntoBotArenaSide(side);}
+    else {g_bot_arena_right.runtime.pending_garbage = saveScratchIntoBotArenaSide(side);}
+}
+
+fun updateBotDuelsMode(dt: f32) >> void {
+    if !BOTDEVMODE {return;}
+    if IsKeyPressed(KEY_ONE) {
+        g_bot_arena.compare_stock = !g_bot_arena.compare_stock;
+        g_bot_arena.last_winner_side = 0;
+        g_bot_arena.last_winner_generation = 0;
+        g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+        g_bot_arena.gauntlet_target_index = 0;
+        g_bot_arena.generation_round = 0;
+        g_bot_arena.generation_left_wins = 0;
+        g_bot_arena.generation_right_wins = 0;
+        g_bot_arena.stock_round = 0;
+        g_bot_arena.stock_left_wins = 0;
+        g_bot_arena.stock_right_wins = 0;
+        if g_bot_arena.compare_stock {
+            g_bot_arena.compare_stock_wins = 0;
+            g_bot_arena.compare_stock_losses = 0;
+        }
+        initBotArenaRound();
+        return;
+    }
+
+    if !g_duel_running {return;}
+
+    for i32 step = 0; step < BOT_DUELS_SIM_STEPS; step++ {
+        if !g_duel_running {break;}
+
+        g_rt.run_timer += dt;
+
+        if !g_bot_arena_left.runtime.game_over {updateBotArenaSide(BOT_ARENA_LEFT, BOT_ARENA_RIGHT, dt);}
+        if g_bot_arena_right.runtime.game_over {
+            g_duel_running = false;
+            resolveBotArenaMatch(1);
+            break;
+        }
+
+        if !g_bot_arena_right.runtime.game_over {updateBotArenaSide(BOT_ARENA_RIGHT, BOT_ARENA_LEFT, dt);}
+        if g_bot_arena_left.runtime.game_over {
+            g_duel_running = false;
+            resolveBotArenaMatch(2);
+            break;
+        }
+    }
+}
+
+fun updateBotSetupScreen() >> void {
+    if IsKeyPressed(KEY_ESCAPE) {
+        g_game = g_game.with_screen(SCREEN_MENU);
+        return;
+    }
+
+    if !canOpenBotSetupUi() {return;}
+
+    i32 max_index = botSetupRowCount() - 1;
+    if g_bot_setup.index > max_index {g_bot_setup.index = max_index;}
+
+    if IsKeyPressed(KEY_UP) {
+        g_bot_setup.index -= 1;
+        if g_bot_setup.index < 0 {g_bot_setup.index = max_index;}
+    }
+    if IsKeyPressed(KEY_DOWN) {
+        g_bot_setup.index += 1;
+        if g_bot_setup.index > max_index {g_bot_setup.index = 0;}
+    }
+
+    i64 slider_x = 176;
+    i64 slider_y = 309;
+    i64 slider_w = 296;
+    i64 row_x = 156;
+    i64 row_w = 336;
+    i64 row_y0 = 270;
+    i64 row_h = 76;
+    f32 mx = mouseBaseX();
+    f32 my = mouseBaseY();
+    i32 row_count = botSetupRowCount();
+    for i32 i = 0; i < row_count; i++ {
+        i64 y = row_y0 + (i as i64) * row_h;
+        if pointInBaseRectLocal(mx, my, row_x, y, row_w, 58) {g_bot_setup.index = i;}
+    }
+    bool slider_hover = mx >= (slider_x as f32) && mx <= ((slider_x + slider_w) as f32) && my >= ((slider_y - 10) as f32) && my <= ((slider_y + 20) as f32);
+    bool messiness_slider_hover = mx >= (slider_x as f32) && mx <= ((slider_x + slider_w) as f32) && my >= ((slider_y + row_h - 10) as f32) && my <= ((slider_y + row_h + 20) as f32);
+    if slider_hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_bot_setup.index = 0;}
+    if g_bot_setup.index == 0 && slider_hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        f32 norm = (mx - (slider_x as f32)) / (slider_w as f32);
+        setBotTargetApmNorm(norm);
+    }
+    if messiness_slider_hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_bot_setup.index = 1;}
+    if g_bot_setup.index == 1 && messiness_slider_hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        g_bot_setup.garbage_messiness = ((mx - (slider_x as f32)) / (slider_w as f32)) * 100.0;
+        clampBotGarbageMessiness();
+    }
+    i32 burst_row = botSetupPanicRow();
+    i32 start_row = botSetupStartRow();
+    i32 back_row = botSetupBackRow();
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (burst_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+    }
+    i32 weights_row = botSetupWeightsRow();
+    if BOTDEVMODE {
+        if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (weights_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
+    }
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (start_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {startBotDuel(); return;}
+    if pointInBaseRectLocal(mx, my, row_x, row_y0 + row_h * (back_row as i64), row_w, 58) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_game = g_game.with_screen(SCREEN_MENU); return;}
+    g_bot_setup.high_stack_tolerance = false;
+
+    if g_bot_setup.index == 0 {
+        if IsKeyPressed(KEY_LEFT) {g_bot_setup.target_apm -= 5.0;}
+        if IsKeyPressed(KEY_RIGHT) {g_bot_setup.target_apm += 5.0;}
+        clampBotTargetApm();
+    } else if g_bot_setup.index == 1 {
+        if IsKeyPressed(KEY_LEFT) {g_bot_setup.garbage_messiness -= 5.0;}
+        if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_messiness += 5.0;}
+        clampBotGarbageMessiness();
+    } else if g_bot_setup.index == 2 {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
+            g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+        }
+    } else if BOTDEVMODE && g_bot_setup.index == weights_row {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
+    }
+
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+        if g_bot_setup.index == 2 {
+            g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
+        }
+        if BOTDEVMODE && g_bot_setup.index == weights_row {
+            if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;} else {g_bot_setup.weights_mode = BOT_WEIGHTS_STOCK;}
+        }
+        if g_bot_setup.index == start_row {startBotDuel();}
+        if g_bot_setup.index == back_row {g_game = g_game.with_screen(SCREEN_MENU);}
+    }
+}
+
