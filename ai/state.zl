@@ -1,0 +1,38 @@
+module zltris.ai;
+
+#define BOT_DIRTY_PROJ_SEARCH_MAX 384
+#define BOT_STATE_TABLE_SIZE 3360
+
+#define AI_TUNE_RATE_BASE 154
+#define AI_TUNE_COUNT 221
+
+fun aiRateI(offset: i32) >> i32 {
+    return aiTune((AI_TUNE_RATE_BASE + offset) as i64);
+}
+
+fun aiRateF100(offset: i32) >> f32 {
+    return (aiRateI(offset) as f32) * 0.01;
+}
+
+fun aiRateF10(offset: i32) >> f32 {
+    return (aiRateI(offset) as f32) * 0.1;
+}
+
+struct AiMove {
+    valid bool,
+    x i32,
+    rotation i32,
+    tspin bool,
+}
+
+bool g_ai_tuning_ready = false;
+arr<i32, AI_TUNE_COUNT> g_ai_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_ai_tuning_defaults = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_ai_dirty_xs = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_ai_dirty_ys = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_ai_dirty_rots = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_ai_dirty_rotate_flags = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_ai_dirty_depths = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_ai_dirty_visited = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_ai_dirty_landing_states = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_ai_dirty_landing_steps = {0};

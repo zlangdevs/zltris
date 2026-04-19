@@ -1,0 +1,547 @@
+module zltris.ai;
+
+#define AI_TUNE_MODE_BASE 0
+#define AI_TUNE_PANIC_BASE 27
+#define AI_TUNE_STRUCT_BASE 37
+#define AI_TUNE_NO_PROGRESS_BASE 67
+#define AI_TUNE_LOCKED_BASE 74
+#define AI_TUNE_EXACT_BASE 109
+#define AI_TUNE_GREEDY_BASE 134
+#define AI_TUNE_MOVE_BASE 135
+#define AI_TUNE_RATE_BASE 154
+#define AI_TUNE_COUNT 221
+
+fun clampI(v: i32, lo: i64, hi: i64) >> i32 {
+    i64 vv = v as i64;
+    if vv < lo {return lo as i32;}
+    if vv > hi {return hi as i32;}
+    return v;
+}
+
+fun aiEnsureTuningDefaults() >> void {
+    if g_ai_tuning_ready {return;}
+
+    ... Old manually written weights (kept for reference).
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 0] = 20;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 1] = 14;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 2] = 16;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 3] = 8;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 4] = 7;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 5] = 5;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 6] = 15;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 7] = 18;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 8] = 22;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 9] = 13;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 10] = 16;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 11] = 3;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 12] = 15;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 13] = 3;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 14] = 11;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 15] = 14;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 16] = 1;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 17] = 6;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 18] = 1;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 19] = 2;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 20] = 4;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 21] = 2;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 22] = 2;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 23] = 7;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 24] = 1;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 25] = 5;
+    g_ai_tuning_defaults[AI_TUNE_MODE_BASE + 26] = 10;
+
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 0] = 140000;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 1] = 220000;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 2] = 280000;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 3] = 12;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 4] = 20;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 5] = 28;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 6] = 55;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 7] = 30;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 8] = 16;
+    g_ai_tuning_defaults[AI_TUNE_PANIC_BASE + 9] = 18000;
+
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 0] = 1400;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 1] = 280;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 2] = 55;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 3] = 16;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 4] = 680;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 5] = 240;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 6] = 5;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 7] = 12;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 8] = 11;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 9] = 380;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 10] = 16;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 11] = 15;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 12] = 2600;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 13] = 19;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 14] = 18;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 15] = 4200;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 16] = 21;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 17] = 14000;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 18] = 20;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 19] = 9000;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 20] = 7;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 21] = 3800;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 22] = 520;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 23] = 280;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 24] = 820;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 25] = 4800;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 26] = 1900;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 27] = 360;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 28] = 108;
+    g_ai_tuning_defaults[AI_TUNE_STRUCT_BASE + 29] = 340;
+
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 0] = 260000;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 1] = 12;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 2] = 80000;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 3] = 20;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 4] = 20000;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 5] = 28;
+    g_ai_tuning_defaults[AI_TUNE_NO_PROGRESS_BASE + 6] = 8000;
+
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 0] = 500;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 1] = 180;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 2] = 5;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 3] = 6;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 4] = 6500;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 5] = 21000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 6] = 2100;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 7] = 9000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 8] = 520;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 9] = 1600;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 10] = 180;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 11] = 620;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 12] = 1400;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 13] = 5200;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 14] = 28000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 15] = 3200;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 16] = 1600;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 17] = 220000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 18] = 18000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 19] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 20] = 18000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 21] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 22] = 140000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 23] = 22000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 24] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 25] = 60000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 26] = 2500;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 27] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 28] = 80000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 29] = 70000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 30] = 5200;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 31] = 900;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 32] = 6200;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 33] = 13000;
+    g_ai_tuning_defaults[AI_TUNE_LOCKED_BASE + 34] = 2600;
+
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 0] = 85;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 1] = 25;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 2] = 12;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 3] = 15;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 4] = 18;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 5] = 8;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 6] = 24;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 7] = 0;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 8] = 8;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 9] = 12;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 10] = 4;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 11] = 12;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 12] = 0;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 13] = 2;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 14] = 40;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 15] = 4;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 16] = 20;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 17] = 7;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 18] = 0;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 19] = 2100;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 20] = 12;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 21] = 11;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 22] = 2200;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 23] = 700;
+    g_ai_tuning_defaults[AI_TUNE_EXACT_BASE + 24] = 1600;
+
+    g_ai_tuning_defaults[AI_TUNE_GREEDY_BASE + 0] = 500000;
+
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 0] = 2;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 1] = 180000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 2] = 260;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 3] = 240000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 4] = 70000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 5] = 60000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 6] = 88000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 7] = 18000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 8] = 16000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 9] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 10] = 9000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 11] = 22000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 12] = 18000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 13] = 98000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 14] = 22000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 15] = 19000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 16] = 14000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 17] = 12000;
+    g_ai_tuning_defaults[AI_TUNE_MOVE_BASE + 18] = 80;
+    ...
+
+    ?? ML weights from bot_duels.cfg champion_generation=3755.
+    g_ai_tuning_defaults[0] = 20;
+    g_ai_tuning_defaults[1] = 7;
+    g_ai_tuning_defaults[2] = 25;
+    g_ai_tuning_defaults[3] = 6;
+    g_ai_tuning_defaults[4] = 20;
+    g_ai_tuning_defaults[5] = 7;
+    g_ai_tuning_defaults[6] = 30;
+    g_ai_tuning_defaults[7] = 19;
+    g_ai_tuning_defaults[8] = 40;
+    g_ai_tuning_defaults[9] = 0;
+    g_ai_tuning_defaults[10] = 15;
+    g_ai_tuning_defaults[11] = 5;
+    g_ai_tuning_defaults[12] = 8;
+    g_ai_tuning_defaults[13] = 9;
+    g_ai_tuning_defaults[14] = 25;
+    g_ai_tuning_defaults[15] = 17;
+    g_ai_tuning_defaults[16] = 1;
+    g_ai_tuning_defaults[17] = 16;
+    g_ai_tuning_defaults[18] = 9;
+    g_ai_tuning_defaults[19] = 1;
+    g_ai_tuning_defaults[20] = 3;
+    g_ai_tuning_defaults[21] = 11;
+    g_ai_tuning_defaults[22] = 5;
+    g_ai_tuning_defaults[23] = 36;
+    g_ai_tuning_defaults[24] = 2;
+    g_ai_tuning_defaults[25] = 16;
+    g_ai_tuning_defaults[26] = 0;
+    g_ai_tuning_defaults[27] = 89809;
+    g_ai_tuning_defaults[28] = 225850;
+    g_ai_tuning_defaults[29] = 358087;
+    g_ai_tuning_defaults[30] = 10;
+    g_ai_tuning_defaults[31] = 0;
+    g_ai_tuning_defaults[32] = 11;
+    g_ai_tuning_defaults[33] = 93;
+    g_ai_tuning_defaults[34] = 23;
+    g_ai_tuning_defaults[35] = 14;
+    g_ai_tuning_defaults[36] = 5774;
+    g_ai_tuning_defaults[37] = 67;
+    g_ai_tuning_defaults[38] = 293;
+    g_ai_tuning_defaults[39] = 81;
+    g_ai_tuning_defaults[40] = 3;
+    g_ai_tuning_defaults[41] = 7;
+    g_ai_tuning_defaults[42] = 404;
+    g_ai_tuning_defaults[43] = 1;
+    g_ai_tuning_defaults[44] = 5;
+    g_ai_tuning_defaults[45] = 20;
+    g_ai_tuning_defaults[46] = 347;
+    g_ai_tuning_defaults[47] = 22;
+    g_ai_tuning_defaults[48] = 7;
+    g_ai_tuning_defaults[49] = 1630;
+    g_ai_tuning_defaults[50] = 27;
+    g_ai_tuning_defaults[51] = 13;
+    g_ai_tuning_defaults[52] = 6525;
+    g_ai_tuning_defaults[53] = 27;
+    g_ai_tuning_defaults[54] = 13703;
+    g_ai_tuning_defaults[55] = 7;
+    g_ai_tuning_defaults[56] = 9239;
+    g_ai_tuning_defaults[57] = 22;
+    g_ai_tuning_defaults[58] = 2169;
+    g_ai_tuning_defaults[59] = 435;
+    g_ai_tuning_defaults[60] = 282;
+    g_ai_tuning_defaults[61] = 873;
+    g_ai_tuning_defaults[62] = 7181;
+    g_ai_tuning_defaults[63] = 2424;
+    g_ai_tuning_defaults[64] = 201;
+    g_ai_tuning_defaults[65] = 173;
+    g_ai_tuning_defaults[66] = 474;
+    g_ai_tuning_defaults[67] = 275600;
+    g_ai_tuning_defaults[68] = 3;
+    g_ai_tuning_defaults[69] = 78538;
+    g_ai_tuning_defaults[70] = 25;
+    g_ai_tuning_defaults[71] = 20341;
+    g_ai_tuning_defaults[72] = 31;
+    g_ai_tuning_defaults[73] = 5354;
+    g_ai_tuning_defaults[74] = 764;
+    g_ai_tuning_defaults[75] = 178;
+    g_ai_tuning_defaults[76] = 19;
+    g_ai_tuning_defaults[77] = 11;
+    g_ai_tuning_defaults[78] = 7004;
+    g_ai_tuning_defaults[79] = 13347;
+    g_ai_tuning_defaults[80] = 3623;
+    g_ai_tuning_defaults[81] = 14616;
+    g_ai_tuning_defaults[82] = 237;
+    g_ai_tuning_defaults[83] = 1926;
+    g_ai_tuning_defaults[84] = 27;
+    g_ai_tuning_defaults[85] = 463;
+    g_ai_tuning_defaults[86] = 1425;
+    g_ai_tuning_defaults[87] = 7063;
+    g_ai_tuning_defaults[88] = 31141;
+    g_ai_tuning_defaults[89] = 437;
+    g_ai_tuning_defaults[90] = 2289;
+    g_ai_tuning_defaults[91] = 186980;
+    g_ai_tuning_defaults[92] = 10181;
+    g_ai_tuning_defaults[93] = 21133;
+    g_ai_tuning_defaults[94] = 13572;
+    g_ai_tuning_defaults[95] = 15406;
+    g_ai_tuning_defaults[96] = 154649;
+    g_ai_tuning_defaults[97] = 16198;
+    g_ai_tuning_defaults[98] = 12811;
+    g_ai_tuning_defaults[99] = 57908;
+    g_ai_tuning_defaults[100] = 4202;
+    g_ai_tuning_defaults[101] = 12219;
+    g_ai_tuning_defaults[102] = 33393;
+    g_ai_tuning_defaults[103] = 59361;
+    g_ai_tuning_defaults[104] = 6261;
+    g_ai_tuning_defaults[105] = 1266;
+    g_ai_tuning_defaults[106] = 1553;
+    g_ai_tuning_defaults[107] = 14041;
+    g_ai_tuning_defaults[108] = 4528;
+    g_ai_tuning_defaults[109] = 96;
+    g_ai_tuning_defaults[110] = 38;
+    g_ai_tuning_defaults[111] = 0;
+    g_ai_tuning_defaults[112] = 7;
+    g_ai_tuning_defaults[113] = 11;
+    g_ai_tuning_defaults[114] = 10;
+    g_ai_tuning_defaults[115] = 19;
+    g_ai_tuning_defaults[116] = 22;
+    g_ai_tuning_defaults[117] = 17;
+    g_ai_tuning_defaults[118] = 7;
+    g_ai_tuning_defaults[119] = 33;
+    g_ai_tuning_defaults[120] = 13;
+    g_ai_tuning_defaults[121] = 18;
+    g_ai_tuning_defaults[122] = 3;
+    g_ai_tuning_defaults[123] = 31;
+    g_ai_tuning_defaults[124] = 17;
+    g_ai_tuning_defaults[125] = 26;
+    g_ai_tuning_defaults[126] = 7;
+    g_ai_tuning_defaults[127] = 0;
+    g_ai_tuning_defaults[128] = 3010;
+    g_ai_tuning_defaults[129] = 15;
+    g_ai_tuning_defaults[130] = 5;
+    g_ai_tuning_defaults[131] = 2847;
+    g_ai_tuning_defaults[132] = 116;
+    g_ai_tuning_defaults[133] = 2078;
+    g_ai_tuning_defaults[134] = 399651;
+    g_ai_tuning_defaults[135] = 1;
+    g_ai_tuning_defaults[136] = 213254;
+    g_ai_tuning_defaults[137] = 433;
+    g_ai_tuning_defaults[138] = 292330;
+    g_ai_tuning_defaults[139] = 113045;
+    g_ai_tuning_defaults[140] = 64951;
+    g_ai_tuning_defaults[141] = 135444;
+    g_ai_tuning_defaults[142] = 21970;
+    g_ai_tuning_defaults[143] = 2441;
+    g_ai_tuning_defaults[144] = 8429;
+    g_ai_tuning_defaults[145] = 11906;
+    g_ai_tuning_defaults[146] = 23186;
+    g_ai_tuning_defaults[147] = 15791;
+    g_ai_tuning_defaults[148] = 110668;
+    g_ai_tuning_defaults[149] = 20043;
+    g_ai_tuning_defaults[150] = 28989;
+    g_ai_tuning_defaults[151] = 13166;
+    g_ai_tuning_defaults[152] = 7362;
+    g_ai_tuning_defaults[153] = 1;
+
+    g_ai_tuning_defaults[154] = 90;
+    g_ai_tuning_defaults[155] = 130;
+    g_ai_tuning_defaults[156] = 170;
+    g_ai_tuning_defaults[157] = 190;
+    g_ai_tuning_defaults[158] = 150;
+    g_ai_tuning_defaults[159] = 500;
+    g_ai_tuning_defaults[160] = 650;
+    g_ai_tuning_defaults[161] = 750;
+    g_ai_tuning_defaults[162] = 850;
+    g_ai_tuning_defaults[163] = 1200;
+    g_ai_tuning_defaults[164] = 24;
+    g_ai_tuning_defaults[165] = 34;
+    g_ai_tuning_defaults[166] = 45;
+    g_ai_tuning_defaults[167] = 58;
+    g_ai_tuning_defaults[168] = 35;
+    g_ai_tuning_defaults[169] = 70;
+    g_ai_tuning_defaults[170] = 55;
+    g_ai_tuning_defaults[171] = 70;
+    g_ai_tuning_defaults[172] = 92;
+    g_ai_tuning_defaults[173] = 85;
+    g_ai_tuning_defaults[174] = 95;
+    g_ai_tuning_defaults[175] = 90;
+    g_ai_tuning_defaults[176] = 8;
+    g_ai_tuning_defaults[177] = 11;
+    g_ai_tuning_defaults[178] = 14;
+    g_ai_tuning_defaults[179] = 115;
+    g_ai_tuning_defaults[180] = 125;
+    g_ai_tuning_defaults[181] = 150;
+    g_ai_tuning_defaults[182] = 190;
+    g_ai_tuning_defaults[183] = 240;
+    g_ai_tuning_defaults[184] = 480;
+    g_ai_tuning_defaults[185] = 680;
+    g_ai_tuning_defaults[186] = 1200;
+
+    g_ai_tuning_defaults[187] = 90;
+    g_ai_tuning_defaults[188] = 130;
+    g_ai_tuning_defaults[189] = 170;
+    g_ai_tuning_defaults[190] = 150;
+    g_ai_tuning_defaults[191] = 2;
+    g_ai_tuning_defaults[192] = 4;
+    g_ai_tuning_defaults[193] = 6;
+    g_ai_tuning_defaults[194] = 35;
+    g_ai_tuning_defaults[195] = 70;
+    g_ai_tuning_defaults[196] = 2;
+    g_ai_tuning_defaults[197] = 2;
+    g_ai_tuning_defaults[198] = 900;
+    g_ai_tuning_defaults[199] = 700;
+    g_ai_tuning_defaults[200] = 520;
+    g_ai_tuning_defaults[201] = 380;
+    g_ai_tuning_defaults[202] = 0;
+    g_ai_tuning_defaults[203] = 60000;
+    g_ai_tuning_defaults[204] = 36000;
+    g_ai_tuning_defaults[205] = 18000;
+    g_ai_tuning_defaults[206] = 9000;
+    g_ai_tuning_defaults[207] = 0;
+    g_ai_tuning_defaults[208] = 4000;
+    g_ai_tuning_defaults[209] = 7000;
+    g_ai_tuning_defaults[210] = 11000;
+    g_ai_tuning_defaults[211] = 16000;
+    g_ai_tuning_defaults[212] = 5000;
+    g_ai_tuning_defaults[213] = 7000;
+    g_ai_tuning_defaults[214] = 26000;
+    g_ai_tuning_defaults[215] = 24000;
+    g_ai_tuning_defaults[216] = 120;
+    g_ai_tuning_defaults[217] = 0;
+    g_ai_tuning_defaults[218] = 6;
+    g_ai_tuning_defaults[219] = 4;
+    g_ai_tuning_defaults[220] = 6;
+
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        g_ai_tuning[i] = g_ai_tuning_defaults[i];
+    }
+    g_ai_tuning_ready = true;
+}
+
+fun aiResetTuningDefaults() >> void {
+    aiEnsureTuningDefaults();
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        g_ai_tuning[i] = g_ai_tuning_defaults[i];
+    }
+}
+
+fun aiGetTuningValue(index: i32) >> i32 {
+    aiEnsureTuningDefaults();
+    if index < 0 || index >= AI_TUNE_COUNT {return 0;}
+    return g_ai_tuning[index];
+}
+
+fun aiFillDefaultTuning(out_values: ptr<i32>) >> void {
+    aiEnsureTuningDefaults();
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        out_values[i] = g_ai_tuning_defaults[i];
+    }
+}
+
+fun aiFillCurrentTuning(out_values: ptr<i32>) >> void {
+    aiEnsureTuningDefaults();
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        out_values[i] = g_ai_tuning[i];
+    }
+}
+
+fun aiClampTuningValue(index: i32, value: i32) >> i32 {
+    aiEnsureTuningDefaults();
+    if index < 0 || index >= AI_TUNE_COUNT {return value;}
+
+    if index >= AI_TUNE_MODE_BASE && index < AI_TUNE_PANIC_BASE {return clampI(value, 0, 40);}
+
+    if index >= AI_TUNE_PANIC_BASE && index < AI_TUNE_STRUCT_BASE {
+        i32 off = index - AI_TUNE_PANIC_BASE;
+        if off <= 2 {return clampI(value, 1000, 600000);}
+        if off <= 5 {return clampI(value, 0, 60);}
+        if off <= 8 {return clampI(value, 1, 100);}
+        return clampI(value, 1000, 200000);
+    }
+
+    if index >= AI_TUNE_STRUCT_BASE && index < AI_TUNE_NO_PROGRESS_BASE {
+        i32 off = index - AI_TUNE_STRUCT_BASE;
+        if off == 3 || off == 7 || off == 8 || off == 10 || off == 11 || off == 13 || off == 14 || off == 16 || off == 18 {return clampI(value, 0, 40);}
+        if off == 6 || off == 20 {return clampI(value, 1, 32);}
+        if off == 2 {return clampI(value, 0, 1000);}
+        if off == 28 {return clampI(value, 0, 2000);}
+        if off == 29 {return clampI(value, 0, 4000);}
+        return clampI(value, 0, 120000);
+    }
+
+    if index >= AI_TUNE_NO_PROGRESS_BASE && index < AI_TUNE_LOCKED_BASE {
+        i32 off = index - AI_TUNE_NO_PROGRESS_BASE;
+        if off == 1 || off == 3 || off == 5 {return clampI(value, 0, 60);}
+        return clampI(value, 1000, 600000);
+    }
+
+    if index >= AI_TUNE_LOCKED_BASE && index < AI_TUNE_EXACT_BASE {
+        i32 off = index - AI_TUNE_LOCKED_BASE;
+        if off == 2 || off == 3 {return clampI(value, 0, 20);}
+        if off == 0 || off == 1 {return clampI(value, 0, 5000);}
+        if off == 10 || off == 11 || off == 31 {return clampI(value, 0, 5000);}
+        return clampI(value, 0, 800000);
+    }
+
+    if index >= AI_TUNE_EXACT_BASE && index < AI_TUNE_GREEDY_BASE {
+        i32 off = index - AI_TUNE_EXACT_BASE;
+        if off == 0 || off == 1 || off == 3 || off == 5 || off == 7 || off == 9 || off == 12 || off == 14 || off == 16 || off == 18 {return clampI(value, 0, 100);}
+        if off == 2 || off == 4 || off == 6 || off == 8 || off == 10 || off == 11 || off == 13 || off == 15 || off == 17 {return clampI(value, 0, 40);}
+        if off == 20 || off == 21 {return clampI(value, 0, 40);}
+        if off == 23 {return clampI(value, 0, 20000);}
+        return clampI(value, 0, 200000);
+    }
+
+    if index == AI_TUNE_GREEDY_BASE {return clampI(value, 1000, 2000000);}
+
+    if index >= AI_TUNE_RATE_BASE {return clampI(value, 0, 2000000);}
+
+    i32 move_off = index - AI_TUNE_MOVE_BASE;
+    if move_off == 0 {return clampI(value, 0, 10);}
+    if move_off == 2 || move_off == 18 {return clampI(value, 0, 5000);}
+    return clampI(value, 0, 800000);
+}
+
+fun aiSetTuningValue(index: i32, value: i32) >> void {
+    aiEnsureTuningDefaults();
+    if index < 0 || index >= AI_TUNE_COUNT {return;}
+    g_ai_tuning[index] = aiClampTuningValue(index, value);
+}
+
+fun aiTuningMutationStep(index: i32) >> i32 {
+    aiEnsureTuningDefaults();
+    if index < 0 || index >= AI_TUNE_COUNT {return 1;}
+
+    if index >= AI_TUNE_MODE_BASE && index < AI_TUNE_PANIC_BASE {return 1;}
+    if index >= AI_TUNE_PANIC_BASE && index < AI_TUNE_STRUCT_BASE {
+        i32 off = index - AI_TUNE_PANIC_BASE;
+        if off >= 3 && off <= 8 {return 1;}
+    }
+    if index >= AI_TUNE_STRUCT_BASE && index < AI_TUNE_NO_PROGRESS_BASE {
+        i32 off = index - AI_TUNE_STRUCT_BASE;
+        if off == 3 || off == 6 || off == 7 || off == 8 || off == 10 || off == 11 || off == 13 || off == 14 || off == 16 || off == 18 || off == 20 {return 1;}
+    }
+    if index >= AI_TUNE_NO_PROGRESS_BASE && index < AI_TUNE_LOCKED_BASE {
+        i32 off = index - AI_TUNE_NO_PROGRESS_BASE;
+        if off == 1 || off == 3 || off == 5 {return 1;}
+    }
+    if index >= AI_TUNE_EXACT_BASE && index < AI_TUNE_GREEDY_BASE {
+        i32 off = index - AI_TUNE_EXACT_BASE;
+        if off <= 18 || off == 20 || off == 21 {return 1;}
+    }
+    if index == AI_TUNE_MOVE_BASE {return 1;}
+
+    i32 def = g_ai_tuning_defaults[index];
+    i32 step = 1;
+    if def >= 200000 {step = def / 20;}
+    else if def >= 50000 {step = def / 16;}
+    else if def >= 10000 {step = def / 12;}
+    else if def >= 1000 {step = def / 10;}
+    else if def >= 100 {step = def / 8;}
+    else if def >= 20 {step = def / 6;}
+    if step < 1 {step = 1;}
+    return step;
+}
+
+fun aiTune(index: i64) >> i32 {
+    aiEnsureTuningDefaults();
+    return g_ai_tuning[index as i32];
+}

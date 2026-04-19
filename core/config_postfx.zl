@@ -10,9 +10,6 @@ use zltris.theme
 #define STAR_MODE_MUSIC 2
 
 #define SHADER_MODE_NONE 0
-#define SHADER_MODE_LIGHT_CRT 1
-#define SHADER_MODE_CRT 2
-#define SHADER_MODE_VHS 3
 #define SHADER_MODE_CUSTOM 4
 
 #define CUSTOM_SHADER_NAME_MAX 96

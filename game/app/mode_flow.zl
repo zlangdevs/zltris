@@ -1,0 +1,327 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define BOTDEVMODE false
+
+#define SCREEN_MENU 0
+
+#define MODE_FREE_PLAY 0
+#define MODE_40_LINES 1
+#define MODE_BLITZ 2
+#define MODE_VS_BOT 3
+#define MODE_BOT_DUELS 4
+
+#define BLITZ_DURATION_SECONDS 120.0
+
+#define ROUND_RUNNING 0
+#define ROUND_COUNTDOWN 1
+#define ROUND_FINISHED 2
+
+#define HOLD_ACTION_NONE 0
+#define HOLD_ACTION_RESTART 1
+#define HOLD_ACTION_MENU 2
+
+#define HOLD_RESTART_SECONDS 1.04
+#define HOLD_MENU_SECONDS 2.08
+
+#define DUEL_RESULT_PLAYING 0
+
+fun isFortyLinesMode() >> bool {
+    return g_play.is_mode(MODE_40_LINES);
+}
+
+fun isFreePlayMode() >> bool {
+    return g_play.is_mode(MODE_FREE_PLAY);
+}
+
+fun isBlitzMode() >> bool {
+    return g_play.is_mode(MODE_BLITZ);
+}
+
+fun isVsBotMode() >> bool {
+    return g_play.is_mode(MODE_VS_BOT);
+}
+
+fun isBotDuelsMode() >> bool {
+    return BOTDEVMODE && g_play.is_mode(MODE_BOT_DUELS);
+}
+
+fun modeUsesRoundState() >> bool {
+    return isFortyLinesMode() || isBlitzMode();
+}
+
+fun blitzTimeLeft() >> f32 {
+    f32 left = BLITZ_DURATION_SECONDS - g_rt.mode_timer;
+    if left < 0.0 {left = 0.0;}
+    return left;
+}
+
+fun currentApm() >> f32 {
+    if g_rt.run_timer <= 0.001 {return 0.0;}
+    return ((g_rt.attack_sent as f32) * 60.0) / g_rt.run_timer;
+}
+
+fun botUiPopupText() >> ptr<u8> {
+    return "Expand the window horizontally";
+}
+
+fun clampBotGarbageMessiness() >> void {
+    if g_bot_setup.garbage_messiness < 0.0 {g_bot_setup.garbage_messiness = 0.0;}
+    if g_bot_setup.garbage_messiness > 100.0 {g_bot_setup.garbage_messiness = 100.0;}
+}
+
+fun nextGarbageHole(board_w: i32, hole_state: ptr<i32>) >> i32 {
+    if board_w <= 1 {return 0;}
+    if hole_state[0] < 0 || hole_state[0] >= board_w {
+        hole_state[0] = GetRandomValue(0 as i32, (board_w - 1) as i32) as i32;
+        return hole_state[0];
+    }
+
+    i32 roll = GetRandomValue(0 as i32, 99 as i32) as i32;
+    if roll < (g_bot_setup.garbage_messiness as i32) {
+        i32 jump_roll = GetRandomValue(0 as i32, 99 as i32) as i32;
+        if jump_roll < 80 {
+            i32 dir = 1;
+            if GetRandomValue(0 as i32, 1 as i32) == 0 {dir = -1;}
+            i32 next = hole_state[0] + dir;
+            if next < 0 {next = 1;}
+            if next >= board_w {next = board_w - 2;}
+            hole_state[0] = next;
+        } else {
+            i32 next = hole_state[0];
+            for (next == hole_state[0]) {next = GetRandomValue(0 as i32, (board_w - 1) as i32) as i32;}
+            hole_state[0] = next;
+        }
+    }
+
+    return hole_state[0];
+}
+
+fun canOpenBotSetupUi() >> bool {
+    i32 w = GetScreenWidth();
+    i32 h = GetScreenHeight();
+    if h <= 0 {return false;}
+    i32 fixed_actual = uiS(1180);
+    i32 gaps_actual = ((w as f32) * 0.125) as i32;
+    return fixed_actual + gaps_actual <= w;
+}
+
+fun drawBotWidthPopup(font: Font, theme: Theme, show_back_hint: bool) >> void {
+    fillRect(146, 332, 356, 96, alphaColor(theme.board_bg, 0.92));
+    strokeRect(146, 332, 356, 96, alphaColor(theme.panel_stroke, 0.88));
+    drawTextCenteredInRect(font, botUiPopupText(), 156, 354, 336, 54, 12, theme.text_main);
+    if show_back_hint {drawTextColor(font, "ESC back", 176, 642, 12, theme.text_muted);}
+}
+
+fun resetRestartHoldState(clear_afterglow: bool) >> void {
+    g_rt.restart_charge = 0.0;
+    g_rt.restart_hold_latched = false;
+    g_rt.hold_action = HOLD_ACTION_NONE;
+    if clear_afterglow {g_rt.restart_afterglow = 0.0;}
+}
+
+fun enterMenuFromGame() >> void {
+    g_rt.restart_afterglow = 0.0;
+    g_game = g_game.with_screen(SCREEN_MENU);
+    menuInit();
+}
+
+fun triggerImmediateRestart(block_hold: bool) >> void {
+    resetRestartHoldState(true);
+    if block_hold {g_restart_hold_blocked = true;}
+    restartCurrentModeWithShake();
+}
+
+fun canRestartNowByHotkey() >> bool {
+    if g_play.game_over {return true;}
+    if isVsBotMode() && !g_duel_running {return true;}
+    if modeUsesRoundState() && g_play.round_state == ROUND_FINISHED {return true;}
+    return false;
+}
+
+fun startGameMode(mode: i32) >> void {
+    i32 selected_mode = mode;
+    if !BOTDEVMODE && selected_mode == MODE_BOT_DUELS {selected_mode = MODE_FREE_PLAY;}
+    g_play = g_play.with_mode(selected_mode);
+    if selected_mode == MODE_VS_BOT {applyBotSetupWeights();}
+    else if selected_mode != MODE_BOT_DUELS {applyChampionAiTuning();}
+    g_ai_enabled = false;
+    g_ai_armed = false;
+    g_duel_running = false;
+    g_duel_result = DUEL_RESULT_PLAYING;
+    g_player_pending_garbage = 0;
+    g_bot_pending_garbage = 0;
+    resetGame();
+    g_rt.mode_timer = 0.0;
+    resetRestartHoldState(true);
+    g_rt.star_soft_glow = 0.0;
+    g_rt.star_hard_burst = 0.0;
+    g_rt.star_hard_target = 0.0;
+    g_rt.star_pps_meter = 0.0;
+    if (modeUsesRoundState()) {
+        g_play = g_play.with_round_state(ROUND_COUNTDOWN);
+        g_rt.countdown_timer = 4.0;
+    } else {
+        g_play = g_play.with_round_state(ROUND_RUNNING);
+        g_rt.countdown_timer = 0.0;
+    }
+
+    if isVsBotMode() {
+        initBotMatch();
+        g_duel_running = true;
+    } else if isBotDuelsMode() {
+        initBotArenaRound();
+    }
+}
+
+fun restartCurrentModeWithShake() >> void {
+    spawnRestartBoardEffects();
+    startGameMode(g_play.game_mode);
+    kickBoardShake(lineClearShakeAmp(4), 0.11);
+}
+
+fun restartStripeTopScreen() >> i32 {
+    i32 screen_h = GetScreenHeight();
+    i32 top_target = uiY(852);
+    i32 top = (screen_h as f32 - ((screen_h - top_target) as f32) * g_rt.restart_charge) as i32;
+    if top < 0 {top = 0;}
+    return top;
+}
+
+fun restartAfterglowTopScreen() >> i32 {
+    i32 start_top = uiY(852);
+    i32 end_top = GetScreenHeight();
+    if g_rt.restart_afterglow <= 0.0 {return end_top;}
+    f32 p = 1.0 as f32 - (g_rt.restart_afterglow / (0.24 as f32));
+    if p < 0.0 {p = 0.0;}
+    if p > 1.0 {p = 1.0;}
+    return (start_top as f32 + ((end_top - start_top) as f32) * p) as i32;
+}
+
+fun restartHintAlpha() >> f32 {
+    if g_rt.restart_charge <= 0.0 {return 1.0;}
+    f32 stripe_top = restartStripeTopScreen() as f32;
+    f32 hint_y = uiY(831) as f32;
+    f32 fade_zone = uiS(180) as f32;
+    f32 dist = stripe_top - hint_y;
+    f32 a = dist / fade_zone;
+    if a < 0.0 {a = 0.0;}
+    if a > 1.0 {a = 1.0;}
+    return a;
+}
+
+fun drawRestartCharge(font: Font, theme: Theme) >> void {
+    if g_rt.restart_charge <= 0.0 && g_rt.restart_afterglow <= 0.0 {return;}
+
+    i32 top = restartStripeTopScreen();
+    f32 alpha_mul = 1.0;
+    if (g_rt.restart_charge <= 0.0) {
+        top = restartAfterglowTopScreen();
+        alpha_mul = g_rt.restart_afterglow / (0.24 as f32);
+        if alpha_mul < 0.0 {alpha_mul = 0.0;}
+        if alpha_mul > 1.0 {alpha_mul = 1.0;}
+    }
+
+    f32 top_alpha = (0.26 + g_rt.restart_charge * 0.44) * alpha_mul;
+    if top_alpha > 0.86 {top_alpha = 0.86;}
+    u32 top_color = alphaColor(theme.panel_stroke, top_alpha);
+    u32 bottom_color = alphaColor(shadeColor(theme.bg_outer, 0.46), 0.92);
+    DrawRectangleGradientV(0, top, GetScreenWidth(), GetScreenHeight() - top, toColor(top_color), toColor(bottom_color));
+    DrawRectangle(0, top - 2, GetScreenWidth(), 2, toColor(alphaColor(theme.text_main, (0.52 as f32) * alpha_mul)));
+
+    ptr<u8> hint = "Hold for restart";
+    if g_rt.hold_action == HOLD_ACTION_MENU {hint = "Hold for menu";}
+    f32 hint_size = uiS(12) as f32;
+    Vector2 m = MeasureTextExSize(font, hint, hint_size, 0.0 as f32);
+    f32 tx = ((GetScreenWidth() as f32) - m.x) * 0.5;
+    f32 ty = (top as f32) + uiS(8) as f32;
+    f32 hint_alpha = (0.62 as f32 + g_rt.restart_charge * (0.28 as f32)) * alpha_mul;
+    DrawTextExXY(font, hint, tx, ty, hint_size, 0.0 as f32, toColor(alphaColor(theme.text_main, hint_alpha)));
+}
+
+fun updateRestartAfterglow(dt: f32) >> void {
+    if (g_rt.restart_afterglow > 0.0) {
+        g_rt.restart_afterglow -= dt;
+        if g_rt.restart_afterglow < 0.0 {g_rt.restart_afterglow = 0.0;}
+    }
+}
+
+fun updateRestartCharge(dt: f32) >> bool {
+    bool esc_down = IsKeyDown(KEY_ESCAPE);
+    bool r_down = IsKeyDown(KEY_R);
+    if g_instant_restart {r_down = false;}
+
+    if g_restart_hold_blocked {
+        if !esc_down && !r_down {
+            g_restart_hold_blocked = false;
+        } else {
+            resetRestartHoldState(false);
+            return false;
+        }
+    }
+
+    i32 action = HOLD_ACTION_NONE;
+    if esc_down {
+        action = HOLD_ACTION_MENU;
+    } else if r_down {
+        action = HOLD_ACTION_RESTART;
+    }
+
+    if action == HOLD_ACTION_NONE {
+        g_rt.restart_hold_latched = false;
+    } else if action != g_rt.hold_action {
+        g_rt.hold_action = action;
+        g_rt.restart_hold_latched = false;
+        g_rt.restart_charge = 0.0;
+    }
+
+    if action != HOLD_ACTION_NONE && g_rt.restart_hold_latched {return false;}
+
+    if action != HOLD_ACTION_NONE {
+        f32 hold_seconds = HOLD_RESTART_SECONDS;
+        if action == HOLD_ACTION_MENU {hold_seconds = HOLD_MENU_SECONDS;}
+
+        g_rt.restart_charge += dt / hold_seconds;
+        if (g_rt.restart_charge >= 1.0) {
+            g_rt.restart_charge = 1.0;
+            g_rt.restart_hold_latched = true;
+            if action == HOLD_ACTION_RESTART {
+                triggerImmediateRestart(true);
+                g_rt.restart_afterglow = 0.24 as f32;
+                return true;
+            }
+
+            resetRestartHoldState(true);
+            enterMenuFromGame();
+            return true;
+        }
+        return false;
+    }
+
+    if (g_rt.restart_charge > 0.0) {
+        g_rt.restart_charge -= dt / 0.64;
+        if g_rt.restart_charge < 0.0 {g_rt.restart_charge = 0.0;}
+    }
+    if g_rt.restart_charge <= 0.0 {g_rt.hold_action = HOLD_ACTION_NONE;}
+    return false;
+}
+
+fun canShowHoldRestartEffect() >> bool {
+    if isVsBotMode() && !g_duel_running {return false;}
+    if g_play.game_over {return false;}
+    if modeUsesRoundState() && g_play.round_state != ROUND_RUNNING {return false;}
+    return true;
+}
+
+fun applyDcd() >> void {
+    g_rt.dcd_timer = handlingDcdSeconds();
+}

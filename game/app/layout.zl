@@ -1,0 +1,234 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define HIDDEN_ROWS 2
+#define CELL 32
+
+#define UI_BASE_W 648
+#define BOARD_LEFT 48
+#define BOARD_TOP 82
+#define SIDEBAR_X 422
+#define BOT_BOARD_LEFT 706
+#define BOT_BOARD_TOP 82
+#define HIGH_STACK_SPAWN_ROWS 6
+#define HIGH_STACK_BOARD_SHIFT 64
+
+fun handlingFramesToSeconds(frames: f32) >> f32 {
+    return frames / 60.0;
+}
+
+fun handlingArrSeconds() >> f32 {
+    return handlingFramesToSeconds(g_arr_frames);
+}
+
+fun handlingDasSeconds() >> f32 {
+    return handlingFramesToSeconds(g_das_frames);
+}
+
+fun handlingDcdSeconds() >> f32 {
+    return handlingFramesToSeconds(g_dcd_frames);
+}
+
+fun canUseDoubleRowLayout() >> bool {
+    if !g_double_row_ui {return false;}
+    i32 free_px = GetScreenWidth() - uiS(UI_BASE_W);
+    return free_px >= uiS(210);
+}
+
+fun starIntensityNorm() >> f32 {
+    f32 n = clamp01((g_star_intensity - 0.1) / 0.9);
+    return n * (0.35 + 0.65 * n);
+}
+
+fun starSpreadMul() >> f32 {
+    if g_star_intensity >= 0.4 {return 1.0 + ((g_star_intensity - 0.4) / 0.6) * 0.30;}
+    return 1.0 - ((0.4 - g_star_intensity) / 0.3) * 0.15;
+}
+
+fun kickBoardShake(base_amp: f32, time_sec: f32) >> void {
+    if g_board_bounciness <= 0 {return;}
+
+    f32 mul = (g_board_bounciness as f32) / 70.0;
+    f32 impulse = base_amp * mul;
+    if impulse <= 0.0 {return;}
+
+    f32 dir_x = 0.34;
+    if (g_rt.board_shake_seed & 1) == 1 {dir_x = -0.34;}
+    f32 dir_y = -1.0;
+
+    g_rt.board_shake_vel_x += dir_x * impulse * 11.0;
+    g_rt.board_shake_vel_y += dir_y * impulse * 14.0;
+    g_rt.board_shake_amp += impulse;
+    if g_rt.board_shake_amp > 24.0 {g_rt.board_shake_amp = 24.0;}
+    if g_rt.board_shake_time < time_sec {g_rt.board_shake_time = time_sec;}
+    g_rt.board_shake_seed += 1;
+}
+
+fun lineClearShakeAmp(lines_cleared: i32) >> f32 {
+    if lines_cleared <= 0 {return 0.0;}
+    if lines_cleared == 1 {return 4.4;}
+    if lines_cleared == 2 {return 6.2;}
+    if lines_cleared == 3 {return 8.4;}
+    return 11.2;
+}
+
+fun updateBoardShake(dt: f32) >> void {
+    f32 step = dt;
+    if step > 0.05 {step = 0.05;}
+    if step <= 0.0 {return;}
+
+    if g_rt.board_shake_time > 0.0 {
+        g_rt.board_shake_time -= step;
+        if g_rt.board_shake_time < 0.0 {g_rt.board_shake_time = 0.0;}
+    }
+
+    if g_rt.board_shake_amp > 0.0 {
+        g_rt.board_shake_amp -= step * (7.4 + g_rt.board_shake_amp * 2.5);
+        if g_rt.board_shake_amp < 0.0 {g_rt.board_shake_amp = 0.0;}
+    }
+
+    f32 spring_x = 136.0;
+    f32 spring_y = 124.0;
+    f32 damping = 29.0;
+
+    f32 acc_x = -g_rt.board_shake_render_x * spring_x - g_rt.board_shake_vel_x * damping;
+    f32 acc_y = -g_rt.board_shake_render_y * spring_y - g_rt.board_shake_vel_y * damping;
+    g_rt.board_shake_vel_x += acc_x * step;
+    g_rt.board_shake_vel_y += acc_y * step;
+    g_rt.board_shake_render_x += g_rt.board_shake_vel_x * step;
+    g_rt.board_shake_render_y += g_rt.board_shake_vel_y * step;
+
+    if g_rt.board_shake_render_x > 21.0 {g_rt.board_shake_render_x = 21.0;}
+    if g_rt.board_shake_render_x < -21.0 {g_rt.board_shake_render_x = -21.0;}
+    if g_rt.board_shake_render_y > 18.0 {g_rt.board_shake_render_y = 18.0;}
+    if g_rt.board_shake_render_y < -18.0 {g_rt.board_shake_render_y = -18.0;}
+
+    if (g_rt.board_shake_time <= 0.0 &&
+        g_rt.board_shake_amp <= 0.02 &&
+        absf(g_rt.board_shake_render_x) < 0.04 &&
+        absf(g_rt.board_shake_render_y) < 0.04 &&
+        absf(g_rt.board_shake_vel_x) < 0.6 &&
+        absf(g_rt.board_shake_vel_y) < 0.6) {
+        g_rt.board_shake_render_x = 0.0;
+        g_rt.board_shake_render_y = 0.0;
+        g_rt.board_shake_vel_x = 0.0;
+        g_rt.board_shake_vel_y = 0.0;
+        g_rt.board_shake_px_x = 0;
+        g_rt.board_shake_px_y = 0;
+        g_rt.board_shake_res_x = 0.0;
+        g_rt.board_shake_res_y = 0.0;
+        return;
+    }
+
+    f32 x_total = g_rt.board_shake_render_x + g_rt.board_shake_res_x;
+    i32 x_px = x_total as i32;
+    g_rt.board_shake_res_x = x_total - (x_px as f32);
+    g_rt.board_shake_px_x = x_px;
+
+    f32 y_total = g_rt.board_shake_render_y + g_rt.board_shake_res_y;
+    i32 y_px = y_total as i32;
+    g_rt.board_shake_res_y = y_total - (y_px as f32);
+    g_rt.board_shake_px_y = y_px;
+}
+
+fun boardShakeX() >> i32 {
+    return g_rt.board_shake_px_x;
+}
+
+fun boardShakeY() >> i32 {
+    return g_rt.board_shake_px_y;
+}
+
+fun vsBotGapBase() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return 32;}
+    return (((GetScreenWidth() as f32) * 0.025) / scale) as i64;
+}
+
+fun vsBotContentWidth() >> i64 {
+    return 1180 + vsBotGapBase() * 5;
+}
+
+fun vsBotLayoutLeft() >> i64 {
+    return (UI_BASE_W - vsBotContentWidth()) / 2;
+}
+
+fun vsBotPlayerLeftPanelX() >> i64 { return vsBotLayoutLeft() + vsBotGapBase(); }
+
+fun vsBotPlayerBoardLeft() >> i64 {
+    return vsBotPlayerLeftPanelX() + 184 + vsBotGapBase();
+}
+
+fun vsBotCenterPanelX() >> i64 {
+    return vsBotPlayerBoardLeft() + (BOARD_W as i64) * (CELL as i64) + vsBotGapBase();
+}
+
+fun vsBotBotBoardLeft() >> i64 {
+    return vsBotCenterPanelX() + 178 + vsBotGapBase();
+}
+
+fun vsBotBotPanelX() >> i64 {
+    return vsBotBotBoardLeft() + (BOARD_W as i64) * (CELL as i64) + vsBotGapBase();
+}
+
+fun currentPlayerBoardLeft() >> i64 {
+    if isVsBotMode() {return vsBotPlayerBoardLeft();}
+    return BOARD_LEFT;
+}
+
+fun duelShowsHighStackArea() >> bool {
+    return false;
+}
+
+fun currentBoardTop() >> i64 {
+    if duelShowsHighStackArea() {return BOARD_TOP + HIGH_STACK_BOARD_SHIFT;}
+    return BOARD_TOP;
+}
+
+fun currentCenterSidebarX() >> i64 {
+    if isVsBotMode() {return vsBotCenterPanelX();}
+    return SIDEBAR_X;
+}
+
+fun currentBotBoardLeft() >> i64 {
+    if isVsBotMode() {return vsBotBotBoardLeft();}
+    return BOT_BOARD_LEFT;
+}
+
+fun currentBotBoardTop() >> i64 {
+    if duelShowsHighStackArea() {return BOT_BOARD_TOP + HIGH_STACK_BOARD_SHIFT;}
+    return BOT_BOARD_TOP;
+}
+
+fun boardVisibleStartRow() >> i32 {
+    if duelShowsHighStackArea() {return 0;}
+    return HIDDEN_ROWS;
+}
+
+fun boardVisibleRows() >> i32 {
+    return BOARD_H - boardVisibleStartRow();
+}
+
+fun boardRenderMinRow() >> i32 {
+    if duelShowsHighStackArea() {return -HIGH_STACK_SPAWN_ROWS;}
+    return HIDDEN_ROWS;
+}
+
+fun boardScreenY(board_top: i64, row: i64) >> i64 {
+    return board_top + (row - (boardVisibleStartRow() as i64)) * (CELL as i64);
+}
+
+fun vsBotLayoutExtraX() >> i32 {
+    return 0;
+}

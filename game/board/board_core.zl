@@ -1,0 +1,979 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.theme
+use zltris.scale
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define QUEUE_CAP 14
+#define BAG_SIZE 7
+
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
+
+fun clearWithColor(color_rgba: u32) >> void {
+    ClearBackground(toColor(color_rgba));
+}
+
+fun currentPps() >> f32 {
+    if g_rt.run_timer <= 0.001 {return 0.0;}
+    return (g_rt.pieces_placed as f32) / g_rt.run_timer;
+}
+
+fun ghostColor(base: u32) >> u32 { return alphaColor(base, 0.28); }
+
+fun pieceColor(theme: Theme, kind: i32) >> u32 {
+    if kind == PIECE_I {return theme.piece_i;}
+    if kind == PIECE_O {return theme.piece_o;}
+    if kind == PIECE_T {return theme.piece_t;}
+    if kind == PIECE_J {return theme.piece_j;}
+    if kind == PIECE_L {return theme.piece_l;}
+    if kind == PIECE_S {return theme.piece_s;}
+    return theme.piece_z;
+}
+
+fun normalizeRotation(rotation: i32) >> i32 {
+    i32 res = rotation % 4;
+    if res < 0 {res += 4;}
+    return res;
+}
+
+fun boardIndex(x: i32, y: i32) >> i32 {
+    return y * BOARD_W + x;
+}
+
+fun boardGet(x: i32, y: i32) >> i32 {
+    return g_board[boardIndex(x, y)];
+}
+
+fun boardSet(x: i32, y: i32, value: i32) >> void {
+    g_board[boardIndex(x, y)] = value;
+}
+
+fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if (kind == PIECE_I) {
+        if rot == 0 {return idx;}
+        if rot == 1 {return 2;}
+        if rot == 2 {return idx;}
+        return 1;
+    }
+
+    if (kind == PIECE_O) {
+        if idx == 0 || idx == 2 {return 1;}
+        return 2;
+    }
+
+    if (kind == PIECE_T) {
+        if (rot == 0) {
+            if idx == 0 {return 1;}
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if idx == 2 {return 2;}
+            return 1;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 1;}
+            return idx;
+        }
+        if idx == 1 {return 0;}
+        return 1;
+    }
+
+    if (kind == PIECE_J) {
+        if (rot == 0) {
+            if idx == 0 {return 0;}
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if idx == 0 || idx == 2 || idx == 3 {return 1;}
+            return 2;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if idx == 2 {return 0;}
+        return 1;
+    }
+
+    if (kind == PIECE_L) {
+        if (rot == 0) {
+            if idx == 0 {return 2;}
+            return idx - 1;
+        }
+        if (rot == 1) {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 0;}
+            return idx;
+        }
+        if idx == 0 {return 0;}
+        return 1;
+    }
+
+    if (kind == PIECE_S) {
+        if (rot == 0) {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if (rot == 1) {
+            if idx == 0 || idx == 1 {return 1;}
+            return 2;
+        }
+        if (rot == 2) {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if idx == 0 || idx == 1 {return 0;}
+        return 1;
+    }
+
+    if (rot == 0) {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if (rot == 1) {
+        if idx == 0 || idx == 2 {return 2;}
+        return 1;
+    }
+    if (rot == 2) {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 || idx == 2 {return 1;}
+    return 0;
+}
+
+fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if (kind == PIECE_I) {
+        if rot == 0 {return 1;}
+        if rot == 1 {return idx;}
+        if rot == 2 {return 2;}
+        return idx;
+    }
+
+    if (kind == PIECE_O) {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+
+    if (kind == PIECE_T) {
+        if (rot == 0) {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if (rot == 1) {
+            if idx == 3 {return 2;}
+            if idx == 2 {return 1;}
+            return idx;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if (kind == PIECE_J) {
+        if (rot == 0) {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if (rot == 1) {
+            if idx == 0 || idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 1 {return 1;}
+        return 2;
+    }
+
+    if (kind == PIECE_L) {
+        if (rot == 0) {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if (rot == 1) {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if (rot == 2) {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx < 2 {return 0;}
+        if idx == 2 {return 1;}
+        return 2;
+    }
+
+    if (kind == PIECE_S) {
+        if (rot == 0) {
+            if idx < 2 {return 0;}
+            return 1;
+        }
+        if (rot == 1) {
+            if idx == 0 {return 0;}
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if (rot == 2) {
+            if idx < 2 {return 1;}
+            return 2;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if (rot == 0) {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+    if (rot == 1) {
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+    if (rot == 2) {
+        if idx < 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 {return 0;}
+    if idx == 3 {return 2;}
+    return 1;
+}
+
+fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if test == 1 || test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if test == 1 || test == 2 || test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if test == 1 || test == 2 || test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if test == 1 || test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if test == 1 || test == 2 || test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if test == 1 || test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if test == 1 || test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if test == 1 || test == 2 || test == 4 {return 1;}
+    return 0;
+}
+
+fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        if test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if test == 2 {return 1;}
+    if test == 3 {return -2;}
+    if test == 4 {return -2;}
+    return 0;
+}
+
+fun iKickX(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if test == 1 || test == 3 {return -2;}
+        if test == 2 || test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if test == 1 || test == 3 {return 2;}
+        if test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if test == 1 || test == 3 {return -1;}
+        if test == 2 || test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if test == 1 || test == 3 {return 1;}
+        if test == 2 || test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if test == 1 || test == 3 {return 2;}
+        if test == 2 || test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if test == 1 || test == 3 {return -2;}
+        if test == 2 || test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if test == 1 || test == 3 {return 1;}
+        if test == 2 || test == 4 {return -2;}
+        return 0;
+    }
+    if test == 1 || test == 3 {return -1;}
+    if test == 2 || test == 4 {return 2;}
+    return 0;
+}
+
+fun iKickY(from: i32, to: i32, test: i32) >> i32 {
+    if (from == 0 && to == 1) {
+        if test == 3 {return -1;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 1 && to == 0) {
+        if test == 3 {return 1;}
+        if test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 1 && to == 2) {
+        if test == 3 {return 2;}
+        if test == 4 {return -1;}
+        return 0;
+    }
+    if (from == 2 && to == 1) {
+        if test == 3 {return -2;}
+        if test == 4 {return 1;}
+        return 0;
+    }
+    if (from == 2 && to == 3) {
+        if test == 3 {return 1;}
+        if test == 4 {return -2;}
+        return 0;
+    }
+    if (from == 3 && to == 2) {
+        if test == 3 {return -1;}
+        if test == 4 {return 2;}
+        return 0;
+    }
+    if (from == 3 && to == 0) {
+        if test == 3 {return -2;}
+        if test == 4 {return 1;}
+        return 0;
+    }
+    if test == 3 {return 2;}
+    if test == 4 {return -1;}
+    return 0;
+}
+
+fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_I {return iKickX(from, to, test);}
+    if kind == PIECE_O {return 0;}
+    return jlstzKickX(from, to, test);
+}
+
+fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_I {return iKickY(from, to, test);}
+    if kind == PIECE_O {return 0;}
+    return jlstzKickY(from, to, test);
+}
+
+fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 x = base_x + minoX(kind, rotation, idx);
+        i32 y = base_y + minoY(kind, rotation, idx);
+
+        if x < 0 || x >= BOARD_W {return false;}
+        if y >= BOARD_H {return false;}
+        if y >= 0 && boardGet(x, y) != 0 {return false;}
+    }
+    return true;
+}
+
+fun currentFitsAt(x: i32, y: i32, rotation: i32) >> bool {
+    return pieceFits(g_piece_kind, rotation, x, y);
+}
+
+fun refillBag() >> void {
+    for i32 i = 0; i < BAG_SIZE; i++ {
+        g_bag[i] = i;
+    }
+
+    for i32 i = 0; i < BAG_SIZE; i++ {
+        i32 j = GetRandomValue(i as i32, (BAG_SIZE - 1) as i32) as i32;
+        i32 tmp = g_bag[i];
+        g_bag[i] = g_bag[j];
+        g_bag[j] = tmp;
+    }
+
+    g_play.bag_pos = 0;
+}
+
+fun enqueueFromBag() >> void {
+    if g_play.bag_pos >= BAG_SIZE {refillBag();}
+    g_queue[g_play.queue_count] = g_bag[g_play.bag_pos];
+    g_play.queue_count += 1;
+    g_play.bag_pos += 1;
+}
+
+fun ensureQueue() >> void {
+    for (g_play.queue_count < QUEUE_CAP) {
+        enqueueFromBag();
+    }
+}
+
+fun popQueue() >> i32 {
+    ensureQueue();
+    i32 res = g_queue[0];
+    for i32 i = 0; i < g_play.queue_count - 1; i++ {
+        g_queue[i] = g_queue[i + 1];
+    }
+    g_play.queue_count -= 1;
+    ensureQueue();
+    return res;
+}
+
+fun playerSpawnY() >> i32 {
+    return 0;
+}
+
+fun gravityInterval() >> f32 {
+    return 0.7;
+}
+
+fun spawnNextPiece() >> void {
+    g_piece_kind = popQueue();
+    g_piece_rotation = 0;
+    g_piece_x = 3;
+    g_piece_y = playerSpawnY();
+    g_rt.gravity_timer = 0.0;
+    g_rt.soft_timer = 0.0;
+    g_rt.lock_timer = 0.0;
+    g_rt.shift_hold_timer = 0.0;
+    g_rt.shift_repeat_timer = 0.0;
+    g_rt.shift_dir = 0;
+    g_rt.last_rotate_success = false;
+    g_rt.last_rotate_kick_test = -1;
+    g_hold_used = false;
+    applyDcd();
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {g_play.game_over = true;}
+}
+
+fun resetBoard() >> void {
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            boardSet(x, y, 0);
+        }
+    }
+}
+
+fun resetGame() >> void {
+    resetBoard();
+    g_play.queue_count = 0;
+    g_play.bag_pos = BAG_SIZE;
+    g_play.score = 0;
+    g_play.lines = 0;
+    g_rt.run_timer = 0.0;
+    g_rt.pieces_placed = 0;
+    g_rt.attack_sent = 0;
+    g_player_garbage_hole = -1;
+    g_bot_garbage_hole = -1;
+    g_hold_kind = -1;
+    g_hold_used = false;
+    g_play.game_over = false;
+    g_rt.shift_hold_timer = 0.0;
+    g_rt.shift_repeat_timer = 0.0;
+    g_rt.shift_dir = 0;
+    g_rt.last_horizontal_press = 0;
+    g_rt.dcd_timer = 0.0;
+    g_rt.board_shake_time = 0.0;
+    g_rt.board_shake_amp = 0.0;
+    g_rt.board_shake_seed = 0;
+    g_rt.board_shake_render_x = 0.0;
+    g_rt.board_shake_render_y = 0.0;
+    g_rt.board_shake_vel_x = 0.0;
+    g_rt.board_shake_vel_y = 0.0;
+    g_rt.board_shake_px_x = 0;
+    g_rt.board_shake_px_y = 0;
+    g_rt.board_shake_res_x = 0.0;
+    g_rt.board_shake_res_y = 0.0;
+    g_rt.combo = -1;
+    g_rt.back_to_back_count = 0;
+    g_rt.back_to_back = false;
+    g_rt.last_rotate_success = false;
+    g_rt.last_rotate_kick_test = -1;
+    resetLineClearEffects();
+    refillBag();
+    ensureQueue();
+    spawnNextPiece();
+}
+
+fun minI(a: i32, b: i32) >> i32 {
+    if a < b {return a;}
+    return b;
+}
+
+fun maxI(a: i32, b: i32) >> i32 {
+    if a > b {return a;}
+    return b;
+}
+
+fun botBoardGet(x: i32, y: i32) >> i32 {
+    return g_bot_board[boardIndex(x, y)];
+}
+
+fun botBoardSet(x: i32, y: i32, value: i32) >> void {
+    g_bot_board[boardIndex(x, y)] = value;
+}
+
+fun botResetBoard() >> void {
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, y, 0);}
+    }
+}
+
+fun botRefillBag() >> void {
+    for i32 i = 0; i < BAG_SIZE; i++ {g_bot_bag[i] = i;}
+    for i32 i = 0; i < BAG_SIZE; i++ {
+        i32 j = GetRandomValue(i as i32, (BAG_SIZE - 1) as i32) as i32;
+        i32 t = g_bot_bag[i];
+        g_bot_bag[i] = g_bot_bag[j];
+        g_bot_bag[j] = t;
+    }
+    g_bot.bag_pos = 0;
+}
+
+fun botEnqueueFromBag() >> void {
+    if g_bot.bag_pos >= BAG_SIZE {botRefillBag();}
+    if g_bot.queue_count >= QUEUE_CAP {return;}
+    g_bot_queue[g_bot.queue_count] = g_bot_bag[g_bot.bag_pos];
+    g_bot.queue_count += 1;
+    g_bot.bag_pos += 1;
+}
+
+fun botEnsureQueue() >> void {
+    for (g_bot.queue_count < QUEUE_CAP) {
+        botEnqueueFromBag();
+    }
+}
+
+fun botPopQueue() >> i32 {
+    botEnsureQueue();
+    i32 res = g_bot_queue[0];
+    for i32 i = 0; i < g_bot.queue_count - 1; i++ {g_bot_queue[i] = g_bot_queue[i + 1];}
+    g_bot.queue_count -= 1;
+    botEnsureQueue();
+    return res;
+}
+
+fun botSpawnY() >> i32 {
+    return 0;
+}
+
+fun botPieceFits(kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
+        if my >= 0 && botBoardGet(mx, my) != 0 {return false;}
+    }
+    return true;
+}
+
+fun botSpawnNextPiece() >> void {
+    g_bot.piece_kind = botPopQueue();
+    g_bot.piece_rotation = 0;
+    g_bot.piece_x = 3;
+    g_bot.piece_y = botSpawnY();
+    g_bot_plan_len = 0;
+    g_bot_plan_index = 0;
+    g_bot_planned_lines = 0;
+    g_bot_planned_spin = false;
+    g_bot_planned_all_clear = false;
+    g_bot.target_x = g_bot.piece_x;
+    g_bot.target_y = g_bot.piece_y;
+    g_bot.target_rotation = 0;
+    g_bot.last_rotate_success = false;
+    g_bot.target_last_rotate = false;
+    g_bot.target_valid = false;
+    g_bot.target_tspin = false;
+    if !botPieceFits(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, g_bot.piece_y) {g_bot.game_over = true;}
+}
+
+fun botBoardIsEmpty() >> bool {
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            if botBoardGet(x, y) != 0 {return false;}
+        }
+    }
+    return true;
+}
+
+fun botClearLines() >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if botBoardGet(x, y) == 0 {full = false;}
+        }
+        if (full) {
+            spawnBotLineClearEffectsForRow(y);
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, pull, botBoardGet(x, pull - 1));}
+            }
+            for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, 0, 0);}
+            y += 1;
+        }
+    }
+    if cleared > 0 {g_bot.lines += cleared;}
+    return cleared;
+}
+
+fun botBoardCellOccupiedOrBlocked(x: i32, y: i32) >> bool {
+    if x < 0 || x >= BOARD_W {return true;}
+    if y >= BOARD_H {return true;}
+    if y < 0 {return false;}
+    return botBoardGet(x, y) != 0;
+}
+
+fun botIsTSpin(kind: i32, x: i32, y: i32) >> bool {
+    if kind != PIECE_T {return false;}
+    if !g_bot.last_rotate_success {return false;}
+    i32 cx = x + 1;
+    i32 cy = y + 1;
+    i32 corners = 0;
+    if botBoardCellOccupiedOrBlocked(cx - 1, cy - 1) {corners += 1;}
+    if botBoardCellOccupiedOrBlocked(cx + 1, cy - 1) {corners += 1;}
+    if botBoardCellOccupiedOrBlocked(cx - 1, cy + 1) {corners += 1;}
+    if botBoardCellOccupiedOrBlocked(cx + 1, cy + 1) {corners += 1;}
+    return corners >= 3;
+}
+
+fun insertGarbageIntoPlayer(amount: i32) >> void {
+    if amount <= 0 {return;}
+    i32 board_w = BOARD_W as i32;
+    i32 board_h = BOARD_H as i32;
+    for i32 n = 0; n < amount; n++ {
+        bool overflow = false;
+        for i32 x = 0; x < board_w; x++ {
+            if boardGet(x, 0) != 0 {overflow = true;}
+        }
+        for i32 y = 0; y < board_h - 1; y++ {
+            for i32 x = 0; x < board_w; x++ {boardSet(x, y, boardGet(x, y + 1));}
+        }
+        i32 hole = nextGarbageHole(board_w, &g_player_garbage_hole);
+        for i32 x = 0; x < board_w; x++ {
+            if x == hole {boardSet(x, board_h - 1, 0);} else {boardSet(x, board_h - 1, 8);}
+        }
+        if overflow {g_play.game_over = true;}
+    }
+}
+
+fun addFreePlayGarbageLine() >> void {
+    if !isFreePlayMode() {return;}
+    if g_play.game_over {return;}
+
+    insertGarbageIntoPlayer(1);
+    if g_play.game_over {
+        aiLog("fp garbage+1 -> game over");
+        return;
+    }
+
+    g_piece_y -= 1;
+    i32 lift = 0;
+    for (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) && lift < 8) {
+        g_piece_y -= 1;
+        lift += 1;
+    }
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {
+        g_play.game_over = true;
+        aiLog("fp garbage+1 -> piece blocked");
+        return;
+    }
+
+    g_rt.lock_timer = 0.0;
+    applyDcd();
+
+    i32 max_h = 0;
+    i32 holes = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+    aiLog(TextFormat("fp garbage+1 max_h=%i holes=%i garbage_rows=%i cover=%i access=%i piece_y=%i", max_h, holes, garbage_rows, garbage_cover, garbage_access, g_piece_y));
+}
+
+fun insertGarbageIntoBot(amount: i32) >> void {
+    if amount <= 0 {return;}
+    aiLog(TextFormat("garbage->bot amount=%i pending_before=%i", amount, g_bot_pending_garbage));
+    i32 board_w = BOARD_W as i32;
+    i32 board_h = BOARD_H as i32;
+    for i32 n = 0; n < amount; n++ {
+        bool overflow = false;
+        for i32 x = 0; x < board_w; x++ {
+            if botBoardGet(x, 0) != 0 {overflow = true;}
+        }
+        for i32 y = 0; y < board_h - 1; y++ {
+            for i32 x = 0; x < board_w; x++ {botBoardSet(x, y, botBoardGet(x, y + 1));}
+        }
+        i32 hole = nextGarbageHole(board_w, &g_bot_garbage_hole);
+        for i32 x = 0; x < board_w; x++ {
+            if x == hole {botBoardSet(x, board_h - 1, 0);} else {botBoardSet(x, board_h - 1, 8);}
+        }
+        if overflow {g_bot.game_over = true;}
+    }
+}
+
+fun routePlayerAttack(attack: i32) >> void {
+    if attack <= 0 {return;}
+    i32 cancel = minI(attack, g_player_pending_garbage);
+    g_player_pending_garbage -= cancel;
+    i32 out = attack - cancel;
+    if out > 0 {
+        i32 before = g_bot_pending_garbage;
+        g_bot_pending_garbage += out;
+
+        if g_duel_running {
+            g_bot.target_valid = false;
+            g_bot_plan_len = 0;
+            g_bot_plan_index = 0;
+            aiLog(TextFormat(" replan trigger garbage pending_before=%i pending_after=%i", before, g_bot_pending_garbage));
+        }
+    }
+}
+
+fun routeBotAttack(attack: i32) >> void {
+    if attack <= 0 {return;}
+    i32 cancel = minI(attack, g_bot_pending_garbage);
+    g_bot_pending_garbage -= cancel;
+    i32 out = attack - cancel;
+    if out > 0 {g_player_pending_garbage += out;}
+}
+
+fun initBotMatch() >> void {
+    botResetBoard();
+    g_bot.queue_count = 0;
+    g_bot.bag_pos = BAG_SIZE;
+    g_bot_plan_len = 0;
+    g_bot_plan_index = 0;
+    g_bot_plan_pending_snapshot = 0;
+    g_bot_planned_lines = 0;
+    g_bot_planned_spin = false;
+    g_bot_planned_all_clear = false;
+    g_bot.target_x = 3;
+    g_bot.target_y = 0;
+    g_bot.target_rotation = 0;
+    g_bot.combo = -1;
+    g_bot.back_to_back_count = 0;
+    g_bot.target_last_rotate = false;
+    g_bot.target_valid = false;
+    g_bot.target_tspin = false;
+    g_bot.pending_garbage = 0;
+    g_bot.place_meter = 0.0;
+    g_bot.rate_smooth = 0.0;
+    g_bot.attack_sent = 0;
+    g_bot.pieces_placed = 0;
+    g_bot.actions_taken = 0;
+    g_bot.lines = 0;
+    g_bot.score = 0;
+    g_bot.game_over = false;
+    botRefillBag();
+    botEnsureQueue();
+    botSpawnNextPiece();
+}
+
+fun holdCurrent() >> void {
+    if g_hold_used {return;}
+
+    i32 current = g_piece_kind;
+    if (g_hold_kind < 0) {
+        g_hold_kind = current;
+        spawnNextPiece();
+        g_hold_used = true;
+        return;
+    }
+
+    g_piece_kind = g_hold_kind;
+    g_hold_kind = current;
+    g_piece_rotation = 0;
+    g_piece_x = 3;
+    g_piece_y = playerSpawnY();
+    g_rt.gravity_timer = 0.0;
+    g_rt.soft_timer = 0.0;
+    g_rt.lock_timer = 0.0;
+    g_hold_used = true;
+    g_rt.shift_hold_timer = 0.0;
+    g_rt.shift_repeat_timer = 0.0;
+    g_rt.shift_dir = 0;
+    g_rt.last_rotate_success = false;
+    g_rt.last_rotate_kick_test = -1;
+    applyDcd();
+
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {g_play.game_over = true;}
+}
+
+fun tryMove(dx: i32, dy: i32) >> bool {
+    i32 next_x = g_piece_x + dx;
+    i32 next_y = g_piece_y + dy;
+    if !currentFitsAt(next_x, next_y, g_piece_rotation) {return false;}
+    g_piece_x = next_x;
+    g_piece_y = next_y;
+    g_rt.lock_timer = 0.0;
+    return true;
+}
+
+fun tryRotate(dir: i32) >> bool {
+    i32 from = normalizeRotation(g_piece_rotation);
+    i32 to = normalizeRotation(g_piece_rotation + dir);
+
+    if (g_piece_kind == PIECE_O) {
+        if (currentFitsAt(g_piece_x, g_piece_y, to)) {
+            g_piece_rotation = to;
+            g_rt.lock_timer = 0.0;
+            g_rt.last_rotate_success = false;
+            g_rt.last_rotate_kick_test = -1;
+            applyDcd();
+            return true;
+        }
+        return false;
+    }
+
+    for i32 test = 0; test < 5; test++ {
+        i32 dx = kickX(g_piece_kind, from, to, test);
+        i32 dy = kickY(g_piece_kind, from, to, test);
+        if (currentFitsAt(g_piece_x + dx, g_piece_y - dy, to)) {
+            g_piece_x += dx;
+            g_piece_y -= dy;
+            g_piece_rotation = to;
+            g_rt.lock_timer = 0.0;
+            g_rt.last_rotate_success = true;
+            g_rt.last_rotate_kick_test = test;
+            applyDcd();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fun currentGhostY() >> i32 {
+    i32 ghost_y = g_piece_y;
+    for (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, ghost_y + 1)) {
+        ghost_y += 1;
+    }
+    return ghost_y;
+}
+
+fun botGhostY() >> i32 {
+    i32 ghost_y = g_bot.piece_y;
+    for (botPieceFits(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, ghost_y + 1)) {
+        ghost_y += 1;
+    }
+    return ghost_y;
+}
+
+fun botTryMove(dx: i32, dy: i32) >> bool {
+    i32 next_x = g_bot.piece_x + dx;
+    i32 next_y = g_bot.piece_y + dy;
+    if !botPieceFits(g_bot.piece_kind, g_bot.piece_rotation, next_x, next_y) {return false;}
+    g_bot.piece_x = next_x;
+    g_bot.piece_y = next_y;
+    return true;
+}
+
+fun botTryRotate(dir: i32) >> bool {
+    if g_bot.piece_kind == PIECE_O {
+        g_bot.last_rotate_success = false;
+        return true;
+    }
+
+    i32 from = normalizeRotation(g_bot.piece_rotation);
+    i32 to = normalizeRotation(g_bot.piece_rotation + dir);
+    if (botPieceFits(g_bot.piece_kind, to, g_bot.piece_x, g_bot.piece_y)) {
+        g_bot.piece_rotation = to;
+        g_bot.last_rotate_success = true;
+        return true;
+    }
+
+    for i32 test = 0; test < 5; test++ {
+        i32 dx = kickX(g_bot.piece_kind, from, to, test);
+        i32 dy = kickY(g_bot.piece_kind, from, to, test);
+        if (botPieceFits(g_bot.piece_kind, to, g_bot.piece_x + dx, g_bot.piece_y - dy)) {
+            g_bot.piece_x += dx;
+            g_bot.piece_y -= dy;
+            g_bot.piece_rotation = to;
+            g_bot.last_rotate_success = true;
+            return true;
+        }
+    }
+
+    g_bot.last_rotate_success = false;
+    return false;
+}

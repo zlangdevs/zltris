@@ -4,15 +4,9 @@ use zltris.scale
 use zltris.theme
 use zltris.ui
 
-#define WINDOW_W 960
-#define WINDOW_H 920
-#define UI_BASE_W 648
-#define UI_BASE_H 920
-
 #define SCREEN_MENU 0
 #define SCREEN_GAME 1
 
-#define MODE_FREE_PLAY 0
 #define MODE_VS_BOT 3
 #define MODE_BOT_DUELS 4
 
@@ -712,4 +706,3 @@ fun updateBotSetupScreen() >> void {
         if g_bot_setup.index == back_row {g_game = g_game.with_screen(SCREEN_MENU);}
     }
 }
-
