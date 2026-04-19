@@ -1,0 +1,621 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.theme
+use zltris.scale
+
+#define BOARD_CELLS 220
+
+#define BOT_PLAN_MAX 128
+#define BOT_SEARCH_MAX 2048
+#define BOT_STATE_TABLE_SIZE 3360
+
+#define BOT_ACTION_LEFT 1
+#define BOT_ACTION_RIGHT 2
+#define BOT_ACTION_CW 3
+#define BOT_ACTION_CCW 4
+#define BOT_ACTION_DROP 5
+#define BOT_ACTION_DOWN 6
+
+#define BOT_MODE_CLEAN 0
+#define BOT_MODE_DIG 1
+#define BOT_MODE_SURVIVE 2
+#define BOT_SIMPLE_PLAN true
+
+#define LINE_FX_BOARD_BOT 1
+
+fun botProjectDirtyNext(board: ptr<i32>, next_kind: i32, out_rows: ptr<i32>, out_cover: ptr<i32>, out_access: ptr<i32>, out_holes: ptr<i32>, out_max_h: ptr<i32>, out_lines: ptr<i32>, out_score: ptr<i32>) >> void {
+    aiBotProjectDirtyNext(board, next_kind, botSpawnY(), out_rows, out_cover, out_access, out_holes, out_max_h, out_lines, out_score);
+}
+
+fun botTempPieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+    return aiBotTempPieceFits(board, kind, rotation, x, y);
+}
+
+fun botTempDropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> i32 {
+    return aiBotTempDropY(board, kind, rotation, x, y);
+}
+
+fun botTempBoardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
+    return aiBotTempBoardCellBlocked(board, x, y);
+}
+
+fun botTempIsTSpin(board: ptr<i32>, kind: i32, x: i32, y: i32, last_rotate_success: bool) >> bool {
+    return aiBotTempIsTSpin(board, kind, x, y, last_rotate_success);
+}
+
+fun clearLinesTemp(board: ptr<i32>) >> i32 {
+    return aiClearLinesTemp(board);
+}
+
+fun boardIsEmptyTemp(board: ptr<i32>) >> bool {
+    return aiBoardIsEmptyTemp(board);
+}
+
+fun botApplyRotateState(board: ptr<i32>, kind: i32, x: i32, y: i32, rotation: i32, dir: i32, out_x: ptr<i32>, out_y: ptr<i32>, out_rotation: ptr<i32>, out_kick_test: ptr<i32>) >> bool {
+    return aiBotApplyRotateState(board, kind, x, y, rotation, dir, out_x, out_y, out_rotation, out_kick_test);
+}
+
+fun botStateTableIndex(x: i32, y: i32, rot: i32, rotate_flag: i32) >> i32 {
+    return aiBotStateTableIndex(x, y, rot, rotate_flag);
+}
+
+fun botAppendSearchState(count: ptr<i32>, visited: ptr<i32>, xs: ptr<i32>, ys: ptr<i32>, rots: ptr<i32>, rotate_flags: ptr<i32>, parents: ptr<i32>, actions: ptr<i32>, depths: ptr<i32>, x: i32, y: i32, rot: i32, rotate_flag: i32, parent_idx: i32, action: i32) >> void {
+    if count[0] >= BOT_SEARCH_MAX {return;}
+
+    i32 slot = botStateTableIndex(x, y, rot, rotate_flag);
+    if slot < 0 {return;}
+    if visited[slot] != 0 {return;}
+
+    i32 idx = count[0];
+    visited[slot] = idx + 1;
+    xs[idx] = x;
+    ys[idx] = y;
+    rots[idx] = normalizeRotation(rot);
+    if rotate_flag != 0 {rotate_flags[idx] = 1;} else {rotate_flags[idx] = 0;}
+    parents[idx] = parent_idx;
+    actions[idx] = action;
+    depths[idx] = depths[parent_idx] + 1;
+    count[0] += 1;
+}
+
+fun botSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: i32, last_rotate: bool, out_board: ptr<i32>, out_final_y: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    return aiBotSimulateDropPlacement(board, kind, x, y, rot, last_rotate, out_board, out_final_y, out_lines, out_spin, out_all_clear);
+}
+
+fun botSimulateActionPlan(board: ptr<i32>, kind: i32, start_x: i32, start_y: i32, start_rot: i32, start_last_rotate: bool, actions: ptr<i32>, action_count: i32, out_board: ptr<i32>, out_final_x: ptr<i32>, out_final_y: ptr<i32>, out_final_rot: ptr<i32>, out_final_last_rotate: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    i32 x = start_x;
+    i32 y = start_y;
+    i32 rot = start_rot;
+    bool last_rotate = start_last_rotate;
+
+    for i32 i = 0; i < action_count; i++ {
+        i32 action = actions[i];
+        if action == BOT_ACTION_LEFT {
+            if !botTempPieceFits(board, kind, rot, x - 1, y) {return false;}
+            x -= 1;
+        } else if action == BOT_ACTION_RIGHT {
+            if !botTempPieceFits(board, kind, rot, x + 1, y) {return false;}
+            x += 1;
+        } else if action == BOT_ACTION_DOWN {
+            if !botTempPieceFits(board, kind, rot, x, y + 1) {return false;}
+            y += 1;
+        } else if action == BOT_ACTION_CW {
+            i32 rx = 0;
+            i32 ry = 0;
+            i32 rrot = 0;
+            i32 rkick = -1;
+            if !botApplyRotateState(board, kind, x, y, rot, 1, &rx, &ry, &rrot, &rkick) {return false;}
+            x = rx;
+            y = ry;
+            rot = rrot;
+            last_rotate = true;
+        } else if action == BOT_ACTION_CCW {
+            i32 rx = 0;
+            i32 ry = 0;
+            i32 rrot = 0;
+            i32 rkick = -1;
+            if !botApplyRotateState(board, kind, x, y, rot, -1, &rx, &ry, &rrot, &rkick) {return false;}
+            x = rx;
+            y = ry;
+            rot = rrot;
+            last_rotate = true;
+        } else if action == BOT_ACTION_DROP {
+            i32 final_y = 0;
+            if !botSimulateDropPlacement(board, kind, x, y, rot, last_rotate, out_board, &final_y, out_lines, out_spin, out_all_clear) {return false;}
+            out_final_x[0] = x;
+            out_final_y[0] = final_y;
+            out_final_rot[0] = rot;
+            if last_rotate {out_final_last_rotate[0] = 1;} else {out_final_last_rotate[0] = 0;}
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
+    for i32 i = 0; i < BOT_SEARCH_MAX; i++ {
+        g_bot_search_xs[i] = 0;
+        g_bot_search_ys[i] = 0;
+        g_bot_search_rots[i] = 0;
+        g_bot_search_rotate_flags[i] = 0;
+        g_bot_search_parents[i] = -1;
+        g_bot_search_actions[i] = 0;
+        g_bot_search_depths[i] = 0;
+    }
+    for i32 i = 0; i < BOT_STATE_TABLE_SIZE; i++ {
+        g_bot_search_visited[i] = 0;
+        g_bot_landing_states[i] = 0;
+        g_bot_landing_steps[i] = 0;
+    }
+
+    i32 count = 1;
+    i32 head = 0;
+    g_bot_search_xs[0] = g_bot.piece_x;
+    g_bot_search_ys[0] = g_bot.piece_y;
+    g_bot_search_rots[0] = g_bot.piece_rotation;
+    if g_bot.last_rotate_success {g_bot_search_rotate_flags[0] = 1;} else {g_bot_search_rotate_flags[0] = 0;}
+    g_bot_search_parents[0] = -1;
+    g_bot_search_actions[0] = 0;
+    g_bot_search_depths[0] = 0;
+    i32 root_slot = botStateTableIndex(g_bot_search_xs[0], g_bot_search_ys[0], g_bot_search_rots[0], g_bot_search_rotate_flags[0]);
+    if root_slot < 0 {return false;}
+    g_bot_search_visited[root_slot] = 1;
+
+    for (head < count) {
+        i32 next_x = g_bot_search_xs[head] - 1;
+        if botTempPieceFits(&g_bot_board[0], g_bot.piece_kind, g_bot_search_rots[head], next_x, g_bot_search_ys[head]) {
+            botAppendSearchState(&count, &g_bot_search_visited[0], &g_bot_search_xs[0], &g_bot_search_ys[0], &g_bot_search_rots[0], &g_bot_search_rotate_flags[0], &g_bot_search_parents[0], &g_bot_search_actions[0], &g_bot_search_depths[0], next_x, g_bot_search_ys[head], g_bot_search_rots[head], g_bot_search_rotate_flags[head], head, BOT_ACTION_LEFT);
+        }
+
+        next_x = g_bot_search_xs[head] + 1;
+        if botTempPieceFits(&g_bot_board[0], g_bot.piece_kind, g_bot_search_rots[head], next_x, g_bot_search_ys[head]) {
+            botAppendSearchState(&count, &g_bot_search_visited[0], &g_bot_search_xs[0], &g_bot_search_ys[0], &g_bot_search_rots[0], &g_bot_search_rotate_flags[0], &g_bot_search_parents[0], &g_bot_search_actions[0], &g_bot_search_depths[0], next_x, g_bot_search_ys[head], g_bot_search_rots[head], g_bot_search_rotate_flags[head], head, BOT_ACTION_RIGHT);
+        }
+
+        i32 next_y = g_bot_search_ys[head] + 1;
+        if botTempPieceFits(&g_bot_board[0], g_bot.piece_kind, g_bot_search_rots[head], g_bot_search_xs[head], next_y) {
+            botAppendSearchState(&count, &g_bot_search_visited[0], &g_bot_search_xs[0], &g_bot_search_ys[0], &g_bot_search_rots[0], &g_bot_search_rotate_flags[0], &g_bot_search_parents[0], &g_bot_search_actions[0], &g_bot_search_depths[0], g_bot_search_xs[head], next_y, g_bot_search_rots[head], g_bot_search_rotate_flags[head], head, BOT_ACTION_DOWN);
+        }
+
+        i32 rx = 0;
+        i32 ry = 0;
+        i32 rrot = 0;
+        i32 rkick = -1;
+        if botApplyRotateState(&g_bot_board[0], g_bot.piece_kind, g_bot_search_xs[head], g_bot_search_ys[head], g_bot_search_rots[head], 1, &rx, &ry, &rrot, &rkick) {
+            botAppendSearchState(&count, &g_bot_search_visited[0], &g_bot_search_xs[0], &g_bot_search_ys[0], &g_bot_search_rots[0], &g_bot_search_rotate_flags[0], &g_bot_search_parents[0], &g_bot_search_actions[0], &g_bot_search_depths[0], rx, ry, rrot, 1, head, BOT_ACTION_CW);
+        }
+
+        if botApplyRotateState(&g_bot_board[0], g_bot.piece_kind, g_bot_search_xs[head], g_bot_search_ys[head], g_bot_search_rots[head], -1, &rx, &ry, &rrot, &rkick) {
+            botAppendSearchState(&count, &g_bot_search_visited[0], &g_bot_search_xs[0], &g_bot_search_ys[0], &g_bot_search_rots[0], &g_bot_search_rotate_flags[0], &g_bot_search_parents[0], &g_bot_search_actions[0], &g_bot_search_depths[0], rx, ry, rrot, 1, head, BOT_ACTION_CCW);
+        }
+
+        head += 1;
+    }
+
+    i32 landing_count = 0;
+    for i32 state_idx = 0; state_idx < count; state_idx++ {
+        if g_bot_search_depths[state_idx] >= BOT_PLAN_MAX - 1 {continue;}
+
+        i32 final_y = botTempDropY(&g_bot_board[0], g_bot.piece_kind, g_bot_search_rots[state_idx], g_bot_search_xs[state_idx], g_bot_search_ys[state_idx]);
+        if final_y < -1000 {continue;}
+
+        i32 slot = botStateTableIndex(g_bot_search_xs[state_idx], final_y, g_bot_search_rots[state_idx], g_bot_search_rotate_flags[state_idx]);
+        if slot < 0 {continue;}
+
+        i32 step_count = g_bot_search_depths[state_idx] + 1;
+        if g_bot_landing_states[slot] == 0 {
+            g_bot_landing_states[slot] = state_idx + 1;
+            g_bot_landing_steps[slot] = step_count;
+            landing_count += 1;
+        } else if step_count < g_bot_landing_steps[slot] {
+            g_bot_landing_states[slot] = state_idx + 1;
+            g_bot_landing_steps[slot] = step_count;
+        }
+    }
+
+    i32 cur_max_h = 0;
+    i32 cur_holes = 0;
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    aiBoardStackStats(&g_bot_board[0], &cur_max_h, &cur_holes, &cur_garbage_rows, &cur_garbage_cover);
+    i32 cur_garbage_access = aiBoardGarbageAccessScore(&g_bot_board[0]);
+    i32 cur_hole_depth = 0;
+    boardHoleStats(&g_bot_board[0], &cur_holes, &cur_hole_depth, &cur_max_h);
+    i32 before_score = evaluateBoardStructural(&g_bot_board[0]);
+
+    f32 apm_current = botCurrentApm();
+    f32 apm_delta_f = g_bot_setup.target_apm - apm_current;
+    i32 apm_delta = apm_delta_f as i32;
+
+    i32 speed_tier = 0;
+    if g_bot_setup.target_apm >= (planTune(0) as f32) {speed_tier = 1;}
+    if g_bot_setup.target_apm >= (planTune(1) as f32) {speed_tier = 2;}
+    if g_bot_setup.target_apm >= (planTune(2) as f32) {speed_tier = 3;}
+    bool unrestricted_speed = g_bot_setup.target_apm >= (planTune(3) as f32);
+
+    i32 action_budget = 12;
+    if g_bot_setup.target_apm <= 40.0 {
+        action_budget = 7;
+    } else if g_bot_setup.target_apm <= 70.0 {
+        action_budget = 8;
+    } else if g_bot_setup.target_apm <= 110.0 {
+        action_budget = 10;
+    } else {
+        action_budget = 12;
+    }
+    if speed_tier == 1 {action_budget += planTune(4);}
+    if speed_tier == 2 {action_budget += planTune(5);}
+    if speed_tier == 3 {action_budget += planTune(6);}
+    if mode == BOT_MODE_DIG {action_budget += 1;}
+    if mode == BOT_MODE_SURVIVE {action_budget += 2;}
+    if cur_max_h >= 16 {action_budget -= 1;}
+    if cur_max_h >= 19 {action_budget -= 1;}
+    if apm_delta < -15 {action_budget -= 1;}
+    if apm_delta > 12 {action_budget += 1;}
+    if apm_delta > planTune(7) {action_budget += planTune(9);}
+    if apm_delta > planTune(8) {action_budget += planTune(10);}
+    if unrestricted_speed {
+        action_budget = BOT_PLAN_MAX - 1;
+    }
+    if cur_max_h >= 13 && action_budget < 8 {action_budget = 8;}
+    if action_budget < 7 {action_budget = 7;}
+    if action_budget > BOT_PLAN_MAX - 1 {action_budget = BOT_PLAN_MAX - 1;}
+
+    i32 best_state = -1;
+    i32 best_final_y = g_bot.piece_y;
+    i32 best_score = -2147483647;
+    i32 best_lines = 0;
+    i32 best_spin = 0;
+    i32 best_action_count = 0;
+    i32 best_target_x = g_bot.piece_x;
+    i32 best_target_rotation = g_bot.piece_rotation;
+    bool best_target_last_rotate = false;
+    bool best_all_clear = false;
+    i32 best_next_holes = cur_holes;
+    i32 best_next_max_h = cur_max_h;
+    arr<i32, BOARD_CELLS> best_board = {0};
+
+    i32 clean_state = -1;
+    i32 clean_final_y = g_bot.piece_y;
+    i32 clean_lines = 0;
+    i32 clean_spin = 0;
+    i32 clean_action_count = 0;
+    i32 clean_target_x = g_bot.piece_x;
+    i32 clean_target_rotation = g_bot.piece_rotation;
+    bool clean_target_last_rotate = false;
+    bool clean_all_clear = false;
+    i32 clean_score = -2147483647;
+    i32 clean_next_holes = 99999;
+    i32 clean_next_max_h = 99999;
+    arr<i32, BOARD_CELLS> clean_board = {0};
+
+    for i32 slot = 0; slot < BOT_STATE_TABLE_SIZE; slot++ {
+        if g_bot_landing_states[slot] == 0 {continue;}
+
+        i32 state_idx = g_bot_landing_states[slot] - 1;
+        bool last_rotate = false;
+        if g_bot_search_rotate_flags[state_idx] != 0 {last_rotate = true;}
+
+        i32 final_y = 0;
+        i32 lines = 0;
+        i32 spin = 0;
+        i32 all_clear = 0;
+        arr<i32, BOARD_CELLS> temp_board = {0};
+        if !botSimulateDropPlacement(&g_bot_board[0], g_bot.piece_kind, g_bot_search_xs[state_idx], g_bot_search_ys[state_idx], g_bot_search_rots[state_idx], last_rotate, &temp_board[0], &final_y, &lines, &spin, &all_clear) {continue;}
+        i32 action_count = g_bot_landing_steps[slot];
+
+        if !unrestricted_speed && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && g_bot_pending_garbage == 0 && action_count > action_budget + 5 {
+            continue;
+        }
+
+        i32 next_max_h = 0;
+        i32 next_holes = 0;
+        i32 next_garbage_rows = 0;
+        i32 next_garbage_cover = 0;
+        aiBoardStackStats(&temp_board[0], &next_max_h, &next_holes, &next_garbage_rows, &next_garbage_cover);
+        i32 next_garbage_access = aiBoardGarbageAccessScore(&temp_board[0]);
+
+        i32 rows_delta = cur_garbage_rows - next_garbage_rows;
+        i32 cover_delta = cur_garbage_cover - next_garbage_cover;
+        i32 access_delta = cur_garbage_access - next_garbage_access;
+        i32 holes_delta = cur_holes - next_holes;
+        i32 max_h_delta = cur_max_h - next_max_h;
+
+        bool no_immediate_progress = rows_delta <= 0 && cover_delta <= 0 && access_delta <= 0;
+        bool immediate_worse = next_garbage_rows > cur_garbage_rows || next_garbage_cover > cur_garbage_cover || next_garbage_access > cur_garbage_access;
+
+        i32 projected_rows = next_garbage_rows;
+        i32 projected_cover = next_garbage_cover;
+        i32 projected_access = next_garbage_access;
+        i32 projected_holes = next_holes;
+        i32 projected_max_h = next_max_h;
+        i32 projected_lines = lines;
+        i32 projected_score = 0;
+
+        i32 base_score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel(), mode, g_bot_pending_garbage);
+        if unrestricted_speed {base_score -= action_count * planTune(30);} else {base_score -= action_count * planTune(29);}
+
+        if mode != BOT_MODE_CLEAN {
+            projected_score = base_score;
+            if g_bot.queue_count > 0 {
+                botProjectDirtyNext(&temp_board[0], g_bot_queue[0], &projected_rows, &projected_cover, &projected_access, &projected_holes, &projected_max_h, &projected_lines, &projected_score);
+            }
+        }
+
+        i32 projected_rows_delta = cur_garbage_rows - projected_rows;
+        i32 projected_cover_delta = cur_garbage_cover - projected_cover;
+        i32 projected_access_delta = cur_garbage_access - projected_access;
+        i32 projected_holes_delta = cur_holes - projected_holes;
+        i32 projected_max_h_delta = cur_max_h - projected_max_h;
+        bool no_projected_progress = projected_rows_delta <= 0 && projected_cover_delta <= 0 && projected_access_delta <= 0;
+
+        i32 attack = aiBotEstimateAttack(lines, spin != 0, all_clear != 0, g_bot.combo, g_bot.back_to_back_count);
+        i32 spawn_penalty = 0;
+        if g_bot.queue_count > 0 {
+            if !botTempPieceFits(&temp_board[0], g_bot_queue[0], 0, 3, botSpawnY()) {spawn_penalty = 600000;}
+        }
+
+        i32 score = base_score;
+        i32 over_budget = action_count - action_budget;
+        if over_budget < 0 {over_budget = 0;}
+        i32 action_step_penalty = planTune(11);
+        i32 over_budget_penalty = planTune(16);
+        if speed_tier == 1 {
+            action_step_penalty = planTune(12);
+            over_budget_penalty = planTune(17);
+        }
+        if speed_tier == 2 {
+            action_step_penalty = planTune(13);
+            over_budget_penalty = planTune(18);
+        }
+        if speed_tier == 3 {
+            action_step_penalty = planTune(14);
+            over_budget_penalty = planTune(19);
+        }
+        if unrestricted_speed {
+            action_step_penalty = planTune(15);
+            over_budget_penalty = planTune(20);
+        }
+        score -= action_count * action_step_penalty;
+        score -= over_budget * over_budget_penalty;
+        score -= spawn_penalty;
+        if mode == BOT_MODE_SURVIVE {score -= spawn_penalty * 2;}
+        if mode == BOT_MODE_DIG {score += projected_score / 6;}
+        if mode == BOT_MODE_SURVIVE {score += projected_score / 8;}
+        if attack > 0 && apm_delta > 0 {
+            i32 attack_bonus = planTune(21);
+            if speed_tier == 1 {attack_bonus = planTune(22);}
+            if speed_tier == 2 {attack_bonus = planTune(23);}
+            if speed_tier == 3 {attack_bonus = planTune(24);}
+            if apm_delta > planTune(7) {attack_bonus += planTune(25);}
+            if apm_delta > planTune(8) {attack_bonus += planTune(26);}
+            score += attack * attack_bonus;
+        }
+        if unrestricted_speed && attack > 0 {
+            score += attack * planTune(27);
+            if spin != 0 {score += planTune(28);}
+        }
+        if lines == 0 && mode != BOT_MODE_CLEAN && no_immediate_progress {score -= aiBotPanicPenalty(cur_garbage_access, mode);}
+        if lines == 0 && mode == BOT_MODE_CLEAN && next_holes > cur_holes {score -= (next_holes - cur_holes) * 180000;}
+        if lines == 0 && mode == BOT_MODE_CLEAN && next_max_h > cur_max_h {score -= (next_max_h - cur_max_h) * 50000;}
+
+        bool prefer_simple_plan = false;
+        if BOT_SIMPLE_PLAN && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && cur_holes == 0 && cur_max_h <= 10 && g_bot_setup.target_apm <= 45.0 {
+            prefer_simple_plan = true;
+        }
+
+        if prefer_simple_plan {
+            if spin != 0 {score -= 280000;}
+            if lines == 3 {score -= 90000;}
+            if lines >= 4 {score -= 180000;}
+
+            if g_bot_search_rotate_flags[state_idx] != 0 {score -= 28000;}
+
+            if action_count > action_budget {
+                i32 over = action_count - action_budget;
+                score -= over * 120000;
+            }
+        }
+
+        if mode == BOT_MODE_CLEAN {
+            bool clean_better = false;
+            if clean_state < 0 {
+                clean_better = true;
+            } else {
+                clean_better = aiBotCleanCandidateBetter(cur_holes, cur_max_h, next_holes, next_max_h, lines, action_count, score, clean_next_holes, clean_next_max_h, clean_lines, clean_action_count, clean_score);
+            }
+
+            if clean_better {
+                clean_state = state_idx;
+                clean_final_y = final_y;
+                clean_lines = lines;
+                clean_spin = spin;
+                clean_action_count = action_count;
+                clean_target_x = g_bot_search_xs[state_idx];
+                clean_target_rotation = g_bot_search_rots[state_idx];
+                clean_target_last_rotate = last_rotate;
+                clean_all_clear = all_clear != 0;
+                clean_score = score;
+                clean_next_holes = next_holes;
+                clean_next_max_h = next_max_h;
+                for i32 i = 0; i < BOARD_CELLS; i++ {clean_board[i] = temp_board[i];}
+            }
+        }
+
+        if best_state < 0 || score > best_score || (score == best_score && action_count < best_action_count) {
+            best_state = state_idx;
+            best_final_y = final_y;
+            best_score = score;
+            best_lines = lines;
+            best_spin = spin;
+            best_action_count = action_count;
+            best_target_x = g_bot_search_xs[state_idx];
+            best_target_rotation = g_bot_search_rots[state_idx];
+            best_target_last_rotate = last_rotate;
+            best_all_clear = all_clear != 0;
+            best_next_holes = next_holes;
+            best_next_max_h = next_max_h;
+            for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = temp_board[i];}
+        }
+    }
+
+    if best_state < 0 {return false;}
+
+    bool clean_forced = false;
+    if mode == BOT_MODE_CLEAN && clean_state >= 0 {
+        bool should_force_clean = false;
+        if best_next_holes > cur_holes && clean_next_holes <= cur_holes {should_force_clean = true;}
+        if best_next_holes > clean_next_holes + 1 {should_force_clean = true;}
+        if best_next_max_h > clean_next_max_h + 2 && clean_next_holes <= best_next_holes {should_force_clean = true;}
+        if best_lines == 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 240000 {should_force_clean = true;}
+        if cur_max_h >= 14 && clean_next_max_h < best_next_max_h {should_force_clean = true;}
+        if g_bot_pending_garbage > 0 && clean_next_holes <= best_next_holes && clean_next_max_h <= best_next_max_h {should_force_clean = true;}
+        if cur_max_h >= 12 && clean_next_max_h <= cur_max_h && best_next_max_h > cur_max_h {should_force_clean = true;}
+        if cur_holes > 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 400000 {should_force_clean = true;}
+
+        if should_force_clean {
+            clean_forced = true;
+            best_state = clean_state;
+            best_final_y = clean_final_y;
+            best_lines = clean_lines;
+            best_spin = clean_spin;
+            best_action_count = clean_action_count;
+            best_target_x = clean_target_x;
+            best_target_rotation = clean_target_rotation;
+            best_target_last_rotate = clean_target_last_rotate;
+            best_all_clear = clean_all_clear;
+            best_score = clean_score;
+            best_next_holes = clean_next_holes;
+            best_next_max_h = clean_next_max_h;
+            for i32 i = 0; i < BOARD_CELLS; i++ {best_board[i] = clean_board[i];}
+        }
+    }
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_planned_board[i] = best_board[i];}
+    g_bot_planned_lines = best_lines;
+    g_bot_planned_spin = best_spin != 0;
+    g_bot_planned_all_clear = best_all_clear;
+    g_bot.target_x = best_target_x;
+    g_bot.target_y = best_final_y;
+    g_bot.target_rotation = best_target_rotation;
+    g_bot.target_last_rotate = best_target_last_rotate;
+
+    arr<i32, BOT_PLAN_MAX> reverse_actions = {0};
+    i32 reverse_count = 0;
+    i32 idx = best_state;
+    for (idx > 0 && reverse_count < BOT_PLAN_MAX - 1) {
+        reverse_actions[reverse_count] = g_bot_search_actions[idx];
+        reverse_count += 1;
+        idx = g_bot_search_parents[idx];
+    }
+
+    g_bot_plan_len = best_action_count;
+    g_bot_plan_index = 0;
+    i32 plan_write = 0;
+    for i32 i = reverse_count - 1; i >= 0; i-- {
+        g_bot_plan_actions[plan_write] = reverse_actions[i];
+        plan_write += 1;
+    }
+    g_bot_plan_actions[plan_write] = BOT_ACTION_DROP;
+    g_bot.target_valid = true;
+    g_bot.target_tspin = best_spin != 0;
+    g_bot_plan_pending_snapshot = g_bot_pending_garbage;
+    aiLog(TextFormat(" exact plan x=%i rot=%i y=%i steps=%i lines=%i score=%i spin=%i states=%i landings=%i mode=%i budget=%i clean_forced=%i nh=%i", g_bot.target_x, g_bot.target_rotation, best_final_y, g_bot_plan_len, best_lines, best_score, best_spin, count, landing_count, mode, action_budget, clean_forced as i32, best_next_holes));
+    return true;
+}
+
+fun botPlanMove() >> bool {
+    if g_bot_pending_garbage > 0 {
+        insertGarbageIntoBot(g_bot_pending_garbage);
+        if g_bot.game_over {return false;}
+        g_bot_pending_garbage = 0;
+    }
+
+    i32 max_h = 0;
+    i32 holes = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    aiBoardStackStats(&g_bot_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+    i32 garbage_access = aiBoardGarbageAccessScore(&g_bot_board[0]);
+
+    i32 mode = aiBotChooseMode(max_h, holes, garbage_rows, garbage_cover, garbage_access, 0);
+
+    i32 lookahead_count = g_bot.queue_count;
+    if lookahead_count < 0 {lookahead_count = 0;}
+
+    if mode == BOT_MODE_CLEAN {
+        if lookahead_count > 6 {lookahead_count = 6;}
+        if lookahead_count < 2 {lookahead_count = 2;}
+        if max_h >= 14 {lookahead_count = minI(lookahead_count, 4);}
+    } else if mode == BOT_MODE_DIG {
+        if lookahead_count > 4 {lookahead_count = 4;}
+        if lookahead_count < 2 {lookahead_count = 2;}
+        if max_h >= 18 || holes >= 11 {lookahead_count = 1;}
+    } else {
+        if lookahead_count > 2 {lookahead_count = 2;}
+        if lookahead_count < 1 {lookahead_count = 1;}
+    }
+
+    if max_h >= 22 && holes >= 15 {lookahead_count = 1;}
+
+    aiLog(TextFormat("plan kind=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i mode=%i lookahead=%i", g_bot.piece_kind, max_h, holes, garbage_rows, garbage_cover, garbage_access, mode, lookahead_count));
+
+    return botPlanExactPath(lookahead_count, mode);
+}
+
+fun botRotationDelta(target: i32) >> i32 {
+    i32 current = normalizeRotation(g_bot.piece_rotation);
+    i32 want = normalizeRotation(target);
+    i32 diff = normalizeRotation(want - current);
+    if diff == 0 {return 0;}
+    if diff == 3 {return -1;}
+    return 1;
+}
+
+fun botPerformPlannedAction() >> bool {
+    if g_bot.target_valid && g_bot_plan_index < g_bot_plan_len && g_bot_plan_pending_snapshot != g_bot_pending_garbage {
+        aiLog(TextFormat(" replan trigger pending changed old=%i new=%i", g_bot_plan_pending_snapshot, g_bot_pending_garbage));
+        g_bot.target_valid = false;
+        g_bot_plan_len = 0;
+        g_bot_plan_index = 0;
+    }
+
+    if !g_bot.target_valid || g_bot_plan_index >= g_bot_plan_len {
+        if !botPlanMove() {return false;}
+    }
+
+    i32 action = g_bot_plan_actions[g_bot_plan_index];
+    g_bot_plan_index += 1;
+
+    if action == BOT_ACTION_LEFT {
+        if botTryMove(-1, 0) {return true;}
+    } else if action == BOT_ACTION_RIGHT {
+        if botTryMove(1, 0) {return true;}
+    } else if action == BOT_ACTION_CW {
+        if botTryRotate(1) {return true;}
+    } else if action == BOT_ACTION_CCW {
+        if botTryRotate(-1) {return true;}
+    } else if action == BOT_ACTION_DOWN {
+        if botTryMove(0, 1) {return true;}
+    } else if action == BOT_ACTION_DROP {
+        i32 drop_distance = g_bot.target_y - g_bot.piece_y;
+        if drop_distance < 0 {drop_distance = 0;}
+        g_bot.piece_x = g_bot.target_x;
+        g_bot.piece_y = g_bot.target_y;
+        g_bot.piece_rotation = g_bot.target_rotation;
+        g_bot.last_rotate_success = g_bot.target_last_rotate;
+        if g_hard_drop_ring {
+            spawnHardDropImpactRing(LINE_FX_BOARD_BOT, g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, g_bot.piece_y, drop_distance);
+        }
+        botApplyPlannedLock();
+        return true;
+    }
+
+    aiLog(TextFormat(" plan desync action=%i x=%i y=%i rot=%i", action, g_bot.piece_x, g_bot.piece_y, g_bot.piece_rotation));
+    g_bot.target_valid = false;
+    g_bot_plan_len = 0;
+    g_bot_plan_index = 0;
+    return true;
+}

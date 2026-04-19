@@ -1,0 +1,263 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.theme
+use zltris.scale
+
+#define BOARD_W 10
+#define BOARD_H 22
+
+#define PIECE_T 2
+
+#define ROUND_RUNNING 0
+#define ROUND_FINISHED 2
+
+#define LINE_FX_BOARD_PLAYER 0
+
+#define STAR_MODE_DROPS 1
+
+fun lockCurrentPiece() >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 x = g_piece_x + minoX(g_piece_kind, g_piece_rotation, idx);
+        i32 y = g_piece_y + minoY(g_piece_kind, g_piece_rotation, idx);
+        if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {boardSet(x, y, g_piece_kind + 1);}
+    }
+}
+
+fun awardLineClear(lines_cleared: i32) >> void {
+    g_play.lines += lines_cleared;
+}
+
+fun clearLines() >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if boardGet(x, y) == 0 {full = false;}
+        }
+
+        if (full) {
+            spawnLineClearEffectsForRow(y);
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {
+                    boardSet(x, pull, boardGet(x, pull - 1));
+                }
+            }
+            for i32 x = 0; x < BOARD_W; x++ {
+                boardSet(x, 0, 0);
+            }
+            y += 1;
+        }
+    }
+
+    if cleared > 0 {awardLineClear(cleared);}
+    return cleared;
+}
+
+fun boardIsEmpty() >> bool {
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            if boardGet(x, y) != 0 {return false;}
+        }
+    }
+    return true;
+}
+
+fun boardCellOccupiedOrBlocked(x: i32, y: i32) >> bool {
+    if x < 0 || x >= BOARD_W {return true;}
+    if y >= BOARD_H {return true;}
+    if y < 0 {return false;}
+    return boardGet(x, y) != 0;
+}
+
+fun isTSpin(kind: i32, x: i32, y: i32) >> bool {
+    if kind != PIECE_T {return false;}
+    if !g_rt.last_rotate_success {return false;}
+
+    i32 cx = x + 1;
+    i32 cy = y + 1;
+    i32 occupied_corners = 0;
+    if boardCellOccupiedOrBlocked(cx - 1, cy - 1) {occupied_corners += 1;}
+    if boardCellOccupiedOrBlocked(cx + 1, cy - 1) {occupied_corners += 1;}
+    if boardCellOccupiedOrBlocked(cx - 1, cy + 1) {occupied_corners += 1;}
+    if boardCellOccupiedOrBlocked(cx + 1, cy + 1) {occupied_corners += 1;}
+    return occupied_corners >= 3;
+}
+
+fun lineBasePoints(lines_cleared: i32) >> i32 {
+    if lines_cleared <= 0 {return 0;}
+    if lines_cleared == 1 {return 100;}
+    if lines_cleared == 2 {return 300;}
+    if lines_cleared == 3 {return 500;}
+    return 800;
+}
+
+fun spinBasePoints(lines_cleared: i32) >> i32 {
+    if lines_cleared <= 0 {return 400;}
+    if lines_cleared == 1 {return 800;}
+    if lines_cleared == 2 {return 1200;}
+    if lines_cleared == 3 {return 1600;}
+    return 2600;
+}
+
+fun miniSpinBasePoints(lines_cleared: i32) >> i32 {
+    if lines_cleared <= 0 {return 100;}
+    if lines_cleared == 1 {return 200;}
+    if lines_cleared == 2 {return 400;}
+    if lines_cleared == 3 {return 800;}
+    return 1600;
+}
+
+fun lockAttack(lines_cleared: i32, spin: bool, mini: bool, difficult: bool, b2b_chain: bool, combo_value: i32, all_clear: bool) >> i32 {
+    i32 attack = 0;
+
+    if spin {
+        if mini {
+            if lines_cleared == 1 {attack = 0;}
+            if lines_cleared == 2 {attack = 1;}
+        } else {
+            if lines_cleared == 1 {attack = 2;}
+            if lines_cleared == 2 {attack = 4;}
+            if lines_cleared >= 3 {attack = 6;}
+        }
+    } else {
+        if lines_cleared == 2 {attack = 1;}
+        if lines_cleared == 3 {attack = 2;}
+        if lines_cleared >= 4 {attack = 4;}
+    }
+
+    if difficult && b2b_chain {
+        if spin {
+            if mini {
+                attack += 1;
+            } else if lines_cleared == 1 {
+                attack += 1;
+            } else if lines_cleared == 2 {
+                attack += 2;
+            } else {
+                attack += 3;
+            }
+        } else if lines_cleared >= 4 {
+            attack += 2;
+        } else {
+            attack += 1;
+        }
+    }
+    if lines_cleared > 0 && combo_value >= 1 {attack += combo_value / 2;}
+    if all_clear && lines_cleared > 0 {attack += 10;}
+    return attack;
+}
+
+fun scoreLevel() >> i32 {
+    i32 level = (g_play.lines / 10) + 1;
+    if level < 1 {level = 1;}
+    return level;
+}
+
+fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) >> void {
+    i32 level = scoreLevel();
+
+    i32 base = 0;
+    if spin {
+        if mini {
+            base = miniSpinBasePoints(lines_cleared);
+        } else {
+            base = spinBasePoints(lines_cleared);
+        }
+    } else {
+        base = lineBasePoints(lines_cleared);
+    }
+
+    bool difficult = false;
+    if lines_cleared == 4 {difficult = true;}
+    if spin && lines_cleared > 0 {difficult = true;}
+    bool b2b_chain = g_rt.back_to_back_count > 0;
+
+    i32 clear_points = base;
+    if difficult && b2b_chain {clear_points = (clear_points * 3) / 2;}
+
+    i32 combo_points = 0;
+    i32 all_clear_points = 0;
+
+    if lines_cleared > 0 {
+        g_rt.combo += 1;
+        combo_points = g_rt.combo * 50;
+    } else {
+        g_rt.combo = -1;
+    }
+
+    if all_clear {all_clear_points = 3500;}
+    g_play.score += (clear_points + combo_points + all_clear_points) * level;
+
+    i32 attack = lockAttack(lines_cleared, spin, mini, difficult, b2b_chain, g_rt.combo, all_clear);
+    g_rt.attack_sent += attack;
+    if isVsBotMode() {routePlayerAttack(attack);}
+
+    if difficult {
+        g_rt.back_to_back_count += 1;
+        g_rt.back_to_back = true;
+    } else if lines_cleared > 0 {
+        g_rt.back_to_back_count = 0;
+        g_rt.back_to_back = false;
+    }
+
+    g_rt.last_rotate_success = false;
+    g_rt.last_rotate_kick_test = -1;
+}
+
+fun stepLock() >> void {
+    lockCurrentPiece();
+    spawnLockEffectPiece(LINE_FX_BOARD_PLAYER, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y);
+    kickBoardShake(3.0, 0.08);
+    g_rt.pieces_placed += 1;
+    bool spin = isTSpin(g_piece_kind, g_piece_x, g_piece_y);
+    i32 lines_cleared = clearLines();
+    bool mini = false;
+    if spin && lines_cleared <= 1 && g_rt.last_rotate_kick_test == 0 {mini = true;}
+    bool all_clear = lines_cleared > 0 && boardIsEmpty();
+    if isFreePlayMode() {
+        i32 max_h = 0;
+        i32 holes = 0;
+        i32 garbage_rows = 0;
+        i32 garbage_cover = 0;
+        aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
+        i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
+        aiLog(TextFormat("fp lock kind=%i x=%i rot=%i lines=%i spin=%i all_clear=%i total_lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_piece_x, g_piece_rotation, lines_cleared, spin as i32, all_clear as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
+    }
+    if lines_cleared > 0 {kickBoardShake(lineClearShakeAmp(lines_cleared), 0.11);}
+    triggerQuadClearFx(lines_cleared, spin);
+    triggerAllClearFx(all_clear);
+    applyLockScore(lines_cleared, spin, mini, all_clear);
+    if (isFortyLinesMode() && g_play.round_state == ROUND_RUNNING && g_play.lines >= 40) {
+        g_play = g_play.with_round_state(ROUND_FINISHED);
+        return;
+    }
+
+    if isVsBotMode() && g_player_pending_garbage > 0 {
+        insertGarbageIntoPlayer(g_player_pending_garbage);
+        g_player_pending_garbage = 0;
+        if g_play.game_over {return;}
+    }
+
+    spawnNextPiece();
+}
+
+fun hardDrop() >> void {
+    i32 distance = 0;
+    for (tryMove(0, 1)) {
+        distance += 1;
+    }
+    if g_hard_drop_ring {
+        spawnHardDropImpactRing(LINE_FX_BOARD_PLAYER, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, distance);
+    }
+    g_play.score += distance * 2;
+    if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+        f32 norm = starIntensityNorm();
+        g_rt.star_pps_meter += 1.0;
+        if g_rt.star_pps_meter > 3.0 {g_rt.star_pps_meter = 3.0;}
+        g_rt.star_hard_target += 0.06 + norm * 0.64;
+        if g_rt.star_hard_target > 1.0 {g_rt.star_hard_target = 1.0;}
+    }
+    stepLock();
+}

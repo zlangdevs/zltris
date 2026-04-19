@@ -1,0 +1,385 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define CELL 32
+
+#define BOT_BOARD_TOP 82
+#define HIGH_STACK_BOARD_SHIFT 64
+#define BOTDEVMODE false
+
+#define PIECE_I 0
+
+#define LINE_FX_BOARD_PLAYER 0
+#define LINE_FX_BOARD_BOT 1
+
+#define BOT_DUELS_SIM_STEPS 6
+#define AI_TUNE_COUNT 221
+#define BOT_ARENA_LEFT 0
+#define BOT_ARENA_RIGHT 1
+
+#define BOT_ARENA_STAGE_CHAMPION 0
+#define BOT_ARENA_STAGE_STOCK 1
+#define BOT_ARENA_EARLY_MAX_ROUNDS 7
+#define BOT_ARENA_STOCK_MAX_ROUNDS 4
+
+fun shadeColor(base: u32, factor: f32) >> u32 {
+    i32 r = (((base & 255) as i32) as f32 * factor) as i32;
+    i32 g = ((((base >> 8) & 255) as i32) as f32 * factor) as i32;
+    i32 b = ((((base >> 16) & 255) as i32) as f32 * factor) as i32;
+    i32 a = ((base >> 24) & 255) as i32;
+
+    if r < 0 {r = 0;}
+    if g < 0 {g = 0;}
+    if b < 0 {b = 0;}
+    if r > 255 {r = 255;}
+    if g > 255 {g = 255;}
+    if b > 255 {b = 255;}
+
+    return ((r as u32) & 255) |
+           (((g as u32) & 255) << 8) |
+           (((b as u32) & 255) << 16) |
+           (((a as u32) & 255) << 24);
+}
+
+fun colorR(color: u32) >> i32 { return (color & 255) as i32; }
+fun colorG(color: u32) >> i32 { return ((color >> 8) & 255) as i32; }
+fun colorB(color: u32) >> i32 { return ((color >> 16) & 255) as i32; }
+
+fun colorLerpRgb(a: u32, b: u32, t: f32) >> u32 {
+    f32 tt = clamp01(t);
+    i32 r = (colorR(a) as f32 + ((colorR(b) - colorR(a)) as f32) * tt) as i32;
+    i32 g = (colorG(a) as f32 + ((colorG(b) - colorG(a)) as f32) * tt) as i32;
+    i32 bb = (colorB(a) as f32 + ((colorB(b) - colorB(a)) as f32) * tt) as i32;
+    if r < 0 {r = 0;}
+    if g < 0 {g = 0;}
+    if bb < 0 {bb = 0;}
+    if r > 255 {r = 255;}
+    if g > 255 {g = 255;}
+    if bb > 255 {bb = 255;}
+    return ((r as u32) & 255) |
+           (((g as u32) & 255) << 8) |
+           (((bb as u32) & 255) << 16) |
+           (255 as u32) << 24;
+}
+
+fun competitiveStarPalette(theme: Theme, index: i32) >> u32 {
+    i32 slot = index % 7;
+    if slot < 0 {slot += 7;}
+    if slot == 0 {return theme.piece_i;}
+    if slot == 1 {return theme.piece_o;}
+    if slot == 2 {return theme.piece_t;}
+    if slot == 3 {return theme.piece_j;}
+    if slot == 4 {return theme.piece_l;}
+    if slot == 5 {return theme.piece_s;}
+    return theme.piece_z;
+}
+
+fun printColorDebug(theme: Theme) >> void {
+    printf("[zltris] color debug theme=%s index=%d\n", themeName(g_game.theme_index), g_game.theme_index);
+    for i32 i = 0; i < 7; i++ {
+        u32 c = pieceColor(theme, i);
+        printf("[zltris] kind=%d hex=0x%08X rgb=(%d,%d,%d)\n", i, c, colorR(c), colorG(c), colorB(c));
+    }
+    u32 cur = pieceColor(theme, g_piece_kind);
+    printf("[zltris] current kind=%d hex=0x%08X rgb=(%d,%d,%d)\n", g_piece_kind, cur, colorR(cur), colorG(cur), colorB(cur));
+}
+
+fun drawGradientRectV(x: i64, y: i64, w: i64, h: i64, top_rgba: u32, bottom_rgba: u32) >> void {
+    DrawRectangleGradientV(uiX(x), uiY(y), uiS(w), uiS(h), toColor(top_rgba), toColor(bottom_rgba));
+}
+
+fun drawTextCenteredInRect(font: Font, text: ptr<u8>, x: i64, y: i64, w: i64, h: i64, size: i64, color_rgba: u32) >> void {
+    f32 draw_size = uiS(size) as f32;
+    Vector2 m = MeasureTextExSize(font, text, draw_size, 0.0);
+    i32 rx = uiX(x);
+    i32 ry = uiY(y);
+    i32 rw = uiS(w);
+    i32 rh = uiS(h);
+    f32 tx = (rx as f32) + ((rw as f32) - m.x) * 0.5;
+    f32 ty = (ry as f32) + ((rh as f32) - m.y) * 0.5;
+    DrawTextExXY(font, text, tx, ty, draw_size, 0.0, toColor(color_rgba));
+}
+
+fun drawPieceAt(kind: i32, rotation: i32, base_x: i64, base_y: i64, color: u32) >> void {
+    drawPieceAtBoard(kind, rotation, base_x, base_y, currentPlayerBoardLeft(), currentBoardTop(), color);
+}
+
+fun drawMiniPiece(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, size: i64) >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i64 px = panel_x + (minoX(kind, 0, idx) as i64) * size;
+        i64 py = panel_y + (minoY(kind, 0, idx) as i64) * size;
+        drawMiniCell(px, py, size, pieceColor(theme, kind));
+    }
+}
+
+fun drawMiniPieceCentered(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, panel_w: i64, panel_h: i64, size: i64) >> void {
+    i32 min_x = 99;
+    i32 max_x = -99;
+    i32 min_y = 99;
+    i32 max_y = -99;
+
+    for i32 idx = 0; idx < 4; idx++ {
+        i32 mx = minoX(kind, 0, idx);
+        i32 my = minoY(kind, 0, idx);
+        if mx < min_x {min_x = mx;}
+        if mx > max_x {max_x = mx;}
+        if my < min_y {min_y = my;}
+        if my > max_y {max_y = my;}
+    }
+
+    i32 piece_w = max_x - min_x + 1;
+    i32 piece_h = max_y - min_y + 1;
+
+    i64 origin_x = panel_x + (panel_w - (piece_w as i64) * size) / 2 - (min_x as i64) * size;
+    i64 origin_y = panel_y + (panel_h - (piece_h as i64) * size) / 2 - (min_y as i64) * size;
+
+    drawMiniPiece(theme, kind, origin_x, origin_y, size);
+}
+
+fun drawBoard(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    drawHighStackSpawnZone(theme, board_left, board_top);
+    fillRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.board_bg);
+    strokeRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.panel_stroke);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+            i32 cell = boardGet(x, y);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else if cell != 0 {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if (!g_play.game_over) {
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, currentGhostY(), ghostColor(pieceColor(theme, g_piece_kind)));
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
+    }
+
+    drawRestartBoardEffects(board_left, board_top);
+    drawHardDropImpactRings(board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawAllClearFx(theme, board_left, board_top);
+    drawQuadClearFx(theme, board_left, board_top);
+    drawLockEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawLineClearEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+}
+
+fun drawBotBoard(theme: Theme, font: Font) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+
+    drawHighStackSpawnZone(theme, board_x, board_y);
+    fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
+    strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+    drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+
+            i32 cell = botBoardGet(x, y);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else if cell != 0 {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !g_bot.game_over {
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, botGhostY() as i64, board_x, board_y, ghostColor(pieceColor(theme, g_bot.piece_kind)));
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
+    }
+
+    drawHardDropImpactRings(board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLockEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLineClearEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+
+    f32 bot_apm = 0.0;
+    if g_rt.run_timer > 0.001 {bot_apm = ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;}
+    drawTextColor(font, TextFormat("APM %.1f / %.1f", bot_apm, g_bot_setup.target_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
+    drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+}
+
+fun arenaBoardPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_board[0];}
+    return &g_bot_arena_right_board[0];
+}
+
+fun arenaQueuePtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_queue[0];}
+    return &g_bot_arena_right_queue[0];
+}
+
+fun arenaBagPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_bag[0];}
+    return &g_bot_arena_right_bag[0];
+}
+
+fun arenaPlanActionsPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_plan_actions[0];}
+    return &g_bot_arena_right_plan_actions[0];
+}
+
+fun arenaPlannedBoardPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_planned_board[0];}
+    return &g_bot_arena_right_planned_board[0];
+}
+
+fun arenaTuningPtr(side: i32) >> ptr<i32> {
+    if side == BOT_ARENA_LEFT {return &g_bot_arena_left_tuning[0];}
+    return &g_bot_arena_right_tuning[0];
+}
+
+fun arenaBoardCell(side: i32, x: i32, y: i32) >> i32 {
+    ptr<i32> board = arenaBoardPtr(side);
+    return board[boardIndex(x, y)];
+}
+
+fun arenaSideApm(side: i32) >> f32 {
+    if g_rt.run_timer <= 0.001 {return 0.0;}
+    if side == BOT_ARENA_LEFT {return ((g_bot_arena_left.runtime.attack_sent as f32) * 60.0) / g_rt.run_timer;}
+    return ((g_bot_arena_right.runtime.attack_sent as f32) * 60.0) / g_rt.run_timer;
+}
+
+fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_y: i64, label: ptr<u8>, champion: bool) >> void {
+    BotArenaSide state = g_bot_arena_left;
+    if side == BOT_ARENA_RIGHT {state = g_bot_arena_right;}
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+
+    drawHighStackSpawnZone(theme, board_x, board_y);
+    fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
+    if champion {strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, pieceColor(theme, PIECE_I));}
+    else {strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);}
+    drawTextColor(font, label, board_x + 72, board_y - 42, 16, theme.text_main);
+    drawTextColor(font, TextFormat("GEN %i", state.generation), board_x + 90, board_y - 22, 10, theme.text_muted);
+
+    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+
+            i32 cell = arenaBoardCell(side, x, y);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else if cell != 0 {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !state.runtime.game_over {
+        drawPieceAtBoard(state.runtime.piece_kind, state.runtime.piece_rotation, state.runtime.piece_x as i64, state.runtime.piece_y as i64, board_x, board_y, pieceColor(theme, state.runtime.piece_kind));
+    }
+
+    drawTextColor(font, TextFormat("APM %.1f / %.1f", arenaSideApm(side), state.setup.target_apm), board_x + 26, board_y + board_h + 14, 10, theme.panel_stroke);
+    drawTextColor(font, TextFormat("LINES %i", state.runtime.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+    drawTextColor(font, TextFormat("MESS %.0f%%", state.setup.garbage_messiness), board_x + 20, board_y + board_h + 34, 10, theme.text_muted);
+}
+
+fun drawBotDuelsFrame(font: Font) >> void {
+    if !BOTDEVMODE {return;}
+    Theme theme = currentTheme();
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBackgroundStars(theme);
+
+    if !canOpenBotSetupUi() {
+        drawBotWidthPopup(font, theme, true);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    i64 board_y = BOT_BOARD_TOP;
+    if duelShowsHighStackArea() {board_y += HIGH_STACK_BOARD_SHIFT;}
+
+    if !g_bot_arena.compare_stock && g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CANDIDATE", true);
+        drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);
+    } else {
+        drawArenaSideBoard(theme, font, BOT_ARENA_LEFT, vsBotPlayerBoardLeft(), board_y, "CHAMPION", true);
+        if g_bot_arena.compare_stock {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "STOCK", false);} else {drawArenaSideBoard(theme, font, BOT_ARENA_RIGHT, vsBotBotBoardLeft(), board_y, "CHALLENGER", false);}
+    }
+
+    i64 panel_x = vsBotCenterPanelX();
+    fillRect(panel_x, 120, 178, 510, theme.panel_bg);
+    strokeRect(panel_x, 120, 178, 510, theme.panel_stroke);
+    drawTextColor(font, "BOT DUELS", panel_x + 20, 150, 14, theme.text_main);
+    if g_bot_arena.compare_stock {
+        drawTextColor(font, "MODE CHAMP VS STOCK", panel_x + 20, 184, 12, theme.panel_stroke);
+    } else if g_bot_arena.generation_stage == BOT_ARENA_STAGE_STOCK {
+        drawTextColor(font, TextFormat("GEN %i STOCK GATE", g_bot_arena.total_matches + 1), panel_x + 20, 184, 12, theme.panel_stroke);
+    } else {
+        drawTextColor(font, TextFormat("GEN %i CHALLENGER", g_bot_arena.total_matches + 1), panel_x + 20, 184, 12, theme.panel_stroke);
+    }
+    drawTextColor(font, TextFormat("CHAMP GEN %i", g_bot_arena.champion_generation), panel_x + 20, 216, 11, theme.text_main);
+    drawTextColor(font, TextFormat("STREAK %i", g_bot_arena.champion_wins), panel_x + 20, 238, 11, theme.text_main);
+    drawTextColor(font, "APM FIXED 300", panel_x + 20, 272, 11, theme.text_muted);
+    drawTextColor(font, "MUTATING AI WEIGHTS", panel_x + 20, 294, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("GENES %i", AI_TUNE_COUNT), panel_x + 20, 316, 11, theme.text_muted);
+
+    if g_bot_arena.compare_stock {
+        i32 stock_total = g_bot_arena.compare_stock_wins + g_bot_arena.compare_stock_losses;
+        f32 stock_wr = 0.0;
+        if stock_total > 0 {stock_wr = ((g_bot_arena.compare_stock_wins as f32) * 100.0) / (stock_total as f32);}
+        drawTextColor(font, TextFormat("WR %.1f%%", stock_wr), panel_x + 20, 360, 11, theme.text_main);
+        drawTextColor(font, TextFormat("W %i  L %i", g_bot_arena.compare_stock_wins, g_bot_arena.compare_stock_losses), panel_x + 20, 382, 11, theme.panel_stroke);
+    } else {
+        if g_bot_arena.generation_stage == BOT_ARENA_STAGE_CHAMPION {
+            if g_bot_arena.champion_generation < 5 {
+                drawTextColor(font, TextFormat("CHAMP %i/%i", g_bot_arena.generation_round + 1, BOT_ARENA_EARLY_MAX_ROUNDS), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("TOTAL %i-%i", g_bot_arena.generation_right_wins, g_bot_arena.generation_left_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+            } else {
+                drawTextColor(font, TextFormat("GAUNTLET %i/%i", g_bot_arena.gauntlet_target_index + 1, arenaGauntletChampionCount()), panel_x + 20, 360, 11, theme.text_main);
+                drawTextColor(font, TextFormat("CH %i  CL %i", g_bot_arena.generation_left_wins, g_bot_arena.generation_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+            }
+        } else {
+            drawTextColor(font, TextFormat("STOCK %i/%i", g_bot_arena.stock_round + 1, BOT_ARENA_STOCK_MAX_ROUNDS), panel_x + 20, 360, 11, theme.text_main);
+            drawTextColor(font, TextFormat("CAND %i  STOCK %i", g_bot_arena.stock_left_wins, g_bot_arena.stock_right_wins), panel_x + 20, 382, 11, theme.panel_stroke);
+        }
+    }
+    drawTextColor(font, TextFormat("LAST WIN %i", g_bot_arena.last_winner_generation), panel_x + 20, 414, 11, theme.text_main);
+    if g_bot_arena.last_winner_side == 1 {drawTextColor(font, "SIDE CHAMPION", panel_x + 20, 436, 11, theme.panel_stroke);}
+    else if g_bot_arena.last_winner_side == 2 {
+        if g_bot_arena.compare_stock {drawTextColor(font, "SIDE STOCK", panel_x + 20, 436, 11, theme.panel_stroke);} else {drawTextColor(font, "SIDE CLONE", panel_x + 20, 436, 11, theme.panel_stroke);}
+    }
+
+    drawTextColor(font, TextFormat("SIM x%i", BOT_DUELS_SIM_STEPS), panel_x + 20, 474, 11, theme.text_main);
+    drawTextColor(font, "Saved to bot_duels.cfg", panel_x + 20, 504, 10, theme.text_muted);
+    drawTextColor(font, "1 toggle stock test", panel_x + 20, 526, 10, theme.text_muted);
+    drawTextColor(font, "ESC menu", panel_x + 20, 580, 11, theme.text_muted);
+
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
+}

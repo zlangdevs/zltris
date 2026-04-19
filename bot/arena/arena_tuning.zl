@@ -1,0 +1,401 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define BOTDEVMODE false
+
+#define BOT_DUELS_FILE_PATH "bot_duels.cfg"
+#define BOT_DUELS_FIXED_APM 300.0
+#define AI_TUNE_COUNT 221
+#define AI_TUNE_PLAN_BASE 187
+#define BOT_WEIGHTS_STOCK 0
+#define BOT_ARENA_SAVED_CHAMPIONS 3
+#define BOT_ARENA_HISTORY_STORAGE 8
+#define BOT_ARENA_HISTORY_TUNING_CELLS 1768
+
+#define BOT_ARENA_STAGE_CHAMPION 0
+
+fun defaultArenaChampionSetup() >> BotSetupState {
+    BotSetupState setup = {0};
+    setup.target_apm = BOT_DUELS_FIXED_APM;
+    setup.garbage_messiness = 35.0;
+    setup.high_stack_tolerance = false;
+    setup.panic_burst_enabled = true;
+    setup.index = 0;
+    return setup;
+}
+
+fun clampArenaSetup(setup: BotSetupState) >> BotSetupState {
+    BotSetupState next = setup;
+    next.target_apm = BOT_DUELS_FIXED_APM;
+    next.garbage_messiness = 35.0;
+    next.high_stack_tolerance = false;
+    next.panic_burst_enabled = true;
+    next.index = 0;
+    return next;
+}
+
+fun copyI32Array(dst: ptr<i32>, src: ptr<i32>, count: i32) >> void {
+    for i32 i = 0; i < count; i++ {dst[i] = src[i];}
+}
+
+fun loadDefaultArenaTuning() >> void {
+    aiFillDefaultTuning(&g_bot_arena_champion_tuning[0]);
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
+    }
+    normalizeChampionHistory();
+}
+
+fun applyAiTuning(values: ptr<i32>) >> void {
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        aiSetTuningValue(i, values[i]);
+    }
+}
+
+fun applyChampionAiTuning() >> void {
+    applyAiTuning(&g_bot_arena_champion_tuning[0]);
+}
+
+fun applyStockAiTuning() >> void {
+    aiResetTuningDefaults();
+}
+
+fun applyBotSetupWeights() >> void {
+    if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {applyStockAiTuning();}
+    else {applyChampionAiTuning();}
+}
+
+fun arenaRequiredWins(max_rounds: i32, max_losses: i32) >> i32 {
+    i32 wins = max_rounds - max_losses;
+    if wins < 1 {wins = 1;}
+    return wins;
+}
+
+fun arenaHistorySlotCount() >> i32 {
+    i32 count = BOT_ARENA_SAVED_CHAMPIONS - 1;
+    if count < 0 {count = 0;}
+    if count > BOT_ARENA_HISTORY_STORAGE {count = BOT_ARENA_HISTORY_STORAGE;}
+    return count;
+}
+
+fun arenaHistoryTuningPtr(slot: i32) >> ptr<i32> {
+    ptr<i32> base = &g_bot_arena_history_tuning[0];
+    return base + slot * AI_TUNE_COUNT;
+}
+
+fun arenaGauntletChampionCount() >> i32 {
+    i32 count = 1 + g_bot_arena.history_size;
+    if count > BOT_ARENA_SAVED_CHAMPIONS {count = BOT_ARENA_SAVED_CHAMPIONS;}
+    return count;
+}
+
+fun arenaTargetSetup(index: i32) >> BotSetupState {
+    return g_bot_arena.champion_setup;
+}
+
+fun arenaTargetGeneration(index: i32) >> i32 {
+    if index == 0 {return g_bot_arena.champion_generation;}
+    return g_bot_arena_history_generations[index - 1];
+}
+
+fun copyArenaTargetTuning(index: i32, out_values: ptr<i32>) >> void {
+    if index == 0 {
+        copyI32Array(out_values, &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+        return;
+    }
+    copyI32Array(out_values, arenaHistoryTuningPtr(index - 1), AI_TUNE_COUNT);
+}
+
+fun pushChampionToHistory() >> void {
+    i32 history_slots = arenaHistorySlotCount();
+    if history_slots <= 0 {return;}
+
+    i32 existing = -1;
+    for i32 slot = 0; slot < g_bot_arena.history_size; slot++ {
+        if g_bot_arena_history_generations[slot] == g_bot_arena.champion_generation {existing = slot;}
+    }
+    if existing >= 0 {
+        for i32 slot = existing; slot < g_bot_arena.history_size - 1; slot++ {
+            g_bot_arena_history_generations[slot] = g_bot_arena_history_generations[slot + 1];
+            copyI32Array(arenaHistoryTuningPtr(slot), arenaHistoryTuningPtr(slot + 1), AI_TUNE_COUNT);
+        }
+        if g_bot_arena.history_size > 0 {g_bot_arena.history_size -= 1;}
+    }
+
+    for i32 slot = history_slots - 1; slot > 0; slot-- {
+        g_bot_arena_history_generations[slot] = g_bot_arena_history_generations[slot - 1];
+        copyI32Array(arenaHistoryTuningPtr(slot), arenaHistoryTuningPtr(slot - 1), AI_TUNE_COUNT);
+    }
+    g_bot_arena_history_generations[0] = g_bot_arena.champion_generation;
+    copyI32Array(arenaHistoryTuningPtr(0), &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+    g_bot_arena.history_size += 1;
+    if g_bot_arena.history_size > history_slots {g_bot_arena.history_size = history_slots;}
+}
+
+fun normalizeChampionHistory() >> void {
+    i32 history_slots = arenaHistorySlotCount();
+    arr<i32, BOT_ARENA_HISTORY_STORAGE> kept_generations = {0};
+    arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> kept_tuning = {0};
+    i32 kept = 0;
+
+    for i32 slot = 0; slot < g_bot_arena.history_size; slot++ {
+        i32 gen = g_bot_arena_history_generations[slot];
+        if gen <= 0 {continue;}
+        if gen == g_bot_arena.champion_generation {continue;}
+
+        bool duplicate = false;
+        for i32 k = 0; k < kept; k++ {
+            if kept_generations[k] == gen {duplicate = true;}
+        }
+        if duplicate {continue;}
+        if kept >= history_slots {continue;}
+
+        kept_generations[kept] = gen;
+        ptr<i32> dst = &kept_tuning[kept * AI_TUNE_COUNT];
+        copyI32Array(dst, arenaHistoryTuningPtr(slot), AI_TUNE_COUNT);
+        kept += 1;
+    }
+
+    g_bot_arena.history_size = kept;
+    for i32 slot = 0; slot < BOT_ARENA_HISTORY_STORAGE; slot++ {g_bot_arena_history_generations[slot] = 0;}
+    for i32 slot = 0; slot < kept; slot++ {
+        g_bot_arena_history_generations[slot] = kept_generations[slot];
+        copyI32Array(arenaHistoryTuningPtr(slot), &kept_tuning[slot * AI_TUNE_COUNT], AI_TUNE_COUNT);
+    }
+}
+
+fun parseArenaTuneKey(key: ptr<u8>) >> i32 {
+    if key[0] != ('t' as u8) {return -1;}
+    if key[1] < ('0' as u8) || key[1] > ('9' as u8) {return -1;}
+    return atoi(key + 1);
+}
+
+fun planTune(offset: i32) >> i32 {
+    return aiGetTuningValue((AI_TUNE_PLAN_BASE as i32) + offset);
+}
+
+fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> void {
+    i32 changed = 0;
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        i32 value = base[i];
+        i32 step = aiTuningMutationStep(i);
+        if generation >= 24 && step > 1 {step = maxI(1, (step * 3) / 4);}
+        if generation >= 64 && step > 1 {step = maxI(1, (step * 2) / 3);}
+
+        if GetRandomValue(0 as i32, 99 as i32) < 78 {
+            value += GetRandomValue(0 as i32 - step, step) as i32;
+        }
+        if GetRandomValue(0 as i32, 99 as i32) < 22 {
+            i32 jump = step * 3;
+            if jump < 1 {jump = 1;}
+            value += GetRandomValue(0 as i32 - jump, jump) as i32;
+        }
+
+        out_values[i] = aiClampTuningValue(i, value);
+        if out_values[i] != base[i] {changed += 1;}
+    }
+
+    if changed == 0 {
+        i32 forced = GetRandomValue(0 as i32, (AI_TUNE_COUNT - 1) as i32) as i32;
+        i32 step = aiTuningMutationStep(forced);
+        if step < 1 {step = 1;}
+        if GetRandomValue(0 as i32, 1 as i32) == 0 {out_values[forced] = aiClampTuningValue(forced, base[forced] - step);} else {out_values[forced] = aiClampTuningValue(forced, base[forced] + step);}
+    }
+}
+
+fun saveBotDuelsFile() >> void {
+    if !BOTDEVMODE {return;}
+    i32 fd = openForWrite(BOT_DUELS_FILE_PATH);
+    if fd < 0 {return;}
+
+    writeLineFd(fd, TextFormat("champion_generation=%i", g_bot_arena.champion_generation));
+    writeLineFd(fd, TextFormat("history_size=%i", g_bot_arena.history_size));
+    writeLineFd(fd, TextFormat("champion_wins=%i", g_bot_arena.champion_wins));
+    writeLineFd(fd, TextFormat("total_matches=%i", g_bot_arena.total_matches));
+    writeLineFd(fd, TextFormat("target_apm=%.2f", g_bot_arena.champion_setup.target_apm));
+    writeLineFd(fd, TextFormat("garbage_messiness=%.2f", g_bot_arena.champion_setup.garbage_messiness));
+    i32 high_stack_flag = 0;
+    if g_bot_arena.champion_setup.high_stack_tolerance {high_stack_flag = 1;}
+    writeLineFd(fd, TextFormat("high_stack_tolerance=%i", high_stack_flag));
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        writeLineFd(fd, TextFormat("t%i=%i", i, g_bot_arena_champion_tuning[i]));
+    }
+    i32 history_slots = arenaHistorySlotCount();
+    for i32 slot = 0; slot < history_slots; slot++ {
+        writeLineFd(fd, TextFormat("h%i_generation=%i", slot, g_bot_arena_history_generations[slot]));
+        ptr<i32> hist = arenaHistoryTuningPtr(slot);
+        for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+            writeLineFd(fd, TextFormat("h%i_t%i=%i", slot, i, hist[i]));
+        }
+    }
+
+    close(fd);
+}
+
+fun loadBotDuelsFile() >> void {
+    g_bot_arena.champion_setup = defaultArenaChampionSetup();
+    g_bot_arena.candidate_setup = g_bot_arena.champion_setup;
+    loadDefaultArenaTuning();
+    copyI32Array(&g_bot_arena_candidate_tuning[0], &g_bot_arena_champion_tuning[0], AI_TUNE_COUNT);
+    g_bot_arena.champion_generation = 0;
+    g_bot_arena.candidate_generation = 0;
+    g_bot_arena.history_size = 0;
+    g_bot_arena.champion_wins = 0;
+    g_bot_arena.total_matches = 0;
+    g_bot_arena.last_winner_generation = 0;
+    g_bot_arena.last_winner_side = 0;
+    g_bot_arena.compare_stock = false;
+    g_bot_arena.compare_stock_wins = 0;
+    g_bot_arena.compare_stock_losses = 0;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+    for i32 slot = 0; slot < BOT_ARENA_HISTORY_STORAGE; slot++ {g_bot_arena_history_generations[slot] = 0;}
+    for i32 i = 0; i < BOT_ARENA_HISTORY_TUNING_CELLS; i++ {g_bot_arena_history_tuning[i] = 0;}
+
+    if !BOTDEVMODE {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        normalizeChampionHistory();
+        return;
+    }
+
+    i32 fd = openForRead(BOT_DUELS_FILE_PATH);
+    if fd < 0 {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        return;
+    }
+
+    arr<u8, 4096> data = {0};
+    i64 bytes_read = readAll(fd, &data[0], 4095);
+    close(fd);
+    if bytes_read <= 0 {
+        g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+        return;
+    }
+    data[bytes_read as i32] = 0;
+
+    arr<i32, AI_TUNE_COUNT> champion_tune_seen = {0};
+    arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> history_tune_seen = {0};
+
+    ptr<u8> line = &data[0];
+    for (line[0] != 0) {
+        ptr<u8> next = line;
+        for (next[0] != 0 && next[0] != ('\n' as u8)) {
+            next = next + 1;
+        }
+        if (next[0] == ('\n' as u8)) {
+            next[0] = 0;
+            next = next + 1;
+        }
+
+        ptr<u8> raw = trimLeftSpaces(line);
+        trimRightSpacesInPlace(raw);
+        if (raw[0] != 0 && raw[0] != ('#' as u8) && raw[0] != (';' as u8)) {
+            ptr<u8> eq = raw;
+            for (eq[0] != 0 && eq[0] != ('=' as u8)) {
+                eq = eq + 1;
+            }
+            if (eq[0] == ('=' as u8)) {
+                eq[0] = 0;
+
+                ptr<u8> key = trimLeftSpaces(raw);
+                trimRightSpacesInPlace(key);
+                ptr<u8> value = trimLeftSpaces(eq + 1);
+                trimRightSpacesInPlace(value);
+
+                if (strEq(key, "champion_generation")) {
+                    g_bot_arena.champion_generation = atoi(value);
+                } else if (strEq(key, "history_size")) {
+                    g_bot_arena.history_size = atoi(value);
+                } else if (strEq(key, "champion_wins")) {
+                    g_bot_arena.champion_wins = atoi(value);
+                } else if (strEq(key, "total_matches")) {
+                    g_bot_arena.total_matches = atoi(value);
+                } else if (strEq(key, "target_apm")) {
+                    g_bot_arena.champion_setup.target_apm = parseFloatValue(value, g_bot_arena.champion_setup.target_apm);
+                } else if (strEq(key, "garbage_messiness")) {
+                    g_bot_arena.champion_setup.garbage_messiness = parseFloatValue(value, g_bot_arena.champion_setup.garbage_messiness);
+                } else if (strEq(key, "high_stack_tolerance")) {
+                    g_bot_arena.champion_setup.high_stack_tolerance = parseBoolValue(value, g_bot_arena.champion_setup.high_stack_tolerance);
+                } else {
+                    if key[0] == ('h' as u8) && key[1] >= ('0' as u8) && key[1] <= ('9' as u8) && key[2] == ('_' as u8) {
+                        i32 slot = atoi(key + 1);
+                        if slot >= 0 && slot < BOT_ARENA_HISTORY_STORAGE {
+                            ptr<u8> hist_key = key + 3;
+                            if strEq(hist_key, "generation") {
+                                g_bot_arena_history_generations[slot] = atoi(value);
+                            } else if hist_key[0] == ('t' as u8) {
+                                i32 tune_index = atoi(hist_key + 1);
+                                if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
+                                    ptr<i32> hist = arenaHistoryTuningPtr(slot);
+                                    hist[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                                    history_tune_seen[slot * AI_TUNE_COUNT + tune_index] = 1;
+                                }
+                            }
+                        }
+                    }
+                    i32 tune_index = parseArenaTuneKey(key);
+                    if tune_index >= 0 && tune_index < AI_TUNE_COUNT {
+                        g_bot_arena_champion_tuning[tune_index] = aiClampTuningValue(tune_index, atoi(value));
+                        champion_tune_seen[tune_index] = 1;
+                    }
+                }
+            }
+        }
+
+        line = next;
+    }
+
+    g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
+    if g_bot_arena.champion_generation < 0 {g_bot_arena.champion_generation = 0;}
+    if g_bot_arena.candidate_generation < 0 {g_bot_arena.candidate_generation = 0;}
+    if g_bot_arena.history_size < 0 {g_bot_arena.history_size = 0;}
+    if g_bot_arena.history_size > arenaHistorySlotCount() {g_bot_arena.history_size = arenaHistorySlotCount();}
+    if g_bot_arena.champion_wins < 0 {g_bot_arena.champion_wins = 0;}
+    if g_bot_arena.total_matches < 0 {g_bot_arena.total_matches = 0;}
+    g_bot_arena.compare_stock_wins = 0;
+    g_bot_arena.compare_stock_losses = 0;
+    g_bot_arena.generation_round = 0;
+    g_bot_arena.generation_left_wins = 0;
+    g_bot_arena.generation_right_wins = 0;
+    g_bot_arena.generation_stage = BOT_ARENA_STAGE_CHAMPION;
+    g_bot_arena.gauntlet_target_index = 0;
+    g_bot_arena.stock_round = 0;
+    g_bot_arena.stock_left_wins = 0;
+    g_bot_arena.stock_right_wins = 0;
+    arr<i32, AI_TUNE_COUNT> stock_defaults = {0};
+    aiFillDefaultTuning(&stock_defaults[0]);
+    for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+        if champion_tune_seen[i] == 0 {g_bot_arena_champion_tuning[i] = stock_defaults[i];}
+        g_bot_arena_champion_tuning[i] = aiClampTuningValue(i, g_bot_arena_champion_tuning[i]);
+    }
+    i32 history_slots = arenaHistorySlotCount();
+    for i32 slot = 0; slot < history_slots; slot++ {
+        ptr<i32> hist = arenaHistoryTuningPtr(slot);
+        for i32 i = 0; i < AI_TUNE_COUNT; i++ {
+            if history_tune_seen[slot * AI_TUNE_COUNT + i] == 0 {hist[i] = stock_defaults[i];}
+            hist[i] = aiClampTuningValue(i, hist[i]);
+        }
+    }
+    normalizeChampionHistory();
+}
+
+fun mutateArenaSetup(base: BotSetupState, generation: i32) >> BotSetupState {
+    BotSetupState next = base;
+    next = clampArenaSetup(next);
+    return next;
+}

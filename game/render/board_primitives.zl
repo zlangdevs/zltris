@@ -1,0 +1,118 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.theme
+use zltris.scale
+
+#define BOARD_W 10
+#define CELL 32
+
+#define HIGH_STACK_SPAWN_ROWS 6
+
+fun boardCellRectPixels(board_left: i64, board_top: i64, cell_x: i64, cell_y: i64, out_x: ptr<i32>, out_y: ptr<i32>, out_w: ptr<i32>, out_h: ptr<i32>) >> void {
+    i64 x0_base = board_left + cell_x * (CELL as i64);
+    i64 x1_base = board_left + (cell_x + 1) * (CELL as i64);
+    i64 y0_base = boardScreenY(board_top, cell_y);
+    i64 y1_base = boardScreenY(board_top, cell_y + 1);
+
+    i32 x0 = uiX(x0_base);
+    i32 x1 = uiX(x1_base);
+    i32 y0 = uiY(y0_base);
+    i32 y1 = uiY(y1_base);
+
+    if x1 <= x0 {x1 = x0 + 1;}
+    if y1 <= y0 {y1 = y0 + 1;}
+
+    out_x[0] = x0;
+    out_y[0] = y0;
+    out_w[0] = x1 - x0;
+    out_h[0] = y1 - y0;
+}
+
+fun drawCellPixels(screen_x: i32, screen_y: i32, cell_w: i32, cell_h: i32, color: u32) >> void {
+    if cell_w <= 0 || cell_h <= 0 {return;}
+
+    u32 hi = shadeColor(color, 1.24);
+    u32 lo = shadeColor(color, 0.56);
+
+    DrawRectangle(screen_x, screen_y, cell_w, cell_h, toColor(color));
+
+    i32 top_x0 = (2 * cell_w + CELL / 2) / CELL;
+    i32 top_x1 = ((CELL - 2) * cell_w + CELL / 2) / CELL;
+    i32 top_y0 = (2 * cell_h + CELL / 2) / CELL;
+    i32 top_y1 = (7 * cell_h + CELL / 2) / CELL;
+
+    i32 side_l_x0 = (2 * cell_w + CELL / 2) / CELL;
+    i32 side_l_x1 = (6 * cell_w + CELL / 2) / CELL;
+    i32 side_r_x0 = ((CELL - 6) * cell_w + CELL / 2) / CELL;
+    i32 side_r_x1 = ((CELL - 2) * cell_w + CELL / 2) / CELL;
+    i32 side_y0 = (9 * cell_h + CELL / 2) / CELL;
+    i32 side_y1 = ((CELL - 7) * cell_h + CELL / 2) / CELL;
+
+    i32 bot_x0 = (2 * cell_w + CELL / 2) / CELL;
+    i32 bot_x1 = ((CELL - 2) * cell_w + CELL / 2) / CELL;
+    i32 bot_y0 = ((CELL - 8) * cell_h + CELL / 2) / CELL;
+    i32 bot_y1 = ((CELL - 2) * cell_h + CELL / 2) / CELL;
+
+    if top_x1 > top_x0 && top_y1 > top_y0 {DrawRectangle(screen_x + top_x0, screen_y + top_y0, top_x1 - top_x0, top_y1 - top_y0, toColor(alphaColor(hi, 0.62)));}
+    if side_l_x1 > side_l_x0 && side_y1 > side_y0 {DrawRectangle(screen_x + side_l_x0, screen_y + side_y0, side_l_x1 - side_l_x0, side_y1 - side_y0, toColor(alphaColor(hi, 0.34)));}
+    if side_r_x1 > side_r_x0 && side_y1 > side_y0 {DrawRectangle(screen_x + side_r_x0, screen_y + side_y0, side_r_x1 - side_r_x0, side_y1 - side_y0, toColor(alphaColor(lo, 0.36)));}
+    if bot_x1 > bot_x0 && bot_y1 > bot_y0 {DrawRectangle(screen_x + bot_x0, screen_y + bot_y0, bot_x1 - bot_x0, bot_y1 - bot_y0, toColor(alphaColor(lo, 0.48)));}
+
+    if cell_w > 2 && cell_h > 2 {DrawRectangleLines(screen_x + 1, screen_y + 1, cell_w - 2, cell_h - 2, toColor(alphaColor(hi, 0.34)));}
+    DrawRectangleLines(screen_x, screen_y, cell_w, cell_h, toColor(alphaColor(lo, 0.70)));
+}
+
+fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
+    u32 hi = shadeColor(color, 1.20);
+    u32 lo = shadeColor(color, 0.60);
+    fillRect(screen_x, screen_y, size, size, color);
+    fillRect(screen_x + 1, screen_y + 1, size - 2, 3, alphaColor(hi, 0.62));
+    fillRect(screen_x + 1, screen_y + size - 4, size - 2, 3, alphaColor(lo, 0.56));
+    strokeRect(screen_x, screen_y, size, size, alphaColor(lo, 0.72));
+}
+
+fun garbageCellColor(theme: Theme) >> u32 {
+    return shadeColor(theme.panel_stroke, 0.72);
+}
+
+fun drawHighStackSpawnZone(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if !duelShowsHighStackArea() {return;}
+
+    i64 zone_top = board_top - (HIGH_STACK_SPAWN_ROWS as i64) * (CELL as i64);
+    i64 zone_h = (HIGH_STACK_SPAWN_ROWS as i64) * (CELL as i64);
+    i64 spawn_x = board_left + 3 * (CELL as i64);
+    i64 spawn_w = 4 * (CELL as i64);
+    fillRect(spawn_x - 6, zone_top - 8, spawn_w + 12, zone_h + 8, alphaColor(theme.panel_stroke, 0.09));
+    strokeRect(spawn_x - 6, zone_top - 8, spawn_w + 12, zone_h + 8, alphaColor(theme.panel_stroke, 0.22));
+
+    for i32 y = -HIGH_STACK_SPAWN_ROWS; y < 0; y++ {
+        for i32 x = 3; x < 7; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            if sw > 2 && sh > 2 {DrawRectangle(sx + 1, sy + 1, sw - 2, sh - 2, toColor(alphaColor(theme.panel_stroke, 0.06)));}
+            DrawRectangleLines(sx, sy, sw, sh, toColor(alphaColor(theme.panel_stroke, 0.18)));
+        }
+    }
+
+    fillRect(board_left, board_top - 4, (BOARD_W * CELL) as i64, 4, alphaColor(theme.text_main, 0.26));
+    strokeRect(board_left - 1, board_top - 1, (BOARD_W * CELL + 2) as i64, 2, alphaColor(theme.text_main, 0.44));
+}
+
+fun drawPieceAtBoard(kind: i32, rotation: i32, base_x: i64, base_y: i64, board_left: i64, board_top: i64, color: u32) >> void {
+    for i32 idx = 0; idx < 4; idx++ {
+        i64 x = base_x + (minoX(kind, rotation, idx) as i64);
+        i64 y = base_y + (minoY(kind, rotation, idx) as i64);
+        if y >= (boardRenderMinRow() as i64) {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x, y, &sx, &sy, &sw, &sh);
+            drawCellPixels(sx, sy, sw, sh, color);
+        }
+    }
+}

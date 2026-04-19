@@ -1,0 +1,746 @@
+module zltris.ai;
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define BOARD_CELLS 220
+
+#define PIECE_T 2
+
+#define BOT_MODE_CLEAN 0
+#define BOT_MODE_DIG 1
+#define BOT_MODE_SURVIVE 2
+
+#define AI_TUNE_MODE_BASE 0
+#define AI_TUNE_PANIC_BASE 27
+#define AI_TUNE_STRUCT_BASE 37
+#define AI_TUNE_NO_PROGRESS_BASE 67
+#define AI_TUNE_LOCKED_BASE 74
+#define AI_TUNE_EXACT_BASE 109
+#define AI_TUNE_GREEDY_BASE 134
+#define AI_TUNE_MOVE_BASE 135
+
+fun aiBoardStackStats(board: ptr<i32>, out_max_h: ptr<i32>, out_holes: ptr<i32>, out_garbage_rows: ptr<i32>, out_cover: ptr<i32>) >> void {
+    i32 hole_depth = 0;
+    boardHoleStats(board, out_holes, &hole_depth, out_max_h);
+
+    i32 access = 0;
+    boardGarbageStats(board, out_garbage_rows, out_cover, &access);
+}
+
+fun aiBoardGarbageAccessScore(board: ptr<i32>) >> i32 {
+    i32 rows = 0;
+    i32 cover = 0;
+    i32 access = 0;
+    boardGarbageStats(board, &rows, &cover, &access);
+    return access;
+}
+
+fun aiBotChooseMode(max_h: i32, holes: i32, garbage_rows: i32, garbage_cover: i32, garbage_access: i32, pending_garbage: i32) >> i32 {
+    if max_h >= aiTune(AI_TUNE_MODE_BASE + 0) {return BOT_MODE_SURVIVE;}
+    if holes >= aiTune(AI_TUNE_MODE_BASE + 1) && max_h >= aiTune(AI_TUNE_MODE_BASE + 2) {return BOT_MODE_SURVIVE;}
+    if pending_garbage >= aiTune(AI_TUNE_MODE_BASE + 3) {return BOT_MODE_SURVIVE;}
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 4) {return BOT_MODE_SURVIVE;}
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 5) && max_h >= aiTune(AI_TUNE_MODE_BASE + 6) {return BOT_MODE_SURVIVE;}
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 5) && (garbage_cover >= aiTune(AI_TUNE_MODE_BASE + 7) || garbage_access >= aiTune(AI_TUNE_MODE_BASE + 8)) && max_h >= aiTune(AI_TUNE_MODE_BASE + 9) {return BOT_MODE_SURVIVE;}
+    if max_h >= aiTune(AI_TUNE_MODE_BASE + 10) {return BOT_MODE_SURVIVE;}
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 11) && max_h >= aiTune(AI_TUNE_MODE_BASE + 12) {return BOT_MODE_SURVIVE;}
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 13) && holes >= aiTune(AI_TUNE_MODE_BASE + 14) && max_h >= aiTune(AI_TUNE_MODE_BASE + 15) {return BOT_MODE_SURVIVE;}
+
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 16) && (garbage_access >= aiTune(AI_TUNE_MODE_BASE + 17) || garbage_cover >= aiTune(AI_TUNE_MODE_BASE + 18) || holes >= aiTune(AI_TUNE_MODE_BASE + 19) || max_h >= aiTune(AI_TUNE_MODE_BASE + 20)) {
+        return BOT_MODE_DIG;
+    }
+    if garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 21) {return BOT_MODE_DIG;}
+    if pending_garbage >= aiTune(AI_TUNE_MODE_BASE + 22) && (max_h >= aiTune(AI_TUNE_MODE_BASE + 23) || garbage_rows >= aiTune(AI_TUNE_MODE_BASE + 24)) {return BOT_MODE_DIG;}
+    if holes >= aiTune(AI_TUNE_MODE_BASE + 25) && max_h >= aiTune(AI_TUNE_MODE_BASE + 26) {return BOT_MODE_DIG;}
+
+    return BOT_MODE_CLEAN;
+}
+
+fun aiLockAttack(lines_cleared: i32, spin: bool, mini: bool, difficult: bool, b2b_chain: bool, combo_value: i32, all_clear: bool) >> i32 {
+    i32 attack = 0;
+
+    if spin {
+        if mini {
+            if lines_cleared == 1 {attack = 0;}
+            if lines_cleared == 2 {attack = 1;}
+        } else {
+            if lines_cleared == 1 {attack = 2;}
+            if lines_cleared == 2 {attack = 4;}
+            if lines_cleared >= 3 {attack = 6;}
+        }
+    } else {
+        if lines_cleared == 2 {attack = 1;}
+        if lines_cleared == 3 {attack = 2;}
+        if lines_cleared >= 4 {attack = 4;}
+    }
+
+    if difficult && b2b_chain {
+        if spin {
+            if mini {
+                attack += 1;
+            } else if lines_cleared == 1 {
+                attack += 1;
+            } else if lines_cleared == 2 {
+                attack += 2;
+            } else {
+                attack += 3;
+            }
+        } else if lines_cleared >= 4 {
+            attack += 2;
+        } else {
+            attack += 1;
+        }
+    }
+
+    if lines_cleared > 0 && combo_value >= 1 {attack += combo_value / 2;}
+    if all_clear && lines_cleared > 0 {attack += 10;}
+    return attack;
+}
+
+fun aiBotEstimateAttack(lines: i32, spin: bool, all_clear: bool, combo: i32, b2b_count: i32) >> i32 {
+    if lines <= 0 {return 0;}
+    bool difficult = lines >= 4 || (spin && lines > 0);
+    bool b2b_chain = b2b_count > 0;
+    i32 next_combo = combo;
+    if lines > 0 {next_combo += 1;} else {next_combo = -1;}
+    return aiLockAttack(lines, spin, false, difficult, b2b_chain, next_combo, all_clear);
+}
+
+fun aiBotPanicPenalty(garbage_access: i32, mode: i32) >> i32 {
+    i32 base = aiTune(AI_TUNE_PANIC_BASE + 0);
+    if mode == BOT_MODE_DIG {base = aiTune(AI_TUNE_PANIC_BASE + 1);}
+    if mode == BOT_MODE_SURVIVE {base = aiTune(AI_TUNE_PANIC_BASE + 2);}
+
+    if garbage_access > aiTune(AI_TUNE_PANIC_BASE + 3) {base = (base * aiTune(AI_TUNE_PANIC_BASE + 6)) / 100;}
+    if garbage_access > aiTune(AI_TUNE_PANIC_BASE + 4) {base = (base * aiTune(AI_TUNE_PANIC_BASE + 7)) / 100;}
+    if garbage_access > aiTune(AI_TUNE_PANIC_BASE + 5) {base = (base * aiTune(AI_TUNE_PANIC_BASE + 8)) / 100;}
+    if base < aiTune(AI_TUNE_PANIC_BASE + 9) {base = aiTune(AI_TUNE_PANIC_BASE + 9);}
+    return base;
+}
+
+fun aiBotCleanCandidateBetter(cur_holes: i32, cur_max_h: i32, cand_holes: i32, cand_max_h: i32, cand_lines: i32, cand_steps: i32, cand_score: i32, best_holes: i32, best_max_h: i32, best_lines: i32, best_steps: i32, best_score: i32) >> bool {
+    i32 cand_hole_rise = cand_holes - cur_holes;
+    if cand_hole_rise < 0 {cand_hole_rise = 0;}
+    i32 best_hole_rise = best_holes - cur_holes;
+    if best_hole_rise < 0 {best_hole_rise = 0;}
+
+    if cand_hole_rise < best_hole_rise {return true;}
+    if cand_hole_rise > best_hole_rise {return false;}
+
+    if cand_holes < best_holes {return true;}
+    if cand_holes > best_holes {return false;}
+    if cand_max_h < best_max_h {return true;}
+    if cand_max_h > best_max_h {return false;}
+    if cand_lines > best_lines {return true;}
+    if cand_lines < best_lines {return false;}
+    if cand_steps < best_steps {return true;}
+    if cand_steps > best_steps {return false;}
+    return cand_score > best_score;
+}
+
+fun aiBotDirtyCandidateBetter(cur_rows: i32, cur_cover: i32, cur_access: i32, cur_holes: i32, cur_max_h: i32, cand_rows: i32, cand_cover: i32, cand_access: i32, cand_holes: i32, cand_max_h: i32, cand_lines: i32, cand_steps: i32, cand_score: i32, best_rows: i32, best_cover: i32, best_access: i32, best_holes: i32, best_max_h: i32, best_lines: i32, best_steps: i32, best_score: i32) >> bool {
+    i32 cand_worse = 0;
+    if cand_rows > cur_rows {cand_worse += 1;}
+    if cand_cover > cur_cover {cand_worse += 1;}
+    if cand_access > cur_access {cand_worse += 1;}
+    if cand_holes > cur_holes {cand_worse += 1;}
+    if cand_max_h > cur_max_h {cand_worse += 1;}
+
+    i32 best_worse = 0;
+    if best_rows > cur_rows {best_worse += 1;}
+    if best_cover > cur_cover {best_worse += 1;}
+    if best_access > cur_access {best_worse += 1;}
+    if best_holes > cur_holes {best_worse += 1;}
+    if best_max_h > cur_max_h {best_worse += 1;}
+
+    if cand_worse < best_worse {return true;}
+    if cand_worse > best_worse {return false;}
+
+    i32 cand_improve = 0;
+    if cand_rows < cur_rows {cand_improve += 1;}
+    if cand_cover < cur_cover {cand_improve += 1;}
+    if cand_access < cur_access {cand_improve += 1;}
+    if cand_holes < cur_holes {cand_improve += 1;}
+    if cand_max_h < cur_max_h {cand_improve += 1;}
+
+    i32 best_improve = 0;
+    if best_rows < cur_rows {best_improve += 1;}
+    if best_cover < cur_cover {best_improve += 1;}
+    if best_access < cur_access {best_improve += 1;}
+    if best_holes < cur_holes {best_improve += 1;}
+    if best_max_h < cur_max_h {best_improve += 1;}
+
+    if cand_improve > best_improve {return true;}
+    if cand_improve < best_improve {return false;}
+
+    if cand_rows < best_rows {return true;}
+    if cand_rows > best_rows {return false;}
+    if cand_cover < best_cover {return true;}
+    if cand_cover > best_cover {return false;}
+    if cand_access < best_access {return true;}
+    if cand_access > best_access {return false;}
+    if cand_holes < best_holes {return true;}
+    if cand_holes > best_holes {return false;}
+    if cand_max_h < best_max_h {return true;}
+    if cand_max_h > best_max_h {return false;}
+    if cand_lines > best_lines {return true;}
+    if cand_lines < best_lines {return false;}
+    if cand_steps < best_steps {return true;}
+    if cand_steps > best_steps {return false;}
+    return cand_score > best_score;
+}
+
+fun boardHoleStats(board: ptr<i32>, out_holes: ptr<i32>, out_hole_depth: ptr<i32>, out_max_h: ptr<i32>) >> void {
+    out_holes[0] = 0;
+    out_hole_depth[0] = 0;
+    out_max_h[0] = 0;
+
+    for i32 x = 0; x < BOARD_W; x++ {
+        i32 top = -1;
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {
+                top = y;
+                break;
+            }
+        }
+
+        if top < 0 {continue;}
+
+        i32 h = BOARD_H - top;
+        if h > out_max_h[0] {out_max_h[0] = h;}
+        for i32 y = top + 1; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {continue;}
+            out_holes[0] += 1;
+            out_hole_depth[0] += BOARD_H - y;
+        }
+    }
+}
+
+fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, out_access: ptr<i32>) >> void {
+    out_rows[0] = 0;
+    out_cover[0] = 0;
+    out_access[0] = 0;
+
+    i32 best_access = 999999;
+
+    for i32 y = 0; y < BOARD_H; y++ {
+        bool has_garbage = false;
+        for i32 x = 0; x < BOARD_W; x++ {
+            i32 cell = board[boardIndex(x, y)];
+            if cell == 8 {has_garbage = true;}
+        }
+
+        if !has_garbage {continue;}
+
+        out_rows[0] += 1;
+
+        i32 row_best_access = 999999;
+        i32 row_best_cover = 0;
+        for i32 hole_x = 0; hole_x < BOARD_W; hole_x++ {
+            if board[boardIndex(hole_x, y)] != 0 {continue;}
+
+            i32 cover = 0;
+            i32 access = 0;
+            for i32 py = 0; py < y; py++ {
+                if board[boardIndex(hole_x, py)] != 0 {
+                    cover += 1;
+                    access += 4;
+                }
+            }
+
+            if hole_x > 0 {
+                for i32 py = 0; py <= y; py++ {
+                    if board[boardIndex(hole_x - 1, py)] != 0 {access += 1;}
+                }
+            } else {
+                access += 6;
+            }
+
+            if hole_x + 1 < BOARD_W {
+                for i32 py = 0; py <= y; py++ {
+                    if board[boardIndex(hole_x + 1, py)] != 0 {access += 1;}
+                }
+            } else {
+                access += 6;
+            }
+
+            access += cover * 3;
+            if access < row_best_access {
+                row_best_access = access;
+                row_best_cover = cover;
+            }
+        }
+
+        if row_best_access != 999999 {
+            out_cover[0] += row_best_cover;
+            if row_best_access < best_access {best_access = row_best_access;}
+        }
+    }
+
+    if best_access != 999999 {out_access[0] = best_access;}
+}
+
+fun boardTSpinSlotCount(board: ptr<i32>) >> i32 {
+    i32 slots = 0;
+    for i32 cy = 1; cy < BOARD_H - 1; cy++ {
+        for i32 cx = 1; cx < BOARD_W - 1; cx++ {
+            if board[boardIndex(cx, cy)] != 0 {continue;}
+
+            i32 corners = 0;
+            if boardCellBlocked(board, cx - 1, cy - 1) {corners += 1;}
+            if boardCellBlocked(board, cx + 1, cy - 1) {corners += 1;}
+            if boardCellBlocked(board, cx - 1, cy + 1) {corners += 1;}
+            if boardCellBlocked(board, cx + 1, cy + 1) {corners += 1;}
+            if corners < 3 {continue;}
+
+            i32 support = 0;
+            if boardCellBlocked(board, cx - 1, cy + 1) {support += 1;}
+            if boardCellBlocked(board, cx, cy + 1) {support += 1;}
+            if boardCellBlocked(board, cx + 1, cy + 1) {support += 1;}
+            if support < 2 {continue;}
+
+            if boardCellBlocked(board, cx, cy - 1) {continue;}
+            slots += 1;
+            if slots >= 6 {return slots;}
+        }
+    }
+    return slots;
+}
+
+fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
+    arr<i32, BOARD_W> heights = {0};
+    i32 aggregate_h = 0;
+    i32 holes = 0;
+    i32 hole_depth = 0;
+    i32 max_h = 0;
+    i32 garbage_rows = 0;
+    i32 garbage_cover = 0;
+    i32 garbage_access = 0;
+
+    boardGarbageStats(board, &garbage_rows, &garbage_cover, &garbage_access);
+
+    for i32 x = 0; x < BOARD_W; x++ {
+        i32 top = -1;
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(x, y)] != 0 {
+                top = y;
+                break;
+            }
+        }
+
+        i32 h = 0;
+        if top >= 0 {
+            h = BOARD_H - top;
+            for i32 y = top + 1; y < BOARD_H; y++ {
+                if board[boardIndex(x, y)] == 0 {
+                    holes += 1;
+                    hole_depth += BOARD_H - y;
+                }
+            }
+        }
+        heights[x] = h;
+        aggregate_h += h;
+        if h > max_h {max_h = h;}
+    }
+
+    i32 bump = 0;
+    for i32 x = 0; x < BOARD_W - 1; x++ {
+        bump += absi(heights[x] - heights[x + 1]);
+    }
+
+    i32 preferred_well_x = BOARD_W - 1;
+    i32 preferred_well_score = -2147483647;
+    i32 preferred_well_depth = 0;
+    for i32 x = 0; x < BOARD_W; x++ {
+        i32 left_h = heights[x] + 2;
+        i32 right_h = heights[x] + 2;
+        if x > 0 {left_h = heights[x - 1];}
+        if x + 1 < BOARD_W {right_h = heights[x + 1];}
+
+        i32 wall = minI(left_h, right_h);
+        i32 depth = wall - heights[x];
+        if depth < 0 {depth = 0;}
+
+        i32 edge_bonus = 0;
+        if x == 0 || x == BOARD_W - 1 {edge_bonus = 2;}
+
+        i32 score = depth * aiTune(AI_TUNE_STRUCT_BASE + 0) + edge_bonus * aiTune(AI_TUNE_STRUCT_BASE + 1) - heights[x] * aiTune(AI_TUNE_STRUCT_BASE + 2);
+        if score > preferred_well_score {
+            preferred_well_score = score;
+            preferred_well_x = x;
+            preferred_well_depth = depth;
+        }
+    }
+
+    i32 near_full_well = 0;
+    if garbage_rows == 0 {
+        for i32 y = 0; y < BOARD_H; y++ {
+            if board[boardIndex(preferred_well_x, y)] != 0 {continue;}
+            i32 filled = 0;
+            for i32 x = 0; x < BOARD_W; x++ {
+                if x == preferred_well_x {continue;}
+                if board[boardIndex(x, y)] != 0 {filled += 1;}
+            }
+            if filled >= BOARD_W - 1 {near_full_well += 1;}
+        }
+    }
+
+    i32 tspin_slots = 0;
+    if garbage_rows == 0 && max_h <= aiTune(AI_TUNE_STRUCT_BASE + 3) {tspin_slots = boardTSpinSlotCount(board);}
+
+    i32 well_reward = near_full_well * aiTune(AI_TUNE_STRUCT_BASE + 4) + preferred_well_depth * aiTune(AI_TUNE_STRUCT_BASE + 5);
+    if garbage_rows > 0 {
+        i32 divider = aiTune(AI_TUNE_STRUCT_BASE + 6) + garbage_rows;
+        if divider < 1 {divider = 1;}
+        well_reward = well_reward / divider;
+    }
+
+    i32 depth_curve = (hole_depth * hole_depth) / aiTune(AI_TUNE_STRUCT_BASE + 20);
+    i32 stack_curve = (max_h * max_h * aiTune(AI_TUNE_STRUCT_BASE + 9)) / 8;
+    i32 garbage_penalty = garbage_rows * aiTune(AI_TUNE_STRUCT_BASE + 21) + garbage_cover * aiTune(AI_TUNE_STRUCT_BASE + 22) + garbage_access * aiTune(AI_TUNE_STRUCT_BASE + 23);
+
+    i32 score = well_reward + tspin_slots * aiTune(AI_TUNE_STRUCT_BASE + 24) - holes * aiTune(AI_TUNE_STRUCT_BASE + 25) - hole_depth * aiTune(AI_TUNE_STRUCT_BASE + 26) - depth_curve - bump * aiTune(AI_TUNE_STRUCT_BASE + 27) - aggregate_h * aiTune(AI_TUNE_STRUCT_BASE + 28) - max_h * aiTune(AI_TUNE_STRUCT_BASE + 29) - stack_curve - garbage_penalty;
+    return score;
+}
+
+fun applyClearModel(lines_cleared: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, next_combo: ptr<i32>, next_b2b: ptr<bool>, score_gain: ptr<i32>, attack_gain: ptr<i32>) >> void {
+    i32 clear_points = 0;
+    if tspin {
+        if lines_cleared <= 0 {clear_points = 400;}
+        if lines_cleared == 1 {clear_points = 800;}
+        if lines_cleared == 2 {clear_points = 1200;}
+        if lines_cleared == 3 {clear_points = 1600;}
+        if lines_cleared >= 4 {clear_points = 2600;}
+    } else {
+        if lines_cleared == 1 {clear_points = 100;}
+        if lines_cleared == 2 {clear_points = 300;}
+        if lines_cleared == 3 {clear_points = 500;}
+        if lines_cleared >= 4 {clear_points = 800;}
+    }
+
+    bool difficult = lines_cleared >= 4 || (tspin && lines_cleared > 0);
+    if difficult && b2b {clear_points = (clear_points * 3) / 2;}
+
+    next_combo[0] = combo;
+    if lines_cleared > 0 {next_combo[0] += 1;} else {next_combo[0] = -1;}
+
+    i32 combo_points = 0;
+    if lines_cleared > 0 {combo_points = next_combo[0] * 50;}
+    i32 all_clear_points = 0;
+    if all_clear && lines_cleared > 0 {all_clear_points = 3500;}
+    score_gain[0] = (clear_points + combo_points + all_clear_points) * level;
+
+    attack_gain[0] = 0;
+    if tspin {
+        if lines_cleared == 1 {attack_gain[0] = 2;}
+        if lines_cleared == 2 {attack_gain[0] = 4;}
+        if lines_cleared >= 3 {attack_gain[0] = 6;}
+    } else {
+        if lines_cleared == 2 {attack_gain[0] = 1;}
+        if lines_cleared == 3 {attack_gain[0] = 2;}
+        if lines_cleared >= 4 {attack_gain[0] = 4;}
+    }
+    if difficult && b2b {
+        if tspin {
+            if lines_cleared == 1 {attack_gain[0] += 1;} else if lines_cleared == 2 {
+                attack_gain[0] += 2;
+            } else {
+                attack_gain[0] += 3;
+            }
+        } else if lines_cleared >= 4 {
+            attack_gain[0] += 2;
+        } else {
+            attack_gain[0] += 1;
+        }
+    }
+    if lines_cleared > 0 && next_combo[0] >= 1 {attack_gain[0] += next_combo[0] / 2;}
+    if all_clear && lines_cleared > 0 {attack_gain[0] += 10;}
+
+    next_b2b[0] = b2b;
+    if difficult {next_b2b[0] = true;} else if lines_cleared > 0 {next_b2b[0] = false;}
+}
+
+fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32, last_rotate_success: bool, out_board: ptr<i32>, out_lines: ptr<i32>, out_tspin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    i32 y = dropY(board, kind, rotation, x, spawn_y);
+    if y < -1000 {return false;}
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = board[i];}
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if my >= 0 {out_board[boardIndex(mx, my)] = kind + 1;}
+    }
+    if kind == PIECE_T && last_rotate_success && isTSpinPlacement(out_board, kind, x, y) {out_tspin[0] = 1;} else {out_tspin[0] = 0;}
+    out_lines[0] = clearLinesLocal(out_board);
+    if boardIsEmptyLocal(out_board) {out_all_clear[0] = 1;} else {out_all_clear[0] = 0;}
+    return true;
+}
+
+fun garbageNoProgressPenalty(garbage_access: i32) >> i32 {
+    i32 penalty = aiTune(AI_TUNE_NO_PROGRESS_BASE + 0);
+    i32 span = aiTune(AI_TUNE_NO_PROGRESS_BASE + 5);
+    if span < 1 {span = 1;}
+    penalty -= (garbage_access * (aiTune(AI_TUNE_NO_PROGRESS_BASE + 0) - aiTune(AI_TUNE_NO_PROGRESS_BASE + 6))) / span;
+    if penalty < aiTune(AI_TUNE_NO_PROGRESS_BASE + 6) {penalty = aiTune(AI_TUNE_NO_PROGRESS_BASE + 6);}
+    return penalty;
+}
+
+fun evaluateLockedBoardImpl(board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, apply_panic: bool, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
+    i32 next_holes = 0;
+    i32 next_hole_depth = 0;
+    i32 next_max_h = 0;
+    i32 next_garbage_rows = 0;
+    i32 next_garbage_cover = 0;
+    i32 next_garbage_access = 0;
+    boardGarbageStats(board_after, &next_garbage_rows, &next_garbage_cover, &next_garbage_access);
+    boardHoleStats(board_after, &next_holes, &next_hole_depth, &next_max_h);
+
+    i32 score_gain = 0;
+    i32 attack_gain = 0;
+    out_next_combo[0] = combo;
+    out_next_b2b[0] = b2b;
+    applyClearModel(lines, tspin, all_clear, combo, b2b, level, out_next_combo, out_next_b2b, &score_gain, &attack_gain);
+
+    bool difficult = lines >= 4 || (tspin && lines > 0);
+    i32 attack_weight = aiTune(AI_TUNE_LOCKED_BASE + 0);
+    if mode == BOT_MODE_DIG {attack_weight = aiTune(AI_TUNE_LOCKED_BASE + 1);}
+    if mode == BOT_MODE_SURVIVE {attack_weight = aiTune(AI_TUNE_LOCKED_BASE + 1) / 2;}
+
+    i32 after_score = evaluateBoardStructural(board_after);
+    i32 value = (after_score - before_score) * aiTune(AI_TUNE_LOCKED_BASE + 2) + score_gain * aiTune(AI_TUNE_LOCKED_BASE + 3) + attack_gain * attack_weight;
+
+    bool garbage_improved = next_garbage_rows < cur_garbage_rows || next_garbage_cover < cur_garbage_cover || next_garbage_access < cur_garbage_access;
+    bool no_progress = next_garbage_rows >= cur_garbage_rows && next_garbage_cover >= cur_garbage_cover && next_garbage_access >= cur_garbage_access && next_holes >= cur_holes && next_max_h >= cur_max_h;
+    i32 hole_delta = next_holes - cur_holes;
+    i32 max_h_delta = next_max_h - cur_max_h;
+
+    if lines > 0 && garbage_improved {value += lines * aiTune(AI_TUNE_LOCKED_BASE + 20);}
+    if lines > 0 && !garbage_improved && mode != BOT_MODE_CLEAN {value -= lines * aiTune(AI_TUNE_LOCKED_BASE + 21);}
+    if next_garbage_rows < cur_garbage_rows {value += aiTune(AI_TUNE_LOCKED_BASE + 22);}
+    if next_garbage_access < cur_garbage_access {value += aiTune(AI_TUNE_LOCKED_BASE + 23);}
+    if next_garbage_cover < cur_garbage_cover {value += aiTune(AI_TUNE_LOCKED_BASE + 24);}
+
+    if apply_panic && mode != BOT_MODE_CLEAN && cur_garbage_rows > 0 && lines == 0 && no_progress {value -= garbageNoProgressPenalty(cur_garbage_access);}
+    if apply_panic && mode == BOT_MODE_SURVIVE && lines == 0 && max_h_delta > 0 {value -= max_h_delta * aiTune(AI_TUNE_LOCKED_BASE + 27);}
+    if apply_panic && mode != BOT_MODE_CLEAN && lines == 0 && hole_delta > 0 {value -= hole_delta * aiTune(AI_TUNE_LOCKED_BASE + 25);}
+
+    if tspin && lines > 0 {value += aiTune(AI_TUNE_LOCKED_BASE + 30) + lines * aiTune(AI_TUNE_LOCKED_BASE + 31);}
+    if lines == 4 {value += aiTune(AI_TUNE_LOCKED_BASE + 32);}
+    if all_clear && lines > 0 {value += aiTune(AI_TUNE_LOCKED_BASE + 33);}
+    if b2b && lines > 0 && !difficult {value -= aiTune(AI_TUNE_LOCKED_BASE + 34);}
+    if pending_garbage > 0 {
+        value -= pending_garbage * aiTune(AI_TUNE_EXACT_BASE + 19);
+        value -= pending_garbage * next_max_h * aiTune(AI_TUNE_MOVE_BASE + 11);
+        value -= pending_garbage * next_holes * aiTune(AI_TUNE_MOVE_BASE + 12);
+    }
+    out_value[0] = value;
+}
+
+fun evaluateLockedBoard(board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
+    evaluateLockedBoardImpl(board_after, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin, all_clear, combo, b2b, level, mode, pending_garbage, true, out_next_combo, out_next_b2b, out_value);
+}
+
+fun evaluateLockedBoardGreedy(board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
+    evaluateLockedBoardImpl(board_after, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin, all_clear, combo, b2b, level, mode, pending_garbage, false, out_next_combo, out_next_b2b, out_value);
+}
+
+fun evaluateExactLockedState(board_before: ptr<i32>, board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32) >> i32 {
+    i32 next_combo = combo;
+    bool next_b2b = b2b;
+    i32 value = 0;
+    i32 next_garbage_rows = 0;
+    i32 next_garbage_cover = 0;
+    i32 next_access = 0;
+    i32 next_holes = 0;
+    i32 next_hole_depth = 0;
+    i32 next_max_h = 0;
+    evaluateLockedBoard(board_after, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin, all_clear, combo, b2b, level, mode, pending_garbage, &next_combo, &next_b2b, &value);
+    boardGarbageStats(board_after, &next_garbage_rows, &next_garbage_cover, &next_access);
+    boardHoleStats(board_after, &next_holes, &next_hole_depth, &next_max_h);
+    i32 next_mode = aiBotChooseMode(next_max_h, next_holes, next_garbage_rows, next_garbage_cover, next_access, pending_garbage);
+    i32 cont = greedyQueueValue(board_after, queue, queue_count, spawn_y, next_combo, next_b2b, level, next_mode, pending_garbage);
+    i32 cont_weight = aiTune(AI_TUNE_EXACT_BASE + 0);
+    if cur_garbage_rows > 0 {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 1);}
+    if cur_garbage_rows > 0 && cur_garbage_access >= aiTune(AI_TUNE_EXACT_BASE + 2) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 3);}
+    if cur_garbage_rows > 0 && cur_garbage_access >= aiTune(AI_TUNE_EXACT_BASE + 4) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 5);}
+    if cur_garbage_rows > 0 && cur_garbage_access >= aiTune(AI_TUNE_EXACT_BASE + 6) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 7);}
+    if cur_garbage_rows > 0 && cur_garbage_cover >= aiTune(AI_TUNE_EXACT_BASE + 8) && cont_weight > aiTune(AI_TUNE_EXACT_BASE + 9) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 9);}
+    if cur_garbage_rows >= aiTune(AI_TUNE_EXACT_BASE + 10) && cur_garbage_cover >= aiTune(AI_TUNE_EXACT_BASE + 11) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 12);}
+
+    if pending_garbage >= aiTune(AI_TUNE_EXACT_BASE + 13) && cont_weight > aiTune(AI_TUNE_EXACT_BASE + 14) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 14);}
+    if pending_garbage >= aiTune(AI_TUNE_EXACT_BASE + 15) && cont_weight > aiTune(AI_TUNE_EXACT_BASE + 16) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 16);}
+    if pending_garbage >= aiTune(AI_TUNE_EXACT_BASE + 17) {cont_weight = aiTune(AI_TUNE_EXACT_BASE + 18);}
+
+    if pending_garbage > 0 {
+        i32 pending_penalty = pending_garbage * aiTune(AI_TUNE_EXACT_BASE + 19);
+        if cur_max_h >= aiTune(AI_TUNE_EXACT_BASE + 20) {pending_penalty += (cur_max_h - aiTune(AI_TUNE_EXACT_BASE + 21)) * pending_garbage * aiTune(AI_TUNE_EXACT_BASE + 22);}
+        if cur_holes > 0 {pending_penalty += cur_holes * pending_garbage * aiTune(AI_TUNE_EXACT_BASE + 23);}
+        if cur_garbage_rows > 0 {pending_penalty += cur_garbage_rows * pending_garbage * aiTune(AI_TUNE_EXACT_BASE + 24);}
+        value -= pending_penalty;
+    }
+
+    return value + (cont * cont_weight) / 100;
+}
+
+fun evaluateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, out_board: ptr<i32>, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>, out_tspin: ptr<i32>) >> bool {
+    i32 lines = 0;
+    i32 tspin = 0;
+    i32 all_clear = 0;
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    i32 cur_garbage_access = 0;
+    i32 cur_holes = 0;
+    i32 cur_hole_depth = 0;
+    i32 cur_max_h = 0;
+    i32 before_score = evaluateBoardStructural(board);
+    boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
+    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
+    if !simulateMove(board, kind, rotation, x, spawn_y, false, out_board, &lines, &tspin, &all_clear) {return false;}
+    evaluateLockedBoard(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
+    out_tspin[0] = tspin;
+    return true;
+}
+
+fun evaluateMoveGreedy(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, out_board: ptr<i32>, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>, out_tspin: ptr<i32>) >> bool {
+    i32 lines = 0;
+    i32 tspin = 0;
+    i32 all_clear = 0;
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    i32 cur_garbage_access = 0;
+    i32 cur_holes = 0;
+    i32 cur_hole_depth = 0;
+    i32 cur_max_h = 0;
+    i32 before_score = evaluateBoardStructural(board);
+    boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
+    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
+    if !simulateMove(board, kind, rotation, x, spawn_y, false, out_board, &lines, &tspin, &all_clear) {return false;}
+    evaluateLockedBoardGreedy(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
+    out_tspin[0] = tspin;
+    return true;
+}
+
+fun bestImmediateMove(board: ptr<i32>, kind: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, out_x: ptr<i32>, out_rot: ptr<i32>, out_tspin: ptr<i32>, out_board: ptr<i32>, out_combo: ptr<i32>, out_b2b: ptr<bool>, out_value: ptr<i32>) >> bool {
+    bool found = false;
+    i32 best_value = -2147483647;
+    i32 rot_count = rotationCount(kind);
+
+    for i32 rot = 0; rot < rot_count; rot++ {
+        for i32 x = -2; x < BOARD_W + 2; x++ {
+            arr<i32, BOARD_CELLS> cand_board = {0};
+            i32 cand_combo = combo;
+            bool cand_b2b = b2b;
+            i32 cand_value = 0;
+            i32 cand_tspin = 0;
+            if !evaluateMoveGreedy(board, kind, rot, x, spawn_y, combo, b2b, level, mode, pending_garbage, &cand_board[0], &cand_combo, &cand_b2b, &cand_value, &cand_tspin) {continue;}
+
+            if !found || cand_value > best_value {
+                found = true;
+                best_value = cand_value;
+                out_x[0] = x;
+                out_rot[0] = rot;
+                out_tspin[0] = cand_tspin;
+                out_combo[0] = cand_combo;
+                out_b2b[0] = cand_b2b;
+                out_value[0] = cand_value;
+                for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = cand_board[i];}
+            }
+        }
+    }
+
+    return found;
+}
+
+fun greedyQueueValue(board: ptr<i32>, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32) >> i32 {
+    if queue_count <= 0 {return 0;}
+
+    arr<i32, BOARD_CELLS> state = {0};
+    for i32 i = 0; i < BOARD_CELLS; i++ {state[i] = board[i];}
+
+    i32 total = 0;
+    i32 c = combo;
+    bool b = b2b;
+
+    for i32 qi = 0; qi < queue_count; qi++ {
+        i32 move_x = 0;
+        i32 move_rot = 0;
+        i32 move_tspin = 0;
+        arr<i32, BOARD_CELLS> next_state = {0};
+        i32 next_combo = c;
+        bool next_b2b = b;
+        i32 move_value = 0;
+        i32 state_max_h = 0;
+        i32 state_holes = 0;
+        i32 state_hole_depth = 0;
+        i32 state_garbage_rows = 0;
+        i32 state_garbage_cover = 0;
+        boardHoleStats(&state[0], &state_holes, &state_hole_depth, &state_max_h);
+        i32 state_garbage_access = 0;
+        boardGarbageStats(&state[0], &state_garbage_rows, &state_garbage_cover, &state_garbage_access);
+        i32 move_mode = aiBotChooseMode(state_max_h, state_holes, state_garbage_rows, state_garbage_cover, state_garbage_access, pending_garbage);
+        if !bestImmediateMove(&state[0], queue[qi], spawn_y, c, b, level, move_mode, pending_garbage, &move_x, &move_rot, &move_tspin, &next_state[0], &next_combo, &next_b2b, &move_value) {
+            total -= aiTune(AI_TUNE_GREEDY_BASE + 0);
+            break;
+        }
+        total += move_value;
+        c = next_combo;
+        b = next_b2b;
+        for i32 i = 0; i < BOARD_CELLS; i++ {state[i] = next_state[i];}
+    }
+
+    return total;
+}
+
+fun findBestMove(board: ptr<i32>, kind: i32, spawn_y: i32, queue: ptr<i32>, queue_count: i32, combo: i32, b2b: bool, level: i32, pending_garbage: i32, apm_cost_weight: i32, move_budget: i32) >> AiMove {
+    if level < 1 {level = 1;}
+
+    AiMove best = {0};
+    best.valid = false;
+    best.x = 3;
+    best.rotation = 0;
+    best.tspin = false;
+
+    i32 best_score = -2147483647;
+    i32 rot_count = rotationCount(kind);
+    i32 before_score = evaluateBoardStructural(board);
+    i32 cur_garbage_rows = 0;
+    i32 cur_garbage_cover = 0;
+    i32 cur_garbage_access = 0;
+    i32 cur_holes = 0;
+    i32 cur_hole_depth = 0;
+    i32 cur_max_h = 0;
+    boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
+    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
+    i32 mode = aiBotChooseMode(cur_max_h, cur_holes, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, pending_garbage);
+
+    for i32 rot = 0; rot < rot_count; rot++ {
+        for i32 x = -2; x < BOARD_W + 2; x++ {
+            arr<i32, BOARD_CELLS> temp = {0};
+            i32 score = 0;
+            i32 tspin = 0;
+            i32 lines = 0;
+            i32 all_clear = 0;
+            if !simulateMove(board, kind, rot, x, spawn_y, false, &temp[0], &lines, &tspin, &all_clear) {continue;}
+            score = evaluateExactLockedState(board, &temp[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, queue, queue_count, spawn_y, combo, b2b, level, mode, pending_garbage);
+
+            i32 rot_steps = rotationStepDistance(0, rot);
+            i32 move_cost = absi(x - 3) + rot_steps * aiTune(AI_TUNE_MOVE_BASE + 0);
+            if apm_cost_weight > 0 {score -= move_cost * apm_cost_weight;}
+            if move_budget > 0 && move_cost > move_budget {
+                i32 over = move_cost - move_budget;
+                score -= over * aiTune(AI_TUNE_MOVE_BASE + 1);
+            }
+            if pending_garbage > 0 {score -= move_cost * pending_garbage * aiTune(AI_TUNE_MOVE_BASE + 2);}
+
+            if !best.valid || score > best_score {
+                best_score = score;
+                best.valid = true;
+                best.x = x;
+                best.rotation = rot;
+                best.tspin = tspin != 0;
+            }
+        }
+    }
+
+    return best;
+}

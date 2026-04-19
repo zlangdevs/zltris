@@ -1,0 +1,51 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+fun rgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
+    return (r as u32) |
+           ((g as u32) << 8) |
+           ((b as u32) << 16) |
+           ((a as u32) << 24);
+}
+
+fun refresh_screen_size(self: Game) >> Game {
+    Game next = self;
+    next.screen_width = GetScreenWidth();
+    next.screen_height = GetScreenHeight();
+    return next;
+}
+
+fun current_theme(self: Game) >> Theme {
+    return setTheme(self.theme_index);
+}
+
+fun next_theme(self: Game) >> Game {
+    Game next = self;
+    next.theme_index = switchTheme(self.theme_index, 1);
+    return next;
+}
+
+fun with_screen(self: Game, screen: i32) >> Game {
+    Game next = self;
+    next.screen = screen;
+    return next;
+}
+
+fun with_settings_return_screen(self: Game, screen: i32) >> Game {
+    Game next = self;
+    next.settings_return_screen = screen;
+    return next;
+}
+
+fun currentTheme() >> Theme {
+    return g_game.current_theme();
+}

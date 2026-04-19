@@ -1,0 +1,315 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define BOARD_CELLS 220
+#define QUEUE_CAP 14
+#define BAG_SIZE 7
+
+#define BOT_PLAN_MAX 128
+#define BOT_SEARCH_MAX 2048
+#define BOT_DIRTY_PROJ_SEARCH_MAX 384
+#define BOT_STATE_TABLE_SIZE 3360
+
+#define PIECE_T 2
+
+#define DUEL_RESULT_PLAYING 0
+
+#define BG_STAR_COUNT 150
+
+#define STAR_MODE_DROPS 1
+#define SHADER_MODE_NONE 0
+#define CUSTOM_SHADER_NAME_MAX 96
+
+#define AI_TUNE_COUNT 221
+#define BOT_ARENA_HISTORY_STORAGE 8
+#define BOT_ARENA_HISTORY_TUNING_CELLS 1768
+
+struct Game {
+    theme_index i32,
+    screen i32,
+    settings_return_screen i32,
+    screen_width i32,
+    screen_height i32,
+}
+
+struct GameRuntime {
+    gravity_timer f32,
+    soft_timer f32,
+    lock_timer f32,
+    shift_hold_timer f32,
+    shift_repeat_timer f32,
+    dcd_timer f32,
+    shift_dir i32,
+    last_horizontal_press i32,
+    mode_timer f32,
+    run_timer f32,
+    pieces_placed i32,
+    attack_sent i32,
+    countdown_timer f32,
+    restart_charge f32,
+    restart_hold_latched bool,
+    restart_afterglow f32,
+    hold_action i32,
+    star_soft_glow f32,
+    star_hard_burst f32,
+    star_hard_target f32,
+    star_pps_meter f32,
+    board_shake_time f32,
+    board_shake_amp f32,
+    board_shake_seed i32,
+    board_shake_render_x f32,
+    board_shake_render_y f32,
+    board_shake_vel_x f32,
+    board_shake_vel_y f32,
+    board_shake_px_x i32,
+    board_shake_px_y i32,
+    board_shake_res_x f32,
+    board_shake_res_y f32,
+    combo i32,
+    back_to_back_count i32,
+    back_to_back bool,
+    last_rotate_success bool,
+    last_rotate_kick_test i32,
+}
+
+struct BotSetupState {
+    target_apm f32,
+    garbage_messiness f32,
+    high_stack_tolerance bool,
+    panic_burst_enabled bool,
+    weights_mode i32,
+    index i32,
+}
+
+struct BotRuntime {
+    queue_count i32,
+    bag_pos i32,
+    piece_kind i32,
+    piece_rotation i32,
+    piece_x i32,
+    piece_y i32,
+    target_x i32,
+    target_y i32,
+    target_rotation i32,
+    combo i32,
+    back_to_back_count i32,
+    last_rotate_success bool,
+    target_last_rotate bool,
+    target_valid bool,
+    target_tspin bool,
+    attack_sent i32,
+    pieces_placed i32,
+    actions_taken i32,
+    lines i32,
+    score i32,
+    game_over bool,
+    pending_garbage i32,
+    place_meter f32,
+    rate_smooth f32,
+}
+
+struct BotArenaSide {
+    setup BotSetupState,
+    runtime BotRuntime,
+    generation i32,
+    plan_len i32,
+    plan_index i32,
+    plan_pending_snapshot i32,
+    planned_lines i32,
+    planned_spin bool,
+    planned_all_clear bool,
+    garbage_hole i32,
+}
+
+struct BotArenaState {
+    champion_setup BotSetupState,
+    champion_generation i32,
+    candidate_setup BotSetupState,
+    candidate_generation i32,
+    history_size i32,
+    champion_wins i32,
+    total_matches i32,
+    last_winner_generation i32,
+    last_winner_side i32,
+    compare_stock bool,
+    compare_stock_wins i32,
+    compare_stock_losses i32,
+    generation_round i32,
+    generation_left_wins i32,
+    generation_right_wins i32,
+    generation_stage i32,
+    gauntlet_target_index i32,
+    stock_round i32,
+    stock_left_wins i32,
+    stock_right_wins i32,
+}
+
+struct GameplayState {
+    queue_count i32,
+    bag_pos i32,
+    score i32,
+    lines i32,
+    game_over bool,
+    game_mode i32,
+    round_state i32,
+}
+
+fun is_mode(self: GameplayState, mode: i32) >> bool {
+    return self.game_mode == mode;
+}
+
+fun with_mode(self: GameplayState, mode: i32) >> GameplayState {
+    GameplayState next = self;
+    next.game_mode = mode;
+    return next;
+}
+
+fun with_round_state(self: GameplayState, state: i32) >> GameplayState {
+    GameplayState next = self;
+    next.round_state = state;
+    return next;
+}
+
+i32 g_piece_kind = PIECE_T;
+i32 g_piece_rotation = 0;
+i32 g_piece_x = 3;
+i32 g_piece_y = 0;
+i32 g_hold_kind = -1;
+bool g_hold_used = false;
+
+arr<i32, BOARD_CELLS> g_board = {0};
+arr<i32, QUEUE_CAP> g_queue = {0};
+arr<i32, BAG_SIZE> g_bag = {0};
+
+Game g_game = {0};
+GameRuntime g_rt = {0};
+GameplayState g_play = {0};
+BotSetupState g_bot_setup = {0};
+BotRuntime g_bot = {0};
+BotArenaState g_bot_arena = {0};
+BotArenaSide g_bot_arena_left = {0};
+BotArenaSide g_bot_arena_right = {0};
+arr<i32, BOARD_CELLS> g_bot_board = {0};
+arr<i32, QUEUE_CAP> g_bot_queue = {0};
+arr<i32, BAG_SIZE> g_bot_bag = {0};
+arr<i32, BOT_PLAN_MAX> g_bot_plan_actions = {0};
+arr<i32, BOARD_CELLS> g_bot_planned_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_left_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_right_board = {0};
+arr<i32, QUEUE_CAP> g_bot_arena_left_queue = {0};
+arr<i32, QUEUE_CAP> g_bot_arena_right_queue = {0};
+arr<i32, BAG_SIZE> g_bot_arena_left_bag = {0};
+arr<i32, BAG_SIZE> g_bot_arena_right_bag = {0};
+arr<i32, BOT_PLAN_MAX> g_bot_arena_left_plan_actions = {0};
+arr<i32, BOT_PLAN_MAX> g_bot_arena_right_plan_actions = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_left_planned_board = {0};
+arr<i32, BOARD_CELLS> g_bot_arena_right_planned_board = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_champion_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_candidate_tuning = {0};
+arr<i32, BOT_ARENA_HISTORY_STORAGE> g_bot_arena_history_generations = {0};
+arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> g_bot_arena_history_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_left_tuning = {0};
+arr<i32, AI_TUNE_COUNT> g_bot_arena_right_tuning = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_xs = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_ys = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_rots = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_rotate_flags = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_parents = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_actions = {0};
+arr<i32, BOT_SEARCH_MAX> g_bot_search_depths = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_search_visited = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_landing_states = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_landing_steps = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_bot_dirty_xs = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_bot_dirty_ys = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_bot_dirty_rots = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_bot_dirty_rotate_flags = {0};
+arr<i32, BOT_DIRTY_PROJ_SEARCH_MAX> g_bot_dirty_depths = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_dirty_visited = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_dirty_landing_states = {0};
+arr<i32, BOT_STATE_TABLE_SIZE> g_bot_dirty_landing_steps = {0};
+
+f32 g_arr_frames = 1.4;
+f32 g_das_frames = 6.9;
+f32 g_dcd_frames = 2.0;
+f32 g_sdf_multiplier = 14.0;
+
+bool g_debug_colors = false;
+bool g_ai_enabled = false;
+bool g_ai_armed = false;
+bool g_duel_running = false;
+i32 g_duel_result = DUEL_RESULT_PLAYING;
+i32 g_player_pending_garbage = 0;
+i32 g_bot_pending_garbage = 0;
+bool g_double_row_ui = true;
+bool g_instant_restart = false;
+bool g_hard_drop_ring = false;
+bool g_restart_hold_blocked = false;
+i32 g_bg_stars_amount = 50;
+i32 g_bg_star_react_mode = STAR_MODE_DROPS;
+f32 g_star_peak_target_dps = 1.5;
+f32 g_star_intensity = 0.4;
+i32 g_board_bounciness = 50;
+i32 g_post_shader_mode = SHADER_MODE_NONE;
+f32 g_crt_curvature = 0.70;
+f32 g_crt_brightness = 1.25;
+f32 g_vhs_waves = 0.25;
+f32 g_vhs_damage = 1.00;
+arr<u8, CUSTOM_SHADER_NAME_MAX> g_custom_shader_name = {0};
+i32 g_player_garbage_hole = -1;
+i32 g_bot_garbage_hole = -1;
+i32 g_bot_plan_len = 0;
+i32 g_bot_plan_index = 0;
+i32 g_bot_plan_pending_snapshot = 0;
+i32 g_bot_planned_lines = 0;
+bool g_bot_planned_spin = false;
+bool g_bot_planned_all_clear = false;
+
+RenderTexture g_post_fx_target = {0};
+bool g_post_fx_target_ready = false;
+i32 g_post_fx_target_w = 0;
+i32 g_post_fx_target_h = 0;
+RenderTexture g_layer_bg_target = {0};
+RenderTexture g_layer_blocks_target = {0};
+RenderTexture g_layer_ui_target = {0};
+bool g_layer_targets_ready = false;
+i32 g_layer_targets_w = 0;
+i32 g_layer_targets_h = 0;
+Texture g_layer_empty_texture = {0};
+bool g_layer_empty_texture_ready = false;
+Shader g_crt_shader = {0};
+bool g_crt_shader_ready = false;
+Shader g_light_crt_shader = {0};
+bool g_light_crt_shader_ready = false;
+Shader g_vhs_shader = {0};
+bool g_vhs_shader_ready = false;
+Shader g_custom_shader = {0};
+bool g_custom_shader_ready = false;
+i32 g_custom_time_loc = -1;
+i32 g_custom_bg_tex_loc = -1;
+i32 g_custom_blocks_tex_loc = -1;
+i32 g_custom_ui_tex_loc = -1;
+i32 g_custom_layered_loc = -1;
+bool g_custom_shader_warned = false;
+bool g_custom_sampler_warned = false;
+i32 g_crt_curvature_loc = -1;
+i32 g_crt_brightness_loc = -1;
+i32 g_vhs_time_loc = -1;
+i32 g_vhs_waves_loc = -1;
+i32 g_vhs_damage_loc = -1;
+
+arr<i32, BG_STAR_COUNT> g_star_x = {0};
+arr<i32, BG_STAR_COUNT> g_star_y = {0};
+arr<i32, BG_STAR_COUNT> g_star_size = {0};
+arr<i32, BG_STAR_COUNT> g_star_style = {0};
+arr<f32, BG_STAR_COUNT> g_star_phase = {0.0};
+arr<f32, BG_STAR_COUNT> g_star_speed = {0.0};
