@@ -12,6 +12,11 @@ use zltris.ui
 #define MENU_BTN_BOT_DUELS 4
 #define MENU_BTN_SETTINGS 5
 
+#define MENU_SOLO_FREE_PLAY 0
+#define MENU_SOLO_CHALLENGE 1
+#define MENU_SOLO_COMBO_TRAINER 2
+#define MENU_SOLO_COUNT 3
+
 #define MENU_ACTION_NONE 0
 #define MENU_ACTION_START_FREE_PLAY 1
 #define MENU_ACTION_OPEN_SETTINGS 2
@@ -19,6 +24,8 @@ use zltris.ui
 #define MENU_ACTION_START_BLITZ 4
 #define MENU_ACTION_OPEN_BOT_SETUP 5
 #define MENU_ACTION_START_BOT_DUELS 6
+#define MENU_ACTION_OPEN_CHALLENGE_SETUP 7
+#define MENU_ACTION_START_COMBO_TRAINER 8
 
 struct MenuState {
     index i32,
@@ -27,6 +34,8 @@ struct MenuState {
     mouse_last_x f32,
     mouse_last_y f32,
     keyboard_nav_lock bool,
+    solo_open bool,
+    solo_index i32,
 }
 
 fun init(self: MenuState) >> MenuState {
@@ -37,6 +46,8 @@ fun init(self: MenuState) >> MenuState {
     next.mouse_last_x = 0.0;
     next.mouse_last_y = 0.0;
     next.keyboard_nav_lock = false;
+    next.solo_open = false;
+    next.solo_index = 0;
     return next;
 }
 
@@ -61,6 +72,15 @@ fun move_index(self: MenuState, delta: i32) >> MenuState {
     return next;
 }
 
+fun move_solo_index(self: MenuState, delta: i32) >> MenuState {
+    MenuState next = self;
+    next.solo_index += delta;
+    i32 solo_cnt = MENU_SOLO_COUNT;
+    if next.solo_index < 0 {next.solo_index = solo_cnt - 1;}
+    if next.solo_index >= solo_cnt {next.solo_index = 0;}
+    return next;
+}
+
 fun show_notice(self: MenuState, idx: i32) >> MenuState {
     MenuState next = self;
     next.notice = idx;
@@ -81,6 +101,8 @@ fun menuActionStart40Lines() >> i32 { return MENU_ACTION_START_40_LINES; }
 fun menuActionStartBlitz() >> i32 { return MENU_ACTION_START_BLITZ; }
 fun menuActionOpenBotSetup() >> i32 { return MENU_ACTION_OPEN_BOT_SETUP; }
 fun menuActionStartBotDuels() >> i32 { return MENU_ACTION_START_BOT_DUELS; }
+fun menuActionOpenChallengeSetup() >> i32 { return MENU_ACTION_OPEN_CHALLENGE_SETUP; }
+fun menuActionStartComboTrainer() >> i32 { return MENU_ACTION_START_COMBO_TRAINER; }
 
 fun menuButtonCount() >> i32 {
     if BOTDEVMODE {return 6;}
@@ -109,12 +131,13 @@ fun drawFloorTintFullWidth(base_y: i64, color_rgba: u32) >> void {
 }
 
 fun menuLabel(index: i32) >> ptr<u8> {
+    if index == MENU_BTN_FREE_PLAY {return "SOLO";}
     if index == MENU_BTN_40_LINES {return "40 LINES";}
     if index == MENU_BTN_BLITZ {return "BLITZ";}
     if index == MENU_BTN_AGAINST_BOT {return "AGAINST BOT";}
     if BOTDEVMODE && index == MENU_BTN_BOT_DUELS {return "BOT DUELS";}
     if index == menuSettingsIndex() {return "SETTINGS";}
-    return "FREE PLAY";
+    return "SOLO";
 }
 
 fun menuEnabled(index: i32) >> bool {
@@ -128,7 +151,7 @@ fun menuButtonY(index: i32) >> i64 {
 }
 
 fun menuActionForIndex(index: i32) >> i32 {
-    if index == MENU_BTN_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
+    if index == MENU_BTN_FREE_PLAY {return MENU_ACTION_NONE;}
     if index == MENU_BTN_40_LINES {return MENU_ACTION_START_40_LINES;}
     if index == MENU_BTN_BLITZ {return MENU_ACTION_START_BLITZ;}
     if index == MENU_BTN_AGAINST_BOT {return MENU_ACTION_OPEN_BOT_SETUP;}
@@ -138,9 +161,42 @@ fun menuActionForIndex(index: i32) >> i32 {
 }
 
 fun selectMenuIndex(index: i32) >> i32 {
+    if index == MENU_BTN_FREE_PLAY {
+        g_menu.solo_open = true;
+        g_menu.solo_index = 0;
+        g_menu.keyboard_nav_lock = true;
+        return MENU_ACTION_NONE;
+    }
     i32 action = menuActionForIndex(index);
     if action != MENU_ACTION_NONE {return action;}
     g_menu = g_menu.show_notice(index);
+    return MENU_ACTION_NONE;
+}
+
+fun soloLabel(index: i32) >> ptr<u8> {
+    if index == MENU_SOLO_FREE_PLAY {return "FREE PLAY";}
+    if index == MENU_SOLO_CHALLENGE {return "CHALLENGE";}
+    return "COMBO TRAINER";
+}
+
+fun soloEnabled(index: i32) >> bool {
+    return index == MENU_SOLO_FREE_PLAY || index == MENU_SOLO_CHALLENGE || index == MENU_SOLO_COMBO_TRAINER;
+}
+
+fun soloButtonY(index: i32) >> i64 {
+    i64 idx = index as i64;
+    return (330 as i64) + idx * (82 as i64);
+}
+
+fun selectSoloIndex(index: i32) >> i32 {
+    if soloEnabled(index) {
+        g_menu.solo_open = false;
+        if index == MENU_SOLO_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
+        if index == MENU_SOLO_CHALLENGE {return MENU_ACTION_OPEN_CHALLENGE_SETUP;}
+        if index == MENU_SOLO_COMBO_TRAINER {return MENU_ACTION_START_COMBO_TRAINER;}
+    }
+    i32 notice_id = 100 + index;
+    g_menu = g_menu.show_notice(notice_id);
     return MENU_ACTION_NONE;
 }
 
@@ -209,6 +265,34 @@ fun drawMenuButton(font: Font, theme: Theme, index: i32) >> void {
     if !enabled {drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, 0.82));}
 }
 
+fun drawSoloButton(font: Font, theme: Theme, index: i32) >> void {
+    i64 x = 148;
+    i64 y = soloButtonY(index);
+    i64 w = 352;
+    i64 h = 64;
+
+    bool selected = index == g_menu.solo_index;
+    bool enabled = soloEnabled(index);
+
+    u32 bg = alphaColor(theme.panel_bg, 0.90);
+    u32 stroke = alphaColor(theme.panel_stroke, 0.52);
+    u32 text_color = theme.text_main;
+
+    if selected {
+        bg = alphaColor(theme.board_bg, 0.98);
+        stroke = theme.panel_stroke;
+    }
+    if !enabled {
+        text_color = alphaColor(theme.text_muted, 0.76);
+        stroke = alphaColor(theme.text_muted, 0.42);
+    }
+
+    fillRect(x, y, w, h, bg);
+    strokeRect(x, y, w, h, stroke);
+    drawTextColor(font, soloLabel(index), x + 24, y + 22, 16, text_color);
+    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, 0.80));}
+}
+
 fun drawMenu(font: Font, theme: Theme) >> void {
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
     drawRetroGrid(theme);
@@ -221,18 +305,29 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     drawTextColor(font, "ZLTRIS", 220, 156, 36, theme.text_main);
     drawTextColor(font, "Modern handling, classic pleasure.", 138, 212, 11, theme.text_muted);
 
-    i32 count = menuButtonCount();
-    for i32 i = 0; i < count; i++ {
-        drawMenuButton(font, theme, i);
+    if g_menu.solo_open {
+        drawTextColor(font, "SOLO", 172 as i64, 290 as i64, 13, alphaColor(theme.text_muted, 0.90 as f32));
+        drawLineBase(148 as i64, 310 as i64, 500 as i64, 310 as i64, alphaColor(theme.panel_stroke, 0.60 as f32));
+        for i32 i = 0; i < MENU_SOLO_COUNT; i++ {
+            drawSoloButton(font, theme, i);
+        }
+        drawTextColor(font, "UP/DOWN choose  ENTER select  ESC back", 146, 761, 12, theme.text_muted);
+    } else {
+        i32 count = menuButtonCount();
+        for i32 i = 0; i < count; i++ {
+            drawMenuButton(font, theme, i);
+        }
+        drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 761, 12, theme.text_muted);
+        drawTextColor(font, "ESC in game returns here", 146, 784, 12, theme.text_muted);
     }
-
-    drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 761, 12, theme.text_muted);
-    drawTextColor(font, "ESC in game returns here", 146, 784, 12, theme.text_muted);
 
     if (g_menu.notice_timer > 0.0) {
         fillRect(146, 764, 354, 42, alphaColor(theme.board_bg, 0.92));
         strokeRect(146, 764, 354, 42, alphaColor(theme.panel_stroke, 0.70));
-        drawTextColor(font, TextFormat("%s mode coming soon", menuLabel(g_menu.notice)), 160, 779, 11, theme.text_main);
+        i32 adj_notice = g_menu.notice - 100;
+        ptr<u8> notice_label = soloLabel(adj_notice);
+        if g_menu.notice < 100 {notice_label = menuLabel(g_menu.notice);}
+        drawTextColor(font, TextFormat("%s coming soon", notice_label), 160, 779, 11, theme.text_main);
     }
 }
 
@@ -245,6 +340,37 @@ fun menuUpdate() >> i32 {
     if mouse_moved {g_menu.keyboard_nav_lock = false;}
     g_menu.mouse_last_x = mouse.x;
     g_menu.mouse_last_y = mouse.y;
+
+    if g_menu.solo_open {
+        if IsKeyPressed(KEY_ESCAPE) {
+            g_menu.solo_open = false;
+            g_menu.keyboard_nav_lock = true;
+            return MENU_ACTION_NONE;
+        }
+        if IsKeyPressed(KEY_UP) {
+            g_menu = g_menu.move_solo_index(-1);
+            g_menu.keyboard_nav_lock = true;
+        }
+        if IsKeyPressed(KEY_DOWN) {
+            g_menu = g_menu.move_solo_index(1);
+            g_menu.keyboard_nav_lock = true;
+        }
+        for i32 i = 0; i < MENU_SOLO_COUNT; i++ {
+            if pointInBaseRect(mouse.x, mouse.y, 148, soloButtonY(i), 352, 64) {
+                if !g_menu.keyboard_nav_lock {g_menu.solo_index = i;}
+                if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                    g_menu.keyboard_nav_lock = false;
+                    g_menu.solo_index = i;
+                    return selectSoloIndex(i);
+                }
+            }
+        }
+        if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+            g_menu.keyboard_nav_lock = true;
+            return selectSoloIndex(g_menu.solo_index);
+        }
+        return MENU_ACTION_NONE;
+    }
 
     if IsKeyPressed(KEY_UP) {
         g_menu = g_menu.move_index(-1);

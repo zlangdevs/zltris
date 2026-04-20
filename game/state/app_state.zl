@@ -29,6 +29,13 @@ use zltris.theme
 #define SHADER_MODE_NONE 0
 #define CUSTOM_SHADER_NAME_MAX 96
 
+#define CHALLENGE_KICK_SRS 0
+#define CHALLENGE_KICK_NONE 1
+
+#define CHALLENGE_GARBAGE_NONE 0
+#define CHALLENGE_GARBAGE_BACKFIRE 1
+#define CHALLENGE_GARBAGE_UNCLEAR 2
+
 #define AI_TUNE_COUNT 221
 #define BOT_ARENA_HISTORY_STORAGE 8
 #define BOT_ARENA_HISTORY_TUNING_CELLS 1768
@@ -273,6 +280,17 @@ i32 g_bot_plan_pending_snapshot = 0;
 i32 g_bot_planned_lines = 0;
 bool g_bot_planned_spin = false;
 bool g_bot_planned_all_clear = false;
+
+f32 g_challenge_start_gravity = 1.4;
+f32 g_challenge_gravity_ramp = 0.4;
+bool g_challenge_infinite_hold = false;
+i32 g_challenge_kick_table = CHALLENGE_KICK_SRS;
+i32 g_challenge_garbage_mode = CHALLENGE_GARBAGE_NONE;
+f32 g_challenge_garbage_factor = 1.0;
+i32 g_challenge_start_garbage_lines = 0;
+f32 g_challenge_garbage_messiness = 35.0;
+f32 g_challenge_garbage_accum = 0.0;
+i32 g_combo_practice_pattern_index = -1;
 
 RenderTexture g_post_fx_target = {0};
 bool g_post_fx_target_ready = false;

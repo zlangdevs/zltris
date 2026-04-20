@@ -1,0 +1,484 @@
+module zltris;
+use raylib
+use zltris.ui
+
+#define CHALLENGE_ACTION_NONE 0
+#define CHALLENGE_ACTION_START 1
+#define CHALLENGE_ACTION_BACK 2
+
+#define CHALLENGE_ROW_START_GRAVITY 0
+#define CHALLENGE_ROW_GRAVITY_RAMP 1
+#define CHALLENGE_ROW_INFINITE_HOLD 2
+#define CHALLENGE_ROW_KICK_TABLE 3
+#define CHALLENGE_ROW_GARBAGE_MODE 4
+#define CHALLENGE_ROW_GARBAGE_FACTOR 5
+#define CHALLENGE_ROW_START_GARBAGE 6
+#define CHALLENGE_ROW_GARBAGE_MESSINESS 7
+#define CHALLENGE_ROW_START 8
+#define CHALLENGE_ROW_BACK 9
+#define CHALLENGE_ROW_COUNT 10
+#define CHALLENGE_VISIBLE_ROWS 6
+
+#define CHALLENGE_KICK_SRS 0
+#define CHALLENGE_KICK_NONE 1
+
+#define CHALLENGE_GARBAGE_NONE 0
+#define CHALLENGE_GARBAGE_BACKFIRE 1
+#define CHALLENGE_GARBAGE_UNCLEAR 2
+
+struct ChallengeSetupState {
+    selected_row i32,
+    scroll f32,
+    mouse_last_x f32,
+    mouse_last_y f32,
+    keyboard_nav_lock bool,
+}
+
+ChallengeSetupState g_challenge_setup = {0};
+
+fun challengeActionNone() >> i32 { return CHALLENGE_ACTION_NONE; }
+fun challengeActionStart() >> i32 { return CHALLENGE_ACTION_START; }
+fun challengeActionBack() >> i32 { return CHALLENGE_ACTION_BACK; }
+
+fun challengeInit() >> void {
+    g_challenge_setup.selected_row = CHALLENGE_ROW_START_GRAVITY;
+    g_challenge_setup.scroll = 0.0 as f32;
+    g_challenge_setup.mouse_last_x = 0.0 as f32;
+    g_challenge_setup.mouse_last_y = 0.0 as f32;
+    g_challenge_setup.keyboard_nav_lock = false;
+}
+
+fun challengeClampf(v: f32, min_v: f32, max_v: f32) >> f32 {
+    if v < min_v {return min_v;}
+    if v > max_v {return max_v;}
+    return v;
+}
+
+fun challengeRowY(row: i32) >> i64 {
+    i32 order = challengeRowOrder(row);
+    if order < 0 {return -10000;}
+    return 246 + (order as i64) * 78 - (g_challenge_setup.scroll * (78.0 as f32)) as i64;
+}
+
+fun challengeRowBodyHit(mouse: Vector2, row: i32) >> bool {
+    if !challengeRowVisible(row) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 118, challengeRowY(row), 412, 62);
+}
+
+fun challengeRowVisible(row: i32) >> bool {
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {
+        return g_challenge_garbage_mode != CHALLENGE_GARBAGE_NONE;
+    }
+    return true;
+}
+
+fun challengeVisibleCount() >> i32 {
+    i32 c = 0;
+    for i32 row = 0; row < CHALLENGE_ROW_COUNT; row++ {
+        if challengeRowVisible(row) {c += 1;}
+    }
+    return c;
+}
+
+fun challengeRowOrder(row: i32) >> i32 {
+    if !challengeRowVisible(row) {return -1;}
+    i32 order = 0;
+    for i32 it = 0; it < row; it++ {
+        if challengeRowVisible(it) {order += 1;}
+    }
+    return order;
+}
+
+fun challengeRowFromOrder(order: i32) >> i32 {
+    i32 seen = 0;
+    for i32 row = 0; row < CHALLENGE_ROW_COUNT; row++ {
+        if !challengeRowVisible(row) {continue;}
+        if seen == order {return row;}
+        seen += 1;
+    }
+    return CHALLENGE_ROW_BACK;
+}
+
+fun challengeValueRow(row: i32) >> bool {
+    return row >= CHALLENGE_ROW_START_GRAVITY && row <= CHALLENGE_ROW_GARBAGE_MESSINESS;
+}
+
+fun challengeSliderRow(row: i32) >> bool {
+    return row == CHALLENGE_ROW_START_GRAVITY || row == CHALLENGE_ROW_GRAVITY_RAMP || row == CHALLENGE_ROW_GARBAGE_FACTOR || row == CHALLENGE_ROW_START_GARBAGE || row == CHALLENGE_ROW_GARBAGE_MESSINESS;
+}
+
+fun challengeSelectorRow(row: i32) >> bool {
+    return row == CHALLENGE_ROW_KICK_TABLE || row == CHALLENGE_ROW_GARBAGE_MODE;
+}
+
+fun challengeToggleRow(row: i32) >> bool {
+    return row == CHALLENGE_ROW_INFINITE_HOLD;
+}
+
+fun challengeSliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
+    return challengeClampf((value - min_v) / (max_v - min_v), 0.0 as f32, 1.0 as f32);
+}
+
+fun challengeSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
+    f32 left = uiX(136) as f32;
+    f32 width = uiS(372) as f32;
+    f32 t = challengeClampf((px - left) / width, 0.0 as f32, 1.0 as f32);
+    return min_v + (max_v - min_v) * t;
+}
+
+fun challengeSliderTrackHit(mouse: Vector2, row: i32) >> bool {
+    if !challengeRowVisible(row) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 136, challengeRowY(row) + 40, 372, 10);
+}
+
+fun challengeEnsureSelectedVisible() >> void {
+    if !challengeRowVisible(g_challenge_setup.selected_row) {g_challenge_setup.selected_row = CHALLENGE_ROW_GARBAGE_MODE;}
+
+    i32 item_count = challengeVisibleCount();
+    i32 max_scroll = item_count - CHALLENGE_VISIBLE_ROWS;
+    if max_scroll < 0 {max_scroll = 0;}
+    if g_challenge_setup.scroll < 0.0 as f32 {g_challenge_setup.scroll = 0.0 as f32;}
+    if g_challenge_setup.scroll > (max_scroll as f32) {g_challenge_setup.scroll = max_scroll as f32;}
+
+    i32 order = challengeRowOrder(g_challenge_setup.selected_row);
+    if order < (g_challenge_setup.scroll as i32) {
+        g_challenge_setup.scroll = order as f32;
+    }
+    if order >= (g_challenge_setup.scroll as i32) + CHALLENGE_VISIBLE_ROWS {
+        g_challenge_setup.scroll = (order - CHALLENGE_VISIBLE_ROWS + 1) as f32;
+    }
+    if g_challenge_setup.scroll < 0.0 as f32 {g_challenge_setup.scroll = 0.0 as f32;}
+    if g_challenge_setup.scroll > (max_scroll as f32) {g_challenge_setup.scroll = max_scroll as f32;}
+}
+
+fun challengeMoveRow(delta: i32) >> void {
+    i32 count = challengeVisibleCount();
+    if count <= 0 {return;}
+    i32 order = challengeRowOrder(g_challenge_setup.selected_row);
+    if order < 0 {order = 0;}
+    order += delta;
+    if order < 0 {order = count - 1;}
+    if order >= count {order = 0;}
+    g_challenge_setup.selected_row = challengeRowFromOrder(order);
+    challengeEnsureSelectedVisible();
+}
+
+fun challengeKickLabel() >> ptr<u8> {
+    if g_challenge_kick_table == CHALLENGE_KICK_NONE {return "NONE";}
+    return "SRS";
+}
+
+fun challengeGarbageLabel() >> ptr<u8> {
+    if g_challenge_garbage_mode == CHALLENGE_GARBAGE_NONE {return "NONE";}
+    if g_challenge_garbage_mode == CHALLENGE_GARBAGE_BACKFIRE {return "BACKFIRE";}
+    return "UNCLEAR";
+}
+
+fun challengeValueText(row: i32) >> ptr<u8> {
+    if row == CHALLENGE_ROW_START_GRAVITY {return TextFormat("%.2f g/s", g_challenge_start_gravity);}
+    if row == CHALLENGE_ROW_GRAVITY_RAMP {return TextFormat("%.2f /min", g_challenge_gravity_ramp);}
+    if row == CHALLENGE_ROW_INFINITE_HOLD {
+        if g_challenge_infinite_hold {return "ON";}
+        return "OFF";
+    }
+    if row == CHALLENGE_ROW_KICK_TABLE {return challengeKickLabel();}
+    if row == CHALLENGE_ROW_GARBAGE_MODE {return challengeGarbageLabel();}
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {return TextFormat("x%.1f", g_challenge_garbage_factor);}
+    if row == CHALLENGE_ROW_START_GARBAGE {return TextFormat("%i", g_challenge_start_garbage_lines);}
+    if row == CHALLENGE_ROW_GARBAGE_MESSINESS {return TextFormat("%.0f%%", g_challenge_garbage_messiness);}
+    if row == CHALLENGE_ROW_START {return "START";}
+    return "BACK";
+}
+
+fun challengeLabelText(row: i32) >> ptr<u8> {
+    if row == CHALLENGE_ROW_START_GRAVITY {return "Start Gravity";}
+    if row == CHALLENGE_ROW_GRAVITY_RAMP {return "Gravity Ramp";}
+    if row == CHALLENGE_ROW_INFINITE_HOLD {return "Infinite Hold";}
+    if row == CHALLENGE_ROW_KICK_TABLE {return "Kick Table";}
+    if row == CHALLENGE_ROW_GARBAGE_MODE {return "Garbage Mode";}
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {return "Garbage Factor";}
+    if row == CHALLENGE_ROW_START_GARBAGE {return "Start Garbage Lines";}
+    if row == CHALLENGE_ROW_GARBAGE_MESSINESS {return "Garbage Messiness";}
+    if row == CHALLENGE_ROW_START {return "Start Challenge";}
+    return "Back";
+}
+
+fun challengeRowNorm(row: i32) >> f32 {
+    if row == CHALLENGE_ROW_START_GRAVITY {
+        return challengeSliderPercent(g_challenge_start_gravity, 0.2 as f32, 20.0 as f32);
+    }
+    if row == CHALLENGE_ROW_GRAVITY_RAMP {
+        return challengeSliderPercent(g_challenge_gravity_ramp, 0.0 as f32, 20.0 as f32);
+    }
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {
+        return challengeSliderPercent(g_challenge_garbage_factor, 0.1 as f32, 2.0 as f32);
+    }
+    if row == CHALLENGE_ROW_START_GARBAGE {
+        return (g_challenge_start_garbage_lines as f32) / (19.0 as f32);
+    }
+    if row == CHALLENGE_ROW_GARBAGE_MESSINESS {
+        return g_challenge_garbage_messiness / (100.0 as f32);
+    }
+    return 0.0 as f32;
+}
+
+fun challengeSetFromNorm(row: i32, raw_norm: f32) >> void {
+    f32 norm = challengeClampf(raw_norm, 0.0 as f32, 1.0 as f32);
+    if row == CHALLENGE_ROW_START_GRAVITY {
+        f32 v = (0.2 as f32) + norm * (19.8 as f32);
+        i32 step = (v * (10.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_start_gravity = (step as f32) / (10.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_GRAVITY_RAMP {
+        f32 v = norm * (20.0 as f32);
+        i32 step = (v * (20.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_gravity_ramp = (step as f32) / (20.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {
+        f32 v = (0.1 as f32) + norm * (1.9 as f32);
+        i32 step = (v * (10.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_garbage_factor = (step as f32) / (10.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_START_GARBAGE {
+        i32 lines = (norm * (19.0 as f32) + (0.5 as f32)) as i32;
+        if lines < 0 {lines = 0;}
+        if lines > 19 {lines = 19;}
+        g_challenge_start_garbage_lines = lines;
+        return;
+    }
+    if row == CHALLENGE_ROW_GARBAGE_MESSINESS {
+        i32 m = (norm * (100.0 as f32) + (0.5 as f32)) as i32;
+        if m < 0 {m = 0;}
+        if m > 100 {m = 100;}
+        g_challenge_garbage_messiness = m as f32;
+        return;
+    }
+}
+
+fun challengeNudge(row: i32, dir: i32) >> void {
+    if !challengeValueRow(row) {return;}
+    if row == CHALLENGE_ROW_START_GRAVITY {
+        f32 v = g_challenge_start_gravity + (dir as f32) * (0.1 as f32);
+        i32 step = (challengeClampf(v, 0.2 as f32, 20.0 as f32) * (10.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_start_gravity = (step as f32) / (10.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_GRAVITY_RAMP {
+        f32 v = g_challenge_gravity_ramp + (dir as f32) * (0.05 as f32);
+        i32 step = (challengeClampf(v, 0.0 as f32, 20.0 as f32) * (20.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_gravity_ramp = (step as f32) / (20.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_GARBAGE_FACTOR {
+        f32 v = g_challenge_garbage_factor + (dir as f32) * (0.1 as f32);
+        i32 step = (challengeClampf(v, 0.1 as f32, 2.0 as f32) * (10.0 as f32) + (0.5 as f32)) as i32;
+        g_challenge_garbage_factor = (step as f32) / (10.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_START_GARBAGE {
+        g_challenge_start_garbage_lines += dir;
+        if g_challenge_start_garbage_lines < 0 {g_challenge_start_garbage_lines = 0;}
+        if g_challenge_start_garbage_lines > 19 {g_challenge_start_garbage_lines = 19;}
+        return;
+    }
+    if row == CHALLENGE_ROW_GARBAGE_MESSINESS {
+        i32 v = (g_challenge_garbage_messiness as i32) + dir;
+        if v < 0 {v = 0;}
+        if v > 100 {v = 100;}
+        g_challenge_garbage_messiness = v as f32;
+        return;
+    }
+    if challengeToggleRow(row) {
+        g_challenge_infinite_hold = !g_challenge_infinite_hold;
+        return;
+    }
+    if row == CHALLENGE_ROW_KICK_TABLE {
+        if g_challenge_kick_table == CHALLENGE_KICK_SRS {g_challenge_kick_table = CHALLENGE_KICK_NONE;} else {g_challenge_kick_table = CHALLENGE_KICK_SRS;}
+        return;
+    }
+    if row == CHALLENGE_ROW_GARBAGE_MODE {
+        g_challenge_garbage_mode += dir;
+        if g_challenge_garbage_mode < CHALLENGE_GARBAGE_NONE {g_challenge_garbage_mode = CHALLENGE_GARBAGE_UNCLEAR;}
+        if g_challenge_garbage_mode > CHALLENGE_GARBAGE_UNCLEAR {g_challenge_garbage_mode = CHALLENGE_GARBAGE_NONE;}
+        challengeEnsureSelectedVisible();
+        return;
+    }
+}
+
+fun challengeDrawSelectionGlow(theme: Theme, y: i64) >> void {
+    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, 0.20 as f32));
+    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, 0.86 as f32));
+}
+
+fun challengeMeasureTextWidth(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    Vector2 m = MeasureTextExSize(font, text, uiS(size) as f32, 0.0 as f32);
+    return (m.x / uiScale()) as i64;
+}
+
+fun drawChallengeSliderRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = challengeRowY(row);
+    bool selected = g_challenge_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52 as f32);
+    if selected {
+        challengeDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
+    strokeRect(118, y, 412, 62, stroke);
+
+    drawTextColor(font, challengeLabelText(row), 136, y + 14, 15, theme.text_main);
+    ptr<u8> value_text = challengeValueText(row);
+    i64 value_w = challengeMeasureTextWidth(font, value_text, 14);
+    i64 value_x = 530 - 18 - value_w;
+    drawTextColor(font, value_text, value_x, y + 14, 14, theme.panel_stroke);
+
+    i64 sx = 136;
+    i64 sy = y + 40;
+    i64 sw = 372;
+    i64 sh = 10;
+    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, 0.92 as f32));
+    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, 0.46 as f32));
+    i64 fill_w = ((sw as f32) * challengeRowNorm(row)) as i64;
+    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, 0.78 as f32));
+    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, alphaColor(theme.text_main, 0.98 as f32));
+}
+
+fun drawChallengeSelectorRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = challengeRowY(row);
+    bool selected = g_challenge_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52 as f32);
+    if selected {
+        challengeDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, challengeLabelText(row), 136, y + 20, 15, theme.text_main);
+
+    ptr<u8> value_text = challengeValueText(row);
+    i64 left_arrow_w = challengeMeasureTextWidth(font, "<", 15);
+    i64 value_w = challengeMeasureTextWidth(font, value_text, 15);
+    i64 right_arrow_w = challengeMeasureTextWidth(font, ">", 15);
+    i64 gap = 12;
+    i64 total_w = left_arrow_w + gap + value_w + gap + right_arrow_w;
+    i64 center_x = 428;
+    i64 start_x = center_x - total_w / 2;
+    i64 left_arrow_x = start_x;
+    i64 value_x = left_arrow_x + left_arrow_w + gap;
+    i64 right_arrow_x = value_x + value_w + gap;
+
+    drawTextColor(font, "<", left_arrow_x, y + 20, 15, alphaColor(theme.text_main, 0.72 as f32));
+    drawTextColor(font, value_text, value_x, y + 20, 15, theme.panel_stroke);
+    drawTextColor(font, ">", right_arrow_x, y + 20, 15, alphaColor(theme.text_main, 0.72 as f32));
+}
+
+fun drawChallengeToggleRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = challengeRowY(row);
+    bool selected = g_challenge_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52 as f32);
+    if selected {
+        challengeDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, challengeLabelText(row), 136, y + 20, 15, theme.text_main);
+    ptr<u8> mark = "[ ]";
+    if g_challenge_infinite_hold {mark = "[X]";}
+    drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
+}
+
+fun drawChallengeButtonRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = challengeRowY(row);
+    bool selected = g_challenge_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52 as f32);
+    if selected {
+        challengeDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86 as f32);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextCenteredInRect(font, challengeLabelText(row), 118, y + 2, 412, 58, 15, theme.text_main);
+}
+
+fun drawChallengeSetup(font: Font, theme: Theme) >> void {
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+
+    fillRect(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86));
+    strokeRect(86, 98, 476, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawTextColor(font, "CHALLENGE", 118, 132, 24, theme.text_main);
+    drawTextColor(font, "Custom rules before solo start", 118, 168, 11, theme.text_muted);
+
+    for i32 row = 0; row < CHALLENGE_ROW_COUNT; row++ {
+        i64 y = challengeRowY(row);
+        if y < 178 || y > 760 {continue;}
+        if challengeSliderRow(row) {
+            drawChallengeSliderRow(font, theme, row);
+        } else if challengeSelectorRow(row) {
+            drawChallengeSelectorRow(font, theme, row);
+        } else if challengeToggleRow(row) {
+            drawChallengeToggleRow(font, theme, row);
+        } else {
+            drawChallengeButtonRow(font, theme, row);
+        }
+    }
+
+    drawTextColor(font, "UP/DOWN select  LEFT/RIGHT adjust", 118, 792, 11, theme.text_muted);
+    drawTextColor(font, "Drag sliders  ENTER apply  ESC back", 118, 814, 11, theme.text_muted);
+}
+
+fun updateChallengeSetup() >> i32 {
+    Vector2 mouse = GetMousePosition();
+    bool mouse_moved = absf(mouse.x - g_challenge_setup.mouse_last_x) > 0.5 as f32 || absf(mouse.y - g_challenge_setup.mouse_last_y) > 0.5 as f32;
+    if mouse_moved {g_challenge_setup.keyboard_nav_lock = false;}
+    g_challenge_setup.mouse_last_x = mouse.x;
+    g_challenge_setup.mouse_last_y = mouse.y;
+
+    if IsKeyPressed(KEY_ESCAPE) {return CHALLENGE_ACTION_BACK;}
+    if IsKeyPressed(KEY_UP) {challengeMoveRow(-1); g_challenge_setup.keyboard_nav_lock = true;}
+    if IsKeyPressed(KEY_DOWN) {challengeMoveRow(1); g_challenge_setup.keyboard_nav_lock = true;}
+    if IsKeyPressed(KEY_LEFT) {challengeNudge(g_challenge_setup.selected_row, -1);}
+    if IsKeyPressed(KEY_RIGHT) {challengeNudge(g_challenge_setup.selected_row, 1);}
+
+    i32 max_scroll = challengeVisibleCount() - CHALLENGE_VISIBLE_ROWS;
+    if max_scroll < 0 {max_scroll = 0;}
+    f32 wheel = GetMouseWheelMove();
+    if wheel > 0.0 as f32 {g_challenge_setup.scroll -= 1.0 as f32;}
+    if wheel < 0.0 as f32 {g_challenge_setup.scroll += 1.0 as f32;}
+    if g_challenge_setup.scroll < 0.0 as f32 {g_challenge_setup.scroll = 0.0 as f32;}
+    if g_challenge_setup.scroll > (max_scroll as f32) {g_challenge_setup.scroll = max_scroll as f32;}
+
+    for i32 row = 0; row < CHALLENGE_ROW_COUNT; row++ {
+        if challengeRowBodyHit(mouse, row) {
+            if !g_challenge_setup.keyboard_nav_lock {g_challenge_setup.selected_row = row;}
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                g_challenge_setup.keyboard_nav_lock = false;
+                g_challenge_setup.selected_row = row;
+                if row == CHALLENGE_ROW_START {return CHALLENGE_ACTION_START;}
+                if row == CHALLENGE_ROW_BACK {return CHALLENGE_ACTION_BACK;}
+                if challengeSelectorRow(row) {
+                    if mouse.x < uiX(428) as f32 {challengeNudge(row, -1);} else {challengeNudge(row, 1);}
+                }
+                if challengeToggleRow(row) {challengeNudge(row, 1);}
+            }
+            if challengeSliderRow(row) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && challengeSliderTrackHit(mouse, row) {
+                challengeSetFromNorm(row, challengeSliderValueFromMouse(mouse.x, 0.0 as f32, 1.0 as f32));
+            }
+        }
+    }
+
+    challengeEnsureSelectedVisible();
+
+    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+        return CHALLENGE_ACTION_START;
+    }
+
+    return CHALLENGE_ACTION_NONE;
+}

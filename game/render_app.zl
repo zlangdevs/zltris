@@ -21,10 +21,13 @@ use zltris.ui
 #define SCREEN_GAME 1
 #define SCREEN_SETTINGS 2
 #define SCREEN_BOT_SETUP 3
+#define SCREEN_CHALLENGE_SETUP 4
 
 #define MODE_FREE_PLAY 0
 #define MODE_40_LINES 1
 #define MODE_BLITZ 2
+#define MODE_COMBO_TRAINER 6
+#define MODE_CHALLENGE 5
 
 #define ROUND_COUNTDOWN 1
 #define ROUND_FINISHED 2
@@ -60,8 +63,8 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
-        if isFreePlayMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
-        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 560, 11, theme.panel_stroke);}
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
         if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
         if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
@@ -104,7 +107,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
     strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
     if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
-    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 308, 10, theme.panel_stroke);}
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 304, 13, theme.panel_stroke);}
     if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), SIDEBAR_X + 20, 320, 10, theme.panel_stroke);}
 
     drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
@@ -117,7 +120,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
 
     drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
     drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
-    if isFreePlayMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
 }
 
 fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
@@ -218,13 +221,19 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, &g_custom_shader_name[0]);
+        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, &g_custom_shader_name[0], g_music_mode, g_music_shuffle);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
 
     if (g_game.screen == SCREEN_BOT_SETUP) {
         drawBotSetupScreen(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_CHALLENGE_SETUP) {
+        drawChallengeSetup(font, theme);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -410,6 +419,12 @@ fun updateApp() >> void {
         } else if (action == menuActionStartBlitz()) {
             g_game = g_game.with_screen(SCREEN_GAME);
             startGameMode(MODE_BLITZ);
+        } else if (action == menuActionOpenChallengeSetup()) {
+            challengeInit();
+            g_game = g_game.with_screen(SCREEN_CHALLENGE_SETUP);
+        } else if (action == menuActionStartComboTrainer()) {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_COMBO_TRAINER);
         } else if (action == menuActionOpenBotSetup()) {
             initBotSetupDefaults();
             g_game = g_game.with_screen(SCREEN_BOT_SETUP);
@@ -447,8 +462,10 @@ fun updateApp() >> void {
         bool prev_hard_drop_ring = g_hard_drop_ring;
         arr<u8, CUSTOM_SHADER_NAME_MAX> prev_custom_shader_name = {0};
         copyCustomShaderName(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
+        i32 prev_music_mode = g_music_mode;
+        bool prev_music_shuffle = g_music_shuffle;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_custom_shader_name[0]);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
         bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
         if prev_shader_mode != g_post_shader_mode {g_custom_shader_warned = false;}
         if (prev_theme != g_game.theme_index ||
@@ -472,9 +489,24 @@ fun updateApp() >> void {
             prev_double_row != g_double_row_ui ||
             prev_instant_restart != g_instant_restart ||
             prev_hard_drop_ring != g_hard_drop_ring ||
-            custom_shader_changed) {
+            custom_shader_changed ||
+            prev_music_mode != g_music_mode ||
+            prev_music_shuffle != g_music_shuffle ||
+            g_songs_modified) {
             clampSettings();
             if prev_shader_mode != g_post_shader_mode || custom_shader_changed {loadPostEffects();}
+            if prev_music_mode != g_music_mode {
+                buildMusicPlaylist();
+                if g_star_music_track_count > 0 {
+                    loadStarMusicTrack(getRandomEnabledTrack());
+                }
+            }
+            if g_songs_modified {
+                g_songs_modified = false;
+                if g_star_music_track_index >= 0 && g_star_music_track_index < g_star_music_track_count && g_star_music_track_disabled[g_star_music_track_index] {
+                    loadStarMusicTrack(getRandomEnabledTrack());
+                }
+            }
             saveSettingsFile();
         }
         if settings_action == settingsActionBack() {g_game = g_game.with_screen(g_game.settings_return_screen);}
@@ -483,6 +515,20 @@ fun updateApp() >> void {
 
     if (g_game.screen == SCREEN_BOT_SETUP) {
         updateBotSetupScreen();
+        return;
+    }
+
+    if (g_game.screen == SCREEN_CHALLENGE_SETUP) {
+        i32 challenge_action = updateChallengeSetup();
+        if challenge_action == challengeActionBack() {
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if challenge_action == challengeActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_CHALLENGE);
+            return;
+        }
         return;
     }
 
@@ -773,8 +819,8 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
-        if isFreePlayMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
-        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 560, 11, theme.panel_stroke);}
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
         if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
         if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
@@ -808,7 +854,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
     if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
     if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
     strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
-    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 308, 10, theme.panel_stroke);}
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 304, 13, theme.panel_stroke);}
     if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), SIDEBAR_X + 20, 320, 10, theme.panel_stroke);}
 
     drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
@@ -819,7 +865,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
 
     drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
     drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
-    if isFreePlayMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
 }
 
 fun drawGameBackgroundTargetLayer(theme: Theme) >> void {

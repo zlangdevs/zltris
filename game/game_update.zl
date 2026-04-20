@@ -424,7 +424,7 @@ fun updateGameScreen() >> void {
         return;
     }
 
-    if isFreePlayMode() && IsKeyPressed(KEY_L) {
+    if (isFreePlayMode() || isComboTrainerMode()) && IsKeyPressed(KEY_L) {
         addFreePlayGarbageLine();
         if g_play.game_over {return;}
     }
