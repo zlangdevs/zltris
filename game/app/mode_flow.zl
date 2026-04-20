@@ -19,6 +19,8 @@ use zltris.theme
 #define MODE_BLITZ 2
 #define MODE_VS_BOT 3
 #define MODE_BOT_DUELS 4
+#define MODE_CHALLENGE 5
+#define MODE_COMBO_TRAINER 6
 
 #define BLITZ_DURATION_SECONDS 120.0
 
@@ -49,6 +51,14 @@ fun isBlitzMode() >> bool {
 
 fun isVsBotMode() >> bool {
     return g_play.is_mode(MODE_VS_BOT);
+}
+
+fun isChallengeMode() >> bool {
+    return g_play.is_mode(MODE_CHALLENGE);
+}
+
+fun isComboTrainerMode() >> bool {
+    return g_play.is_mode(MODE_COMBO_TRAINER);
 }
 
 fun isBotDuelsMode() >> bool {
@@ -86,8 +96,10 @@ fun nextGarbageHole(board_w: i32, hole_state: ptr<i32>) >> i32 {
         return hole_state[0];
     }
 
+    f32 messiness = g_bot_setup.garbage_messiness;
+    if isChallengeMode() {messiness = g_challenge_garbage_messiness;}
     i32 roll = GetRandomValue(0 as i32, 99 as i32) as i32;
-    if roll < (g_bot_setup.garbage_messiness as i32) {
+    if roll < (messiness as i32) {
         i32 jump_roll = GetRandomValue(0 as i32, 99 as i32) as i32;
         if jump_roll < 80 {
             i32 dir = 1;
@@ -151,6 +163,12 @@ fun canRestartNowByHotkey() >> bool {
 fun startGameMode(mode: i32) >> void {
     i32 selected_mode = mode;
     if !BOTDEVMODE && selected_mode == MODE_BOT_DUELS {selected_mode = MODE_FREE_PLAY;}
+
+    if selected_mode == MODE_COMBO_TRAINER {
+        g_combo_practice_pattern_index += 1;
+        if g_combo_practice_pattern_index >= 3 {g_combo_practice_pattern_index = 0;}
+    }
+
     g_play = g_play.with_mode(selected_mode);
     if selected_mode == MODE_VS_BOT {applyBotSetupWeights();}
     else if selected_mode != MODE_BOT_DUELS {applyChampionAiTuning();}
@@ -160,6 +178,7 @@ fun startGameMode(mode: i32) >> void {
     g_duel_result = DUEL_RESULT_PLAYING;
     g_player_pending_garbage = 0;
     g_bot_pending_garbage = 0;
+    g_challenge_garbage_accum = 0.0;
     resetGame();
     g_rt.mode_timer = 0.0;
     resetRestartHoldState(true);
@@ -173,6 +192,10 @@ fun startGameMode(mode: i32) >> void {
     } else {
         g_play = g_play.with_round_state(ROUND_RUNNING);
         g_rt.countdown_timer = 0.0;
+    }
+
+    if isChallengeMode() {
+        applyChallengeStartGarbage();
     }
 
     if isVsBotMode() {

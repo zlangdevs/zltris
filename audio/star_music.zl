@@ -14,6 +14,9 @@ use zltris.aubio
 #define STAR_MUSIC_MAX_BEATS 16384
 #define STAR_MUSIC_MAX_TRACKS 64
 #define STAR_MUSIC_PATH_MAX 320
+#define STAR_MUSIC_MODE_BUILTIN 0
+#define STAR_MUSIC_MODE_CUSTOM 1
+#define STAR_MUSIC_CUSTOM_DIR "assets/songs"
 
 f32 g_star_music_intensity = 0.6;
 i32 g_star_music_style = STAR_MUSIC_STYLE_PULSE;
@@ -39,6 +42,11 @@ arr<u8, 20480> g_star_music_track_path_buf = {0};
 arr<i32, 64> g_star_music_track_number = {0};
 i32 g_star_music_track_count = 0;
 i32 g_star_music_track_index = 0;
+i32 g_music_mode = STAR_MUSIC_MODE_BUILTIN;
+bool g_music_shuffle = false;
+arr<bool, STAR_MUSIC_MAX_TRACKS> g_star_music_track_disabled = {false};
+arr<u8, 4096> g_music_disabled_buf = {0};
+bool g_songs_modified = false;
 
 fun trackPathPtr(slot: i32) >> ptr<u8> {
     return &g_star_music_track_path_buf[slot * STAR_MUSIC_PATH_MAX];
@@ -174,6 +182,118 @@ fun clampSoundSettings() >> void {
     if g_star_music_style > STAR_MUSIC_STYLE_AGGRO {g_star_music_style = STAR_MUSIC_STYLE_AGGRO;}
     if g_music_volume < 0.0 {g_music_volume = 0.0;}
     if g_music_volume > 1.0 {g_music_volume = 1.0;}
+    if g_music_mode < STAR_MUSIC_MODE_BUILTIN {g_music_mode = STAR_MUSIC_MODE_BUILTIN;}
+    if g_music_mode > STAR_MUSIC_MODE_CUSTOM {g_music_mode = STAR_MUSIC_MODE_CUSTOM;}
+}
+
+fun musicTrackBasename(slot: i32) >> ptr<u8> {
+    if slot < 0 || slot >= STAR_MUSIC_MAX_TRACKS {return trackPathPtr(0);}
+    ptr<u8> path = trackPathPtr(slot);
+    ptr<u8> last_slash = path;
+    i32 i = 0;
+    for (path[i] != 0) {
+        if path[i] == ('/' as u8) || path[i] == ('\\' as u8) {
+            last_slash = path + i + 1;
+        }
+        i += 1;
+    }
+    return last_slash;
+}
+
+fun countEnabledTracks() >> i32 {
+    i32 count = 0;
+    for i32 i = 0; i < g_star_music_track_count; i++ {
+        if !g_star_music_track_disabled[i] {count += 1;}
+    }
+    return count;
+}
+
+fun getRandomEnabledTrack() >> i32 {
+    i32 enabled = countEnabledTracks();
+    if enabled <= 0 {return 0;}
+    i32 pick = GetRandomValue(0, enabled - 1);
+    i32 seen = 0;
+    for i32 i = 0; i < g_star_music_track_count; i++ {
+        if !g_star_music_track_disabled[i] {
+            if seen == pick {return i;}
+            seen += 1;
+        }
+    }
+    return 0;
+}
+
+fun nextEnabledTrackFrom(current: i32) >> i32 {
+    i32 enabled = countEnabledTracks();
+    if enabled <= 0 {return current;}
+    if enabled == 1 {
+        for i32 i = 0; i < g_star_music_track_count; i++ {
+            if !g_star_music_track_disabled[i] {return i;}
+        }
+        return current;
+    }
+    if g_music_shuffle {
+        i32 pick = GetRandomValue(0, enabled - 2);
+        i32 seen = 0;
+        for i32 i = 0; i < g_star_music_track_count; i++ {
+            if !g_star_music_track_disabled[i] && i != current {
+                if seen == pick {return i;}
+                seen += 1;
+            }
+        }
+        return current;
+    }
+    for i32 offset = 1; offset <= g_star_music_track_count; offset++ {
+        i32 next = (current + offset) % g_star_music_track_count;
+        if !g_star_music_track_disabled[next] {return next;}
+    }
+    return current;
+}
+
+fun applyDisabledBufToFlags() >> void {
+    for i32 i = 0; i < STAR_MUSIC_MAX_TRACKS; i++ {g_star_music_track_disabled[i] = false;}
+    ptr<u8> buf = &g_music_disabled_buf[0];
+    if buf[0] == 0 {return;}
+    i32 i = 0;
+    for (buf[i] != 0) {
+        i32 start = i;
+        for (buf[i] != 0 && buf[i] != (',' as u8)) {i += 1;}
+        i32 end = i;
+        if buf[i] == (',' as u8) {i += 1;}
+        if end <= start {continue;}
+        for i32 t = 0; t < g_star_music_track_count; t++ {
+            ptr<u8> bname = musicTrackBasename(t);
+            bool is_match = true;
+            i32 ti = start;
+            i32 bi = 0;
+            for (ti < end && bname[bi] != 0) {
+                if buf[ti] != bname[bi] {is_match = false; break;}
+                ti += 1;
+                bi += 1;
+            }
+            if is_match && ti == end && bname[bi] == 0 {
+                g_star_music_track_disabled[t] = true;
+            }
+        }
+    }
+}
+
+fun buildDisabledBufFromFlags() >> void {
+    i32 out = 0;
+    for i32 i = 0; i < g_star_music_track_count; i++ {
+        if !g_star_music_track_disabled[i] {continue;}
+        ptr<u8> bname = musicTrackBasename(i);
+        if out > 0 {
+            g_music_disabled_buf[out] = ',' as u8;
+            out += 1;
+        }
+        i32 j = 0;
+        for (bname[j] != 0 && out < 4094) {
+            g_music_disabled_buf[out] = bname[j];
+            out += 1;
+            j += 1;
+        }
+    }
+    g_music_disabled_buf[out] = 0;
 }
 
 fun copyTrackPath(slot: i32, src: ptr<u8>) >> void {
@@ -191,9 +311,12 @@ fun buildMusicPlaylist() >> void {
     g_star_music_track_count = 0;
     g_star_music_track_index = 0;
 
-    ptr<void> dir = openDir(STAR_MUSIC_DIR);
+    ptr<u8> music_dir = STAR_MUSIC_DIR;
+    if g_music_mode == STAR_MUSIC_MODE_CUSTOM {music_dir = STAR_MUSIC_CUSTOM_DIR;}
+
+    ptr<void> dir = openDir(music_dir);
     if dir == (0 as ptr<void>) {
-        printf("[zltris] failed to open music dir: %s\n", STAR_MUSIC_DIR);
+        printf("[zltris] failed to open music dir: %s\n", music_dir);
         return;
     }
 
@@ -207,7 +330,7 @@ fun buildMusicPlaylist() >> void {
 
         i32 slot = g_star_music_track_count;
         if slot >= STAR_MUSIC_MAX_TRACKS {break;}
-        ptr<u8> full_path = TextFormat("%s/%s", STAR_MUSIC_DIR, name);
+        ptr<u8> full_path = TextFormat("%s/%s", music_dir, name);
         copyTrackPath(slot, full_path);
         g_star_music_track_number[slot] = parseTrackNumberFromName(name);
         g_star_music_track_count += 1;
@@ -232,8 +355,10 @@ fun buildMusicPlaylist() >> void {
         }
     }
 
+    applyDisabledBufToFlags();
+
     if g_star_music_track_count <= 0 {
-        printf("[zltris] no tracks found in %s\n", STAR_MUSIC_DIR);
+        printf("[zltris] no tracks found in %s\n", music_dir);
         return;
     }
 
@@ -435,7 +560,7 @@ fun loadStarMusic() >> void {
 
     buildMusicPlaylist();
     if g_star_music_track_count <= 0 {return;}
-    i32 start_track = GetRandomValue(0, g_star_music_track_count - 1);
+    i32 start_track = getRandomEnabledTrack();
     loadStarMusicTrack(start_track);
 }
 
@@ -467,8 +592,7 @@ fun updateStarMusicPlayback() >> void {
     }
 
     if track_ended {
-        i32 next_track = g_star_music_track_index + 1;
-        if next_track >= g_star_music_track_count {next_track = 0;}
+        i32 next_track = nextEnabledTrackFrom(g_star_music_track_index);
         loadStarMusicTrack(next_track);
         return;
     }

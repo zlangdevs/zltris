@@ -16,6 +16,9 @@ use zltris.scale
 #define PIECE_L 4
 #define PIECE_S 5
 
+#define CHALLENGE_KICK_SRS 0
+#define CHALLENGE_KICK_NONE 1
+
 fun clearWithColor(color_rgba: u32) >> void {
     ClearBackground(toColor(color_rgba));
 }
@@ -502,7 +505,75 @@ fun playerSpawnY() >> i32 {
 }
 
 fun gravityInterval() >> f32 {
-    return 0.7;
+    if isChallengeMode() {
+        f32 speed = g_challenge_start_gravity + g_challenge_gravity_ramp * (g_rt.run_timer / (60.0 as f32));
+        if speed < (0.05 as f32) {speed = 0.05 as f32;}
+        if speed > (60.0 as f32) {speed = 60.0 as f32;}
+        return (1.0 as f32) / speed;
+    }
+    return 0.7 as f32;
+}
+
+fun applyComboPracticeWalls() >> void {
+    if !isComboTrainerMode() {return;}
+    for i32 y = 0; y < BOARD_H; y++ {
+        for i32 x = 0; x < 3; x++ {boardSet(x, y, 8);}
+        for i32 x = 7; x < BOARD_W; x++ {boardSet(x, y, 8);}
+    }
+}
+
+fun applyComboPracticeStarterPattern() >> void {
+    if !isComboTrainerMode() {return;}
+
+    i32 y_top = BOARD_H - 2;
+    i32 y_bottom = BOARD_H - 1;
+    for i32 x = 3; x <= 6; x++ {
+        boardSet(x, y_top, 0);
+        boardSet(x, y_bottom, 0);
+    }
+
+    i32 pat = g_combo_practice_pattern_index;
+    if pat < 0 {pat = 0;}
+    if pat > 2 {pat = pat % 3;}
+
+    if pat == 0 {
+        boardSet(3, y_bottom, 8);
+        boardSet(4, y_bottom, 8);
+        boardSet(5, y_bottom, 8);
+        return;
+    }
+
+    if pat == 1 {
+        boardSet(3, y_top, 8);
+        boardSet(3, y_bottom, 8);
+        boardSet(4, y_bottom, 8);
+        return;
+    }
+
+    boardSet(3, y_top, 8);
+    boardSet(4, y_top, 8);
+    boardSet(3, y_bottom, 8);
+}
+
+fun applyChallengeStartGarbage() >> void {
+    if !isChallengeMode() {return;}
+    if g_challenge_start_garbage_lines <= 0 {return;}
+
+    i32 lines = g_challenge_start_garbage_lines;
+    if lines < 0 {lines = 0;}
+    if lines > 19 {lines = 19;}
+    insertGarbageIntoPlayer(lines);
+    if g_play.game_over {return;}
+
+    g_piece_y -= lines;
+    i32 lift = 0;
+    for (!currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) && lift < 20) {
+        g_piece_y -= 1;
+        lift += 1;
+    }
+    if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {g_play.game_over = true;}
+    g_rt.lock_timer = 0.0;
+    applyDcd();
 }
 
 fun spawnNextPiece() >> void {
@@ -534,6 +605,10 @@ fun resetBoard() >> void {
 
 fun resetGame() >> void {
     resetBoard();
+    if isComboTrainerMode() {
+        applyComboPracticeWalls();
+        applyComboPracticeStarterPattern();
+    }
     g_play.queue_count = 0;
     g_play.bag_pos = BAG_SIZE;
     g_play.score = 0;
@@ -733,6 +808,7 @@ fun insertGarbageIntoPlayer(amount: i32) >> void {
         }
         if overflow {g_play.game_over = true;}
     }
+    applyComboPracticeWalls();
 }
 
 fun addFreePlayGarbageLine() >> void {
@@ -850,13 +926,13 @@ fun initBotMatch() >> void {
 }
 
 fun holdCurrent() >> void {
-    if g_hold_used {return;}
+    if g_hold_used && !g_challenge_infinite_hold {return;}
 
     i32 current = g_piece_kind;
     if (g_hold_kind < 0) {
         g_hold_kind = current;
         spawnNextPiece();
-        g_hold_used = true;
+        if g_challenge_infinite_hold {g_hold_used = false;} else {g_hold_used = true;}
         return;
     }
 
@@ -868,7 +944,7 @@ fun holdCurrent() >> void {
     g_rt.gravity_timer = 0.0;
     g_rt.soft_timer = 0.0;
     g_rt.lock_timer = 0.0;
-    g_hold_used = true;
+    if g_challenge_infinite_hold {g_hold_used = false;} else {g_hold_used = true;}
     g_rt.shift_hold_timer = 0.0;
     g_rt.shift_repeat_timer = 0.0;
     g_rt.shift_dir = 0;
@@ -905,7 +981,9 @@ fun tryRotate(dir: i32) >> bool {
         return false;
     }
 
-    for i32 test = 0; test < 5; test++ {
+    i32 max_tests = 5;
+    if isChallengeMode() && g_challenge_kick_table == CHALLENGE_KICK_NONE {max_tests = 1;}
+    for i32 test = 0; test < max_tests; test++ {
         i32 dx = kickX(g_piece_kind, from, to, test);
         i32 dy = kickY(g_piece_kind, from, to, test);
         if (currentFitsAt(g_piece_x + dx, g_piece_y - dy, to)) {

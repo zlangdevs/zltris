@@ -157,6 +157,12 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
     writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
     writeLineFd(fd, TextFormat("music_volume=%.2f", g_music_volume));
+    writeLineFd(fd, TextFormat("music_mode=%i", g_music_mode));
+    i32 music_shuffle_flag = 0;
+    if g_music_shuffle {music_shuffle_flag = 1;}
+    writeLineFd(fd, TextFormat("music_shuffle=%i", music_shuffle_flag));
+    buildDisabledBufFromFlags();
+    writeLineFd(fd, TextFormat("music_disabled=%s", &g_music_disabled_buf[0]));
     writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
 
     close(fd);
@@ -239,6 +245,17 @@ fun loadSettingsFile() >> void {
                     g_star_music_style = atoi(value);
                 } else if (strEq(key, "music_volume")) {
                     g_music_volume = parseFloatValue(value, g_music_volume);
+                } else if (strEq(key, "music_mode")) {
+                    g_music_mode = atoi(value);
+                } else if (strEq(key, "music_shuffle")) {
+                    g_music_shuffle = parseBoolValue(value, g_music_shuffle);
+                } else if (strEq(key, "music_disabled")) {
+                    i32 vi = 0;
+                    for (vi < 4094 && value[vi] != 0) {
+                        g_music_disabled_buf[vi] = value[vi];
+                        vi += 1;
+                    }
+                    g_music_disabled_buf[vi] = 0;
                 } else if (strEq(key, "board_bounciness")) {
                     g_board_bounciness = atoi(value);
                 }

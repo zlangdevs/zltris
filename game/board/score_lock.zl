@@ -16,6 +16,24 @@ use zltris.scale
 
 #define STAR_MODE_DROPS 1
 
+#define CHALLENGE_GARBAGE_NONE 0
+#define CHALLENGE_GARBAGE_BACKFIRE 1
+#define CHALLENGE_GARBAGE_UNCLEAR 2
+
+fun challengeGarbageFactor() >> f32 {
+    if g_challenge_garbage_factor < (0.1 as f32) {return 0.1 as f32;}
+    if g_challenge_garbage_factor > (2.0 as f32) {return 2.0 as f32;}
+    return g_challenge_garbage_factor;
+}
+
+fun challengeGarbageFromAmount(amount: f32) >> i32 {
+    if amount <= (0.0 as f32) {return 0;}
+    g_challenge_garbage_accum += amount;
+    i32 out = g_challenge_garbage_accum as i32;
+    g_challenge_garbage_accum -= out as f32;
+    return out;
+}
+
 fun lockCurrentPiece() >> void {
     for i32 idx = 0; idx < 4; idx++ {
         i32 x = g_piece_x + minoX(g_piece_kind, g_piece_rotation, idx);
@@ -52,6 +70,7 @@ fun clearLines() >> i32 {
     }
 
     if cleared > 0 {awardLineClear(cleared);}
+    if isComboTrainerMode() {applyComboPracticeWalls();}
     return cleared;
 }
 
@@ -194,6 +213,18 @@ fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) 
     g_rt.attack_sent += attack;
     if isVsBotMode() {routePlayerAttack(attack);}
 
+    if isChallengeMode() {
+        f32 factor = challengeGarbageFactor();
+        if g_challenge_garbage_mode == CHALLENGE_GARBAGE_BACKFIRE {
+            i32 extra = challengeGarbageFromAmount((attack as f32) * factor);
+            if extra > 0 {g_player_pending_garbage += extra;}
+        }
+        if lines_cleared <= 0 && g_challenge_garbage_mode == CHALLENGE_GARBAGE_UNCLEAR {
+            i32 extra_unclear = challengeGarbageFromAmount((1.0 as f32) * factor);
+            if extra_unclear > 0 {g_player_pending_garbage += extra_unclear;}
+        }
+    }
+
     if difficult {
         g_rt.back_to_back_count += 1;
         g_rt.back_to_back = true;
@@ -229,12 +260,24 @@ fun stepLock() >> void {
     triggerQuadClearFx(lines_cleared, spin);
     triggerAllClearFx(all_clear);
     applyLockScore(lines_cleared, spin, mini, all_clear);
+
+    if isComboTrainerMode() && lines_cleared <= 0 {
+        restartCurrentModeWithShake();
+        return;
+    }
+
     if (isFortyLinesMode() && g_play.round_state == ROUND_RUNNING && g_play.lines >= 40) {
         g_play = g_play.with_round_state(ROUND_FINISHED);
         return;
     }
 
     if isVsBotMode() && g_player_pending_garbage > 0 {
+        insertGarbageIntoPlayer(g_player_pending_garbage);
+        g_player_pending_garbage = 0;
+        if g_play.game_over {return;}
+    }
+
+    if isChallengeMode() && g_player_pending_garbage > 0 {
         insertGarbageIntoPlayer(g_player_pending_garbage);
         g_player_pending_garbage = 0;
         if g_play.game_over {return;}
