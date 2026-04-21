@@ -19,9 +19,23 @@ use raylib
 
 #define LINE_FX_BOARD_BOT 1
 
+#define RHYTHM_BASE_INPUT 0
+#define RHYTHM_BASE_DROP 1
+
+fun rhythmRegisterPlayerAction(is_drop: bool) >> void {
+    if !isRhythmMode() {return;}
+    if is_drop || g_rhythm_based == RHYTHM_BASE_INPUT {rhythmRegisterInput();}
+}
+
 fun updateHorizontalInput(dt: f32) >> void {
-    if IsKeyPressed(KEY_LEFT) {g_rt.last_horizontal_press = -1;}
-    if IsKeyPressed(KEY_RIGHT) {g_rt.last_horizontal_press = 1;}
+    if IsKeyPressed(KEY_LEFT) {
+        g_rt.last_horizontal_press = -1;
+        rhythmRegisterPlayerAction(false);
+    }
+    if IsKeyPressed(KEY_RIGHT) {
+        g_rt.last_horizontal_press = 1;
+        rhythmRegisterPlayerAction(false);
+    }
 
     bool left_down = IsKeyDown(KEY_LEFT);
     bool right_down = IsKeyDown(KEY_RIGHT);
@@ -91,10 +105,24 @@ fun updateHorizontalInput(dt: f32) >> void {
 fun updateMovementInput(dt: f32) >> void {
     updateHorizontalInput(dt);
 
-    if IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X) {tryRotate(1);}
-    if IsKeyPressed(KEY_Z) {tryRotate(-1);}
-    if IsKeyPressed(KEY_C) {holdCurrent();}
-    if IsKeyPressed(KEY_SPACE) {hardDrop();}
+    bool rotate_cw = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X);
+    if rotate_cw {
+        tryRotate(1);
+        rhythmRegisterPlayerAction(false);
+    }
+    if IsKeyPressed(KEY_Z) {
+        tryRotate(-1);
+        rhythmRegisterPlayerAction(false);
+    }
+    if IsKeyPressed(KEY_C) {
+        holdCurrent();
+        rhythmRegisterPlayerAction(false);
+    }
+    if IsKeyPressed(KEY_SPACE) {
+        rhythmRegisterPlayerAction(true);
+        hardDrop();
+    }
+    if IsKeyPressed(KEY_DOWN) {rhythmRegisterPlayerAction(false);}
 }
 
 fun updateSoftDrop(dt: f32) >> void {
@@ -290,6 +318,18 @@ fun updateDuelBot(dt: f32) >> void {
 fun updateAiBot() >> void {
     if !g_ai_enabled {return;}
 
+    if isRhythmMode() {
+        if g_play.round_state != ROUND_RUNNING {return;}
+        if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
+        rhythmRefreshNextBeatTime();
+        if g_rhythm_target_index >= g_rhythm_target_count {return;}
+        if g_rhythm_target_index == g_rhythm_bot_last_action_index {return;}
+
+        f32 now = rhythmClockTime();
+        f32 dt_next = g_rhythm_next_beat_time - now;
+        if dt_next > 0.08 as f32 || dt_next < -0.05 as f32 {return;}
+    }
+
     i32 level = (g_play.lines / 10) + 1;
     bool b2b = g_rt.back_to_back_count > 0;
     i32 lookahead_count = g_play.queue_count;
@@ -306,11 +346,85 @@ fun updateAiBot() >> void {
 
     if !move.valid {
         aiLog(TextFormat("fp plan invalid kind=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));
+        if isRhythmMode() {
+            rhythmRegisterInput();
+            hardDrop();
+            g_rhythm_bot_last_action_index = g_rhythm_target_index;
+            return;
+        }
         hardDrop();
         return;
     }
 
     aiLog(TextFormat("fp plan kind=%i x=%i rot=%i tspin=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i lookahead=%i", g_piece_kind, move.x, move.rotation, move.tspin as i32, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access, lookahead_count));
+
+    if isRhythmMode() {
+        if g_rhythm_based == RHYTHM_BASE_DROP {
+            g_piece_rotation = move.rotation;
+            g_piece_x = move.x;
+            if move.tspin {
+                g_rt.last_rotate_success = true;
+                g_rt.last_rotate_kick_test = 1;
+            } else {
+                g_rt.last_rotate_success = false;
+                g_rt.last_rotate_kick_test = -1;
+            }
+
+            rhythmRegisterInput();
+            if !currentFitsAt(g_piece_x, g_piece_y, g_piece_rotation) {
+                hardDrop();
+                g_rhythm_bot_last_action_index = g_rhythm_target_index;
+                return;
+            }
+
+            g_piece_y = currentGhostY();
+            stepLock();
+            g_rhythm_bot_last_action_index = g_rhythm_target_index;
+            return;
+        }
+
+        if g_piece_rotation != move.rotation {
+            i32 from = g_piece_rotation;
+            if from < 0 {from = 0;}
+            if from > 3 {from = from % 4;}
+            i32 to = move.rotation;
+            if to < 0 {to = 0;}
+            if to > 3 {to = to % 4;}
+
+            i32 cw = to - from;
+            if cw < 0 {cw += 4;}
+            i32 ccw = from - to;
+            if ccw < 0 {ccw += 4;}
+
+            rhythmRegisterInput();
+            if cw <= ccw {
+                if !tryRotate(1) {tryRotate(-1);}
+            } else {
+                if !tryRotate(-1) {tryRotate(1);}
+            }
+            g_rhythm_bot_last_action_index = g_rhythm_target_index;
+            return;
+        }
+
+        if g_piece_x < move.x {
+            rhythmRegisterInput();
+            tryMove(1, 0);
+            g_rhythm_bot_last_action_index = g_rhythm_target_index;
+            return;
+        }
+
+        if g_piece_x > move.x {
+            rhythmRegisterInput();
+            tryMove(-1, 0);
+            g_rhythm_bot_last_action_index = g_rhythm_target_index;
+            return;
+        }
+
+        rhythmRegisterInput();
+        hardDrop();
+        g_rhythm_bot_last_action_index = g_rhythm_target_index;
+        return;
+    }
 
     g_piece_rotation = move.rotation;
     g_piece_x = move.x;
@@ -333,6 +447,7 @@ fun updateAiBot() >> void {
 
 fun updateGameScreen() >> void {
     f32 dt = GetFrameTime();
+    rhythmUpdateIndicatorVisual(dt);
     updateBackgroundStarReaction(dt);
     updateBoardShake(dt);
     updateRestartBoardEffects(dt);
@@ -380,6 +495,12 @@ fun updateGameScreen() >> void {
                 g_rt.countdown_timer = 0.0;
                 g_play = g_play.with_round_state(ROUND_RUNNING);
                 g_rt.mode_timer = 0.0;
+                if isRhythmMode() {
+                    if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
+                    g_rhythm_ignore_until_time = rhythmClockTime() + (0.10 as f32);
+                    g_rhythm_prev_beat_missed = false;
+                    g_rhythm_last_beat_hit = false;
+                }
             }
             return;
         }
@@ -399,6 +520,8 @@ fun updateGameScreen() >> void {
     if (!g_play.game_over && !isBotDuelsMode()) {
         if !modeUsesRoundState() || g_play.round_state == ROUND_RUNNING {g_rt.run_timer += dt;}
     }
+
+    if rhythmUpdateBeatClock() {return;}
 
     if isBotDuelsMode() {
         updateBotDuelsMode(dt);

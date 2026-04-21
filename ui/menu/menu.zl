@@ -15,7 +15,8 @@ use zltris.ui
 #define MENU_SOLO_FREE_PLAY 0
 #define MENU_SOLO_CHALLENGE 1
 #define MENU_SOLO_COMBO_TRAINER 2
-#define MENU_SOLO_COUNT 3
+#define MENU_SOLO_RHYTHM 3
+#define MENU_SOLO_COUNT 4
 
 #define MENU_ACTION_NONE 0
 #define MENU_ACTION_START_FREE_PLAY 1
@@ -26,6 +27,7 @@ use zltris.ui
 #define MENU_ACTION_START_BOT_DUELS 6
 #define MENU_ACTION_OPEN_CHALLENGE_SETUP 7
 #define MENU_ACTION_START_COMBO_TRAINER 8
+#define MENU_ACTION_OPEN_RHYTHM_SETUP 9
 
 struct MenuState {
     index i32,
@@ -103,6 +105,7 @@ fun menuActionOpenBotSetup() >> i32 { return MENU_ACTION_OPEN_BOT_SETUP; }
 fun menuActionStartBotDuels() >> i32 { return MENU_ACTION_START_BOT_DUELS; }
 fun menuActionOpenChallengeSetup() >> i32 { return MENU_ACTION_OPEN_CHALLENGE_SETUP; }
 fun menuActionStartComboTrainer() >> i32 { return MENU_ACTION_START_COMBO_TRAINER; }
+fun menuActionOpenRhythmSetup() >> i32 { return MENU_ACTION_OPEN_RHYTHM_SETUP; }
 
 fun menuButtonCount() >> i32 {
     if BOTDEVMODE {return 6;}
@@ -176,11 +179,12 @@ fun selectMenuIndex(index: i32) >> i32 {
 fun soloLabel(index: i32) >> ptr<u8> {
     if index == MENU_SOLO_FREE_PLAY {return "FREE PLAY";}
     if index == MENU_SOLO_CHALLENGE {return "CHALLENGE";}
-    return "COMBO TRAINER";
+    if index == MENU_SOLO_COMBO_TRAINER {return "COMBO TRAINER";}
+    return "RHYTHM";
 }
 
 fun soloEnabled(index: i32) >> bool {
-    return index == MENU_SOLO_FREE_PLAY || index == MENU_SOLO_CHALLENGE || index == MENU_SOLO_COMBO_TRAINER;
+    return index == MENU_SOLO_FREE_PLAY || index == MENU_SOLO_CHALLENGE || index == MENU_SOLO_COMBO_TRAINER || index == MENU_SOLO_RHYTHM;
 }
 
 fun soloButtonY(index: i32) >> i64 {
@@ -194,6 +198,7 @@ fun selectSoloIndex(index: i32) >> i32 {
         if index == MENU_SOLO_FREE_PLAY {return MENU_ACTION_START_FREE_PLAY;}
         if index == MENU_SOLO_CHALLENGE {return MENU_ACTION_OPEN_CHALLENGE_SETUP;}
         if index == MENU_SOLO_COMBO_TRAINER {return MENU_ACTION_START_COMBO_TRAINER;}
+        if index == MENU_SOLO_RHYTHM {return MENU_ACTION_OPEN_RHYTHM_SETUP;}
     }
     i32 notice_id = 100 + index;
     g_menu = g_menu.show_notice(notice_id);

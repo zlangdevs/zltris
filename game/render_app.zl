@@ -22,13 +22,16 @@ use zltris.ui
 #define SCREEN_SETTINGS 2
 #define SCREEN_BOT_SETUP 3
 #define SCREEN_CHALLENGE_SETUP 4
+#define SCREEN_RHYTHM_SETUP 5
 
 #define MODE_FREE_PLAY 0
 #define MODE_40_LINES 1
 #define MODE_BLITZ 2
 #define MODE_COMBO_TRAINER 6
 #define MODE_CHALLENGE 5
+#define MODE_RHYTHM 7
 
+#define ROUND_RUNNING 0
 #define ROUND_COUNTDOWN 1
 #define ROUND_FINISHED 2
 
@@ -199,8 +202,13 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
     }
 
     if (g_play.round_state == ROUND_FINISHED) {
-        fillRect(board_left + 18, board_top + 224, 284, 178, alphaColor(rgba(8, 11, 18, 255), 0.88));
-        strokeRect(board_left + 18, board_top + 224, 284, 178, theme.panel_stroke);
+        i64 box_x = board_left + 18;
+        i64 box_y = board_top + 224;
+        i64 box_w = 284;
+        i64 box_h = 178;
+        if isRhythmMode() {box_h = 226;}
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if (isFortyLinesMode()) {
             drawTextColor(font, "40 DONE", board_left + 76, board_top + 248, 24, theme.text_main);
             drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), board_left + 62, board_top + 294, 14, theme.panel_stroke);
@@ -209,7 +217,123 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
             drawTextColor(font, "BLITZ END", board_left + 60, board_top + 248, 24, theme.text_main);
             drawTextColor(font, TextFormat("SCORE %i", g_play.score), board_left + 62, board_top + 294, 14, theme.panel_stroke);
         }
-        drawTextColor(font, "R retry  ESC menu", board_left + 62, board_top + 334, 12, theme.text_muted);
+        if (isRhythmMode()) {
+            drawTextColor(font, "RHYTHM END", board_left + 46, board_top + 248, 24, theme.text_main);
+            drawTextColor(font, TextFormat("SCORE %i", g_rhythm_score), board_left + 62, board_top + 292, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("MISSED %i", g_rhythm_missed_beats), board_left + 62, board_top + 322, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("AVG %.0f ms", rhythmAverageAccuracyMs()), board_left + 62, board_top + 352, 13, theme.panel_stroke);
+        }
+        i64 retry_y = board_top + 334;
+        if isRhythmMode() {retry_y = board_top + 410;}
+        drawTextColor(font, "R retry  ESC menu", board_left + 62, retry_y, 12, theme.text_muted);
+    }
+}
+
+fun drawRhythmBoardPulse(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if !isRhythmMode() {return;}
+    if g_play.round_state != ROUND_RUNNING {return;}
+
+    f32 pulse = rhythmPulseAlpha();
+    f32 marker = rhythmIndicatorLevel();
+    f32 strength = pulse;
+    if marker > strength {strength = marker;}
+    if strength <= 0.0 as f32 {return;}
+
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (BOARD_W * CELL) as i64;
+    i64 outer_x = board_left - 12;
+    i64 outer_y = board_top - 12;
+    i64 outer_w = board_w + 24;
+    i64 outer_h = board_h + 24;
+
+    u32 glow = alphaColor(theme.text_main, (0.12 as f32) + strength * (0.56 as f32));
+    u32 pulse_stroke = alphaColor(theme.panel_stroke, (0.18 as f32) + strength * (0.74 as f32));
+    strokeRect(outer_x, outer_y, outer_w, outer_h, glow);
+    strokeRect(outer_x + 1, outer_y + 1, outer_w - 2, outer_h - 2, pulse_stroke);
+
+    i64 edge_thickness = (2.0 as f32 + marker * (2.0 as f32)) as i64;
+    if edge_thickness < 2 {edge_thickness = 2;}
+    u32 beat_edge = alphaColor(theme.text_main, (0.22 as f32) + marker * (0.76 as f32));
+    fillRect(outer_x, outer_y, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y + outer_h - edge_thickness, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y, edge_thickness, outer_h, beat_edge);
+    fillRect(outer_x + outer_w - edge_thickness, outer_y, edge_thickness, outer_h, beat_edge);
+
+    u32 inner_tint = alphaColor(theme.panel_stroke, marker * (0.10 as f32));
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, inner_tint);
+
+    u32 hot = alphaColor(theme.text_main, marker * marker * (0.88 as f32));
+    strokeRect(outer_x - 2, outer_y - 2, outer_w + 4, outer_h + 4, hot);
+}
+
+fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
+    if !isRhythmMode() {return;}
+
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+
+    i64 panel_w = board_w;
+    i64 panel_h = 68;
+    i64 panel_x = board_left;
+    i64 panel_y = board_top + board_h + 16;
+
+    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84 as f32));
+    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.86 as f32));
+    drawTextColor(font, "RHYTHM", panel_x + 10, panel_y + 8, 10, theme.text_muted);
+
+    i64 lane_x = panel_x + 10;
+    i64 lane_w = panel_w - 20;
+    i64 lane_y = panel_y + 44;
+    fillRect(lane_x, lane_y - 1, lane_w, 2, alphaColor(theme.text_muted, 0.44 as f32));
+
+    f32 speed = g_rhythm_music_speed;
+    if speed < 0.75 as f32 {speed = 0.75 as f32;}
+    if speed > 1.50 as f32 {speed = 1.50 as f32;}
+    f32 stretch = (1.0 as f32) / speed;
+    f32 left_window = (0.36 as f32) * stretch;
+    f32 right_window = (1.64 as f32) * stretch;
+    f32 total_window = left_window + right_window;
+    i64 hit_x = lane_x + (((lane_w as f32) * (left_window / total_window)) as i64);
+
+    f32 marker = rhythmIndicatorLevel();
+    u32 line_col = alphaColor(theme.text_main, (0.44 as f32) + marker * (0.50 as f32));
+    fillRect(hit_x - 1, lane_y - 22, 3, 44, line_col);
+    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, (0.52 as f32) + marker * (0.44 as f32)));
+
+    if g_rhythm_target_count <= 0 {
+        drawTextColor(font, "no beat map", panel_x + 10, panel_y + 52, 10, theme.text_muted);
+        return;
+    }
+
+    f32 now = rhythmClockTime();
+    i32 start = g_rhythm_target_index - 24;
+    if start < 0 {start = 0;}
+    i32 end = g_rhythm_target_index + 96;
+    if end > g_rhythm_target_count {end = g_rhythm_target_count;}
+
+    for i32 i = start; i < end; i++ {
+        f32 dt = g_rhythm_target_times[i] - now;
+        if dt < -left_window || dt > right_window {continue;}
+
+        f32 x01 = (dt + left_window) / total_window;
+        if x01 < 0.0 as f32 {x01 = 0.0 as f32;}
+        if x01 > 1.0 as f32 {x01 = 1.0 as f32;}
+        i64 cx = lane_x + ((lane_w as f32 * x01) as i64);
+
+        f32 near = 1.0 as f32 - absf(dt) / (0.40 as f32 + right_window * (0.26 as f32));
+        if near < 0.0 as f32 {near = 0.0 as f32;}
+        i64 r = 3 + (near * (3.0 as f32)) as i64;
+
+        u32 dot_col = alphaColor(theme.panel_stroke, (0.30 as f32) + near * (0.48 as f32));
+        if i == g_rhythm_target_index {
+            dot_col = alphaColor(theme.text_main, (0.56 as f32) + marker * (0.40 as f32));
+            r += 1;
+        }
+
+        DrawCircle(uiX(cx), uiY(lane_y), uiS(r) as f32, toColor(dot_col));
+        DrawCircleLines(uiX(cx), uiY(lane_y), uiS(r + 1) as f32, toColor(alphaColor(theme.board_bg, 0.80 as f32)));
     }
 }
 
@@ -234,6 +358,12 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
 
     if (g_game.screen == SCREEN_CHALLENGE_SETUP) {
         drawChallengeSetup(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_RHYTHM_SETUP) {
+        drawRhythmSetup(font, theme);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -422,6 +552,10 @@ fun updateApp() >> void {
         } else if (action == menuActionOpenChallengeSetup()) {
             challengeInit();
             g_game = g_game.with_screen(SCREEN_CHALLENGE_SETUP);
+        } else if (action == menuActionOpenRhythmSetup()) {
+            rhythmPrepareCustomMusicPlaylist();
+            rhythmSetupInit();
+            g_game = g_game.with_screen(SCREEN_RHYTHM_SETUP);
         } else if (action == menuActionStartComboTrainer()) {
             g_game = g_game.with_screen(SCREEN_GAME);
             startGameMode(MODE_COMBO_TRAINER);
@@ -464,6 +598,9 @@ fun updateApp() >> void {
         copyCustomShaderName(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
         i32 prev_music_mode = g_music_mode;
         bool prev_music_shuffle = g_music_shuffle;
+        bool prev_settings_controls_open = g_settings_controls_expanded;
+        bool prev_settings_video_open = g_settings_video_expanded;
+        bool prev_settings_audio_open = g_settings_audio_expanded;
 
         i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
         bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
@@ -492,6 +629,9 @@ fun updateApp() >> void {
             custom_shader_changed ||
             prev_music_mode != g_music_mode ||
             prev_music_shuffle != g_music_shuffle ||
+            prev_settings_controls_open != g_settings_controls_expanded ||
+            prev_settings_video_open != g_settings_video_expanded ||
+            prev_settings_audio_open != g_settings_audio_expanded ||
             g_songs_modified) {
             clampSettings();
             if prev_shader_mode != g_post_shader_mode || custom_shader_changed {loadPostEffects();}
@@ -527,6 +667,21 @@ fun updateApp() >> void {
         if challenge_action == challengeActionStart() {
             g_game = g_game.with_screen(SCREEN_GAME);
             startGameMode(MODE_CHALLENGE);
+            return;
+        }
+        return;
+    }
+
+    if (g_game.screen == SCREEN_RHYTHM_SETUP) {
+        i32 rhythm_action = updateRhythmSetup();
+        if rhythm_action == rhythmSetupActionBack() {
+            rhythmRestoreMusicPlaylistIfNeeded();
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if rhythm_action == rhythmSetupActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_RHYTHM);
             return;
         }
         return;
@@ -577,8 +732,10 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
         drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
         drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
     }
+    drawRhythmBeatIndicator(font, theme);
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
+    drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
     
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
@@ -907,8 +1064,10 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
         drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
         drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
     }
+    drawRhythmBeatIndicator(font, theme);
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
+    drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
 
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
