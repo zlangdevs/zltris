@@ -86,12 +86,15 @@ fun init(self: SettingsState) >> SettingsState {
     SettingsState next = self;
     next.selected_row = SETTINGS_ROW_THEME;
     next.scroll = 0.0;
-    next.controls_expanded = true;
-    next.controls_anim = 1.0 as f32;
-    next.video_expanded = true;
-    next.video_anim = 1.0 as f32;
-    next.audio_expanded = true;
-    next.audio_anim = 1.0 as f32;
+    next.controls_expanded = g_settings_controls_expanded;
+    next.controls_anim = 0.0 as f32;
+    if next.controls_expanded {next.controls_anim = 1.0 as f32;}
+    next.video_expanded = g_settings_video_expanded;
+    next.video_anim = 0.0 as f32;
+    if next.video_expanded {next.video_anim = 1.0 as f32;}
+    next.audio_expanded = g_settings_audio_expanded;
+    next.audio_anim = 0.0 as f32;
+    if next.audio_expanded {next.audio_anim = 1.0 as f32;}
     next.picker_open = false;
     next.picker_scroll = 0.0 as f32;
     next.picker_selected = 0;
@@ -807,9 +810,18 @@ fun sectionExpanded(row: i32) >> bool {
 }
 
 fun setSectionExpanded(row: i32, open: bool) >> void {
-    if row == SETTINGS_ROW_SECTION_CONTROLS {g_settings.controls_expanded = open; return;}
-    if row == SETTINGS_ROW_SECTION_VIDEO {g_settings.video_expanded = open; return;}
+    if row == SETTINGS_ROW_SECTION_CONTROLS {
+        g_settings.controls_expanded = open;
+        g_settings_controls_expanded = open;
+        return;
+    }
+    if row == SETTINGS_ROW_SECTION_VIDEO {
+        g_settings.video_expanded = open;
+        g_settings_video_expanded = open;
+        return;
+    }
     g_settings.audio_expanded = open;
+    g_settings_audio_expanded = open;
 }
 
 fun toggleSection(row: i32) >> void {

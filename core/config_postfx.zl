@@ -164,6 +164,15 @@ fun saveSettingsFile() >> void {
     buildDisabledBufFromFlags();
     writeLineFd(fd, TextFormat("music_disabled=%s", &g_music_disabled_buf[0]));
     writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
+    i32 controls_open = 0;
+    if g_settings_controls_expanded {controls_open = 1;}
+    i32 video_open = 0;
+    if g_settings_video_expanded {video_open = 1;}
+    i32 audio_open = 0;
+    if g_settings_audio_expanded {audio_open = 1;}
+    writeLineFd(fd, TextFormat("settings_controls_open=%i", controls_open));
+    writeLineFd(fd, TextFormat("settings_video_open=%i", video_open));
+    writeLineFd(fd, TextFormat("settings_audio_open=%i", audio_open));
 
     close(fd);
 }
@@ -258,6 +267,12 @@ fun loadSettingsFile() >> void {
                     g_music_disabled_buf[vi] = 0;
                 } else if (strEq(key, "board_bounciness")) {
                     g_board_bounciness = atoi(value);
+                } else if (strEq(key, "settings_controls_open")) {
+                    g_settings_controls_expanded = parseBoolValue(value, g_settings_controls_expanded);
+                } else if (strEq(key, "settings_video_open")) {
+                    g_settings_video_expanded = parseBoolValue(value, g_settings_video_expanded);
+                } else if (strEq(key, "settings_audio_open")) {
+                    g_settings_audio_expanded = parseBoolValue(value, g_settings_audio_expanded);
                 }
             }
         }
