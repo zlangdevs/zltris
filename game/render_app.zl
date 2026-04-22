@@ -298,9 +298,67 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
     i64 hit_x = lane_x + (((lane_w as f32) * (left_window / total_window)) as i64);
 
     f32 marker = rhythmIndicatorLevel();
-    u32 line_col = alphaColor(theme.text_main, (0.44 as f32) + marker * (0.50 as f32));
+    bool beat_active = g_play.round_state == ROUND_RUNNING && g_rhythm_target_index >= 0 && g_rhythm_target_index < g_rhythm_target_count;
+    bool beat_required = false;
+    if beat_active {beat_required = g_rhythm_target_times[g_rhythm_target_index] > g_rhythm_ignore_until_time;}
+    bool beat_pending = beat_active && beat_required && g_rhythm_target_index != g_rhythm_last_scored_target_index;
+
+    f32 pending = 0.0 as f32;
+    if beat_pending {
+        pending = 0.74 as f32;
+    } else {
+        pending = 0.06 as f32 + marker * (0.18 as f32);
+    }
+
+    if beat_pending {
+        f32 dt_next = g_rhythm_target_times[g_rhythm_target_index] - rhythmClockTime();
+        if dt_next < -left_window {dt_next = -left_window;}
+        if dt_next > right_window {dt_next = right_window;}
+        f32 x01_next = (dt_next + left_window) / total_window;
+        if x01_next < 0.0 as f32 {x01_next = 0.0 as f32;}
+        if x01_next > 1.0 as f32 {x01_next = 1.0 as f32;}
+        i64 next_x = lane_x + ((lane_w as f32 * x01_next) as i64);
+
+        i64 seg_l = hit_x;
+        i64 seg_r = next_x;
+        if seg_l > seg_r {
+            i64 tmp = seg_l;
+            seg_l = seg_r;
+            seg_r = tmp;
+        }
+        i64 seg_w = seg_r - seg_l + 1;
+        if seg_w < 2 {seg_w = 2;}
+
+        fillRect(seg_l, lane_y - 4, seg_w, 8, alphaColor(theme.panel_stroke, 0.46 as f32));
+        fillRect(seg_l, lane_y - 2, seg_w, 4, alphaColor(theme.text_main, 0.66 as f32));
+    }
+
+    u32 line_col = alphaColor(theme.text_main, (0.38 as f32) + marker * (0.36 as f32) + pending * (0.22 as f32));
     fillRect(hit_x - 1, lane_y - 22, 3, 44, line_col);
-    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, (0.52 as f32) + marker * (0.44 as f32)));
+    u32 line_glow = alphaColor(theme.panel_stroke, pending * (0.66 as f32));
+    fillRect(hit_x - 4, lane_y - 24, 9, 48, line_glow);
+    fillRect(hit_x - 7, lane_y - 21, 15, 42, alphaColor(theme.panel_stroke, pending * (0.32 as f32)));
+    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, (0.52 as f32) + marker * (0.44 as f32) + pending * (0.10 as f32)));
+
+    if beat_pending {
+        f32 t = GetTime() as f32;
+        for i32 i = 0; i < 14; i++ {
+            f32 phase = t * ((0.86 as f32) + (i as f32) * (0.04 as f32)) + (i as f32) * (0.37 as f32);
+            f32 frac = phase - (phase as i32) as f32;
+            if frac < 0.0 as f32 {frac += 1.0 as f32;}
+            i32 side = 1;
+            if i % 2 == 0 {side = -1;}
+            i64 band = 6 + ((i % 4) as i64) * 4;
+            i64 drift = ((phase * (11.0 as f32)) as i32 % 5) as i64;
+            i64 px = hit_x + (side as i64) * band + (side as i64) * drift;
+            i64 py = lane_y + 18 - (frac * (56.0 as f32)) as i64;
+            i64 pr = 2 + (i % 3);
+            f32 a = pending * ((0.24 as f32) + ((1.0 as f32) - frac) * (0.66 as f32));
+            u32 pc = alphaColor(theme.text_main, a);
+            DrawCircle(uiX(px), uiY(py), uiS(pr) as f32, toColor(pc));
+            DrawCircleLines(uiX(px), uiY(py), uiS(pr + 1) as f32, toColor(alphaColor(theme.panel_stroke, a * (0.58 as f32))));
+        }
+    }
 
     if g_rhythm_target_count <= 0 {
         drawTextColor(font, "no beat map", panel_x + 10, panel_y + 52, 10, theme.text_muted);
