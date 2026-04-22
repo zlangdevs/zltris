@@ -315,6 +315,7 @@ i32 g_rhythm_target_index = 0;
 bool g_rhythm_needs_sync = false;
 f32 g_rhythm_ignore_until_time = 0.0;
 i32 g_rhythm_bot_last_action_index = -1;
+i32 g_rhythm_last_scored_target_index = -1;
 bool g_rhythm_prev_beat_missed = false;
 bool g_rhythm_last_beat_hit = false;
 i32 g_rhythm_missed_beats = 0;

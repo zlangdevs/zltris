@@ -143,7 +143,12 @@ fun rhythmRestoreMusicPlaylistIfNeeded() >> void {
 
 fun rhythmMaxRate() >> f32 {
     f32 rate = g_rhythm_max_ips;
-    if rhythmBasedIsDrop() {rate = g_rhythm_max_dps;}
+    if rhythmBasedIsDrop() {
+        rate = g_rhythm_max_dps;
+        if rate < 0.3 as f32 {rate = 0.3 as f32;}
+        if rate > 5.0 as f32 {rate = 5.0 as f32;}
+        return rate;
+    }
     if rate < 0.5 as f32 {rate = 0.5 as f32;}
     if rate > 15.0 as f32 {rate = 15.0 as f32;}
     return rate;
@@ -335,6 +340,7 @@ fun rhythmSyncToTrackTime() >> void {
     rhythmRefreshNextBeatTime();
     g_rhythm_prev_beat_missed = false;
     g_rhythm_last_beat_hit = false;
+    g_rhythm_last_scored_target_index = -1;
     g_rhythm_needs_sync = false;
 }
 
@@ -412,6 +418,7 @@ fun rhythmRegisterInput() >> void {
 
     if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
     rhythmRefreshNextBeatTime();
+    if g_rhythm_target_index == g_rhythm_last_scored_target_index {return;}
 
     f32 interval = rhythmBeatInterval();
     f32 prev_t = g_rhythm_next_beat_time - interval;
@@ -434,17 +441,18 @@ fun rhythmRegisterInput() >> void {
     f32 ms = dist * (1000.0 as f32);
     g_rhythm_total_abs_ms += ms;
     g_rhythm_hit_count += 1;
-    if ms <= 140.0 as f32 {g_rhythm_last_beat_hit = true;}
+    g_rhythm_last_beat_hit = true;
 
     i32 pts = 0;
     if ms <= 30.0 as f32 {pts = 130;}
     else if ms <= 60.0 as f32 {pts = 90;}
     else if ms <= 100.0 as f32 {pts = 55;}
-    else if ms <= 160.0 as f32 {pts = 28;}
+    else if ms <= 140.0 as f32 {pts = 28;}
     else {pts = 8;}
 
     g_rhythm_score += pts;
     g_play.score += pts;
+    g_rhythm_last_scored_target_index = g_rhythm_target_index;
 }
 
 fun rhythmUpdateBeatClock() >> bool {
@@ -470,7 +478,7 @@ fun rhythmUpdateBeatClock() >> bool {
         bool missed_now = !g_rhythm_last_beat_hit;
         if missed_now {
             g_rhythm_missed_beats += 1;
-            if !g_rhythm_allow_miss {
+            if !g_rhythm_allow_miss && g_rhythm_prev_beat_missed {
                 triggerImmediateRestart(true);
                 return true;
             }
@@ -592,8 +600,8 @@ fun startGameMode(mode: i32) >> void {
         if g_rhythm_beat_sensitivity > 5.0 as f32 {g_rhythm_beat_sensitivity = 5.0 as f32;}
         if g_rhythm_max_ips < 0.5 as f32 {g_rhythm_max_ips = 0.5 as f32;}
         if g_rhythm_max_ips > 15.0 as f32 {g_rhythm_max_ips = 15.0 as f32;}
-        if g_rhythm_max_dps < 0.5 as f32 {g_rhythm_max_dps = 0.5 as f32;}
-        if g_rhythm_max_dps > 15.0 as f32 {g_rhythm_max_dps = 15.0 as f32;}
+        if g_rhythm_max_dps < 0.3 as f32 {g_rhythm_max_dps = 0.3 as f32;}
+        if g_rhythm_max_dps > 5.0 as f32 {g_rhythm_max_dps = 5.0 as f32;}
         if g_rhythm_music_speed < 0.75 as f32 {g_rhythm_music_speed = 0.75 as f32;}
         if g_rhythm_music_speed > 1.50 as f32 {g_rhythm_music_speed = 1.50 as f32;}
         g_music_playback_rate = g_rhythm_music_speed;
@@ -620,6 +628,7 @@ fun startGameMode(mode: i32) >> void {
     g_rhythm_needs_sync = false;
     g_rhythm_ignore_until_time = 0.0 as f32;
     g_rhythm_bot_last_action_index = -1;
+    g_rhythm_last_scored_target_index = -1;
     g_rhythm_prev_beat_missed = false;
     g_rhythm_last_beat_hit = false;
     g_rhythm_missed_beats = 0;
