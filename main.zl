@@ -41,6 +41,13 @@ fun main() >> i32 {
     g_game.theme_index = 0;
     initAiLogFile();
     loadSettingsFile();
+    if g_fullscreen_mode {
+        if !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+            ToggleBorderlessWindowed();
+        }
+        i32 mon = GetCurrentMonitor();
+        SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
+    }
     loadPostEffects();
     loadBotDuelsFile();
     applyChampionAiTuning();
