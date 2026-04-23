@@ -19,6 +19,49 @@ use zltris.scale
 #define CHALLENGE_KICK_SRS 0
 #define CHALLENGE_KICK_NONE 1
 
+#define THEME_COMPETITIVE_INDEX 5
+
+fun clampColorChannel(v: i32) >> i32 {
+    if v < 0 {return 0;}
+    if v > 255 {return 255;}
+    return v;
+}
+
+fun gammaTargetLuma(kind: i32) >> i32 {
+    if kind == PIECE_I {return 224;}
+    if kind == PIECE_O {return 194;}
+    if kind == PIECE_T {return 160;}
+    if kind == PIECE_J {return 128;}
+    if kind == PIECE_L {return 98;}
+    if kind == PIECE_S {return 210;}
+    return 86;
+}
+
+fun enhanceBlockGammaSeparation(kind: i32, color: u32) >> u32 {
+    i32 r = (color & 255) as i32;
+    i32 g = ((color >> 8) & 255) as i32;
+    i32 b = ((color >> 16) & 255) as i32;
+    i32 a = ((color >> 24) & 255) as i32;
+
+    i32 luma = (r * 30 + g * 59 + b * 11) / 100;
+    i32 target = gammaTargetLuma(kind);
+    i32 dl = target - luma;
+
+    i32 nr = r + ((dl * 80) / 100);
+    i32 ng = g + ((dl * 80) / 100);
+    i32 nb = b + ((dl * 80) / 100);
+
+    i32 nl = (nr * 30 + ng * 59 + nb * 11) / 100;
+    nr = nl + (((nr - nl) * 130) / 100);
+    ng = nl + (((ng - nl) * 130) / 100);
+    nb = nl + (((nb - nl) * 130) / 100);
+
+    nr = clampColorChannel(nr);
+    ng = clampColorChannel(ng);
+    nb = clampColorChannel(nb);
+    return (nr as u32) | ((ng as u32) << 8) | ((nb as u32) << 16) | ((a as u32) << 24);
+}
+
 fun clearWithColor(color_rgba: u32) >> void {
     ClearBackground(toColor(color_rgba));
 }
@@ -31,13 +74,18 @@ fun currentPps() >> f32 {
 fun ghostColor(base: u32) >> u32 { return alphaColor(base, 0.28); }
 
 fun pieceColor(theme: Theme, kind: i32) >> u32 {
-    if kind == PIECE_I {return theme.piece_i;}
-    if kind == PIECE_O {return theme.piece_o;}
-    if kind == PIECE_T {return theme.piece_t;}
-    if kind == PIECE_J {return theme.piece_j;}
-    if kind == PIECE_L {return theme.piece_l;}
-    if kind == PIECE_S {return theme.piece_s;}
-    return theme.piece_z;
+    u32 color = theme.piece_z;
+    if kind == PIECE_I {color = theme.piece_i;}
+    if kind == PIECE_O {color = theme.piece_o;}
+    if kind == PIECE_T {color = theme.piece_t;}
+    if kind == PIECE_J {color = theme.piece_j;}
+    if kind == PIECE_L {color = theme.piece_l;}
+    if kind == PIECE_S {color = theme.piece_s;}
+
+    if g_high_contrast_blocks && g_game.theme_index != THEME_COMPETITIVE_INDEX {
+        return enhanceBlockGammaSeparation(kind, color);
+    }
+    return color;
 }
 
 fun normalizeRotation(rotation: i32) >> i32 {

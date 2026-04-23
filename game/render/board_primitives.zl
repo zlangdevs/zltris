@@ -64,12 +64,18 @@ fun drawCellPixels(screen_x: i32, screen_y: i32, cell_w: i32, cell_h: i32, color
 }
 
 fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
-    u32 hi = shadeColor(color, 1.20);
-    u32 lo = shadeColor(color, 0.60);
-    fillRect(screen_x, screen_y, size, size, color);
-    fillRect(screen_x + 1, screen_y + 1, size - 2, 3, alphaColor(hi, 0.62));
-    fillRect(screen_x + 1, screen_y + size - 4, size - 2, 3, alphaColor(lo, 0.56));
-    strokeRect(screen_x, screen_y, size, size, alphaColor(lo, 0.72));
+    i32 sx = uiX(screen_x);
+    i32 sy = uiY(screen_y);
+    i32 s0 = uiS(size);
+    i32 s1 = uiS(screen_x + size) - sx;
+    i32 s2 = uiS(screen_y + size) - sy;
+    i32 sw = s0;
+    i32 sh = s0;
+    if s1 > 0 {sw = s1;}
+    if s2 > 0 {sh = s2;}
+    if sw < 1 {sw = 1;}
+    if sh < 1 {sh = 1;}
+    drawCellPixels(sx, sy, sw, sh, color);
 }
 
 fun garbageCellColor(theme: Theme) >> u32 {

@@ -31,6 +31,9 @@ use zltris.ui
 #define MODE_CHALLENGE 5
 #define MODE_RHYTHM 7
 
+#define WINDOW_W 960
+#define WINDOW_H 920
+
 #define ROUND_RUNNING 0
 #define ROUND_COUNTDOWN 1
 #define ROUND_FINISHED 2
@@ -77,9 +80,20 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
         for i32 i = 0; i < PREVIEW_COUNT; i++ {
             i64 panel_y = 186 + (i as i64) * 88;
-            fillRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
-            strokeRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
-            drawMiniPieceCentered(theme, g_queue[i], right_panel_x + 35, panel_y, 108, 72, 13);
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            i64 piece_size = 13;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+                piece_size = 18;
+            }
+            fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+            strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+            drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
         }
 
         if isVsBotMode() {
@@ -90,9 +104,20 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
             drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
                 i64 panel_y = 186 + (i as i64) * 88;
-                fillRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
-                strokeRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
-                drawMiniPieceCentered(theme, g_bot_queue[i], bot_panel_x + 35, panel_y, 108, 72, 13);
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                i64 piece_size = 13;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                    piece_size = 18;
+                }
+                fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+                strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+                drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
             }
         }
         return;
@@ -116,9 +141,20 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        fillRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
-        strokeRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.panel_stroke, 0.55));
-        drawMiniPieceCentered(theme, g_queue[i], SIDEBAR_X + 20, panel_y, 88, 70, 12);
+        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        i64 piece_size = 12;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = SIDEBAR_X + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+            piece_size = 16;
+        }
+        fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+        strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+        drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
     }
 
     drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
@@ -403,7 +439,7 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
-        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, &g_custom_shader_name[0], g_music_mode, g_music_shuffle);
+        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, g_high_contrast_blocks, g_big_first_bag_preview, g_fullscreen_mode, &g_custom_shader_name[0], g_music_mode, g_music_shuffle);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -652,6 +688,9 @@ fun updateApp() >> void {
         bool prev_double_row = g_double_row_ui;
         bool prev_instant_restart = g_instant_restart;
         bool prev_hard_drop_ring = g_hard_drop_ring;
+        bool prev_high_contrast_blocks = g_high_contrast_blocks;
+        bool prev_big_first_bag_preview = g_big_first_bag_preview;
+        bool prev_fullscreen_mode = g_fullscreen_mode;
         arr<u8, CUSTOM_SHADER_NAME_MAX> prev_custom_shader_name = {0};
         copyCustomShaderName(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
         i32 prev_music_mode = g_music_mode;
@@ -660,7 +699,7 @@ fun updateApp() >> void {
         bool prev_settings_video_open = g_settings_video_expanded;
         bool prev_settings_audio_open = g_settings_audio_expanded;
 
-        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_high_contrast_blocks, &g_big_first_bag_preview, &g_fullscreen_mode, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
         bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
         if prev_shader_mode != g_post_shader_mode {g_custom_shader_warned = false;}
         if (prev_theme != g_game.theme_index ||
@@ -684,6 +723,9 @@ fun updateApp() >> void {
             prev_double_row != g_double_row_ui ||
             prev_instant_restart != g_instant_restart ||
             prev_hard_drop_ring != g_hard_drop_ring ||
+            prev_high_contrast_blocks != g_high_contrast_blocks ||
+            prev_big_first_bag_preview != g_big_first_bag_preview ||
+            prev_fullscreen_mode != g_fullscreen_mode ||
             custom_shader_changed ||
             prev_music_mode != g_music_mode ||
             prev_music_shuffle != g_music_shuffle ||
@@ -693,6 +735,25 @@ fun updateApp() >> void {
             g_songs_modified) {
             clampSettings();
             if prev_shader_mode != g_post_shader_mode || custom_shader_changed {loadPostEffects();}
+            if prev_fullscreen_mode != g_fullscreen_mode {
+                if g_fullscreen_mode {
+                    if !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+                        ToggleBorderlessWindowed();
+                    }
+                    i32 mon = GetCurrentMonitor();
+                    SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
+                } else {
+                    if IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+                        ToggleBorderlessWindowed();
+                    } else if IsWindowFullscreen() {
+                        ToggleFullscreen();
+                    }
+                    SetWindowSize(WINDOW_W, WINDOW_H);
+                }
+                g_game = g_game.refresh_screen_size();
+                ensurePostFxTarget(GetScreenWidth(), GetScreenHeight());
+                ensureLayerTargets(GetScreenWidth(), GetScreenHeight());
+            }
             if prev_music_mode != g_music_mode {
                 buildMusicPlaylist();
                 if g_star_music_track_count > 0 {
@@ -994,14 +1055,36 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
 
         for i32 i = 0; i < PREVIEW_COUNT; i++ {
             i64 panel_y = 186 + (i as i64) * 88;
-            drawMiniPieceCentered(theme, g_queue[i], right_panel_x + 35, panel_y, 108, 72, 13);
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            i64 piece_size = 13;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+                piece_size = 18;
+            }
+            drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
         }
 
         if isVsBotMode() {
             i64 bot_panel_x = vsBotBotPanelX();
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
                 i64 panel_y = 186 + (i as i64) * 88;
-                drawMiniPieceCentered(theme, g_bot_queue[i], bot_panel_x + 35, panel_y, 108, 72, 13);
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                i64 piece_size = 13;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                    piece_size = 18;
+                }
+                drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
             }
         }
         return;
@@ -1010,7 +1093,18 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
     if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        drawMiniPieceCentered(theme, g_queue[i], SIDEBAR_X + 20, panel_y, 88, 70, 12);
+        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        i64 piece_size = 12;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = SIDEBAR_X + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+            piece_size = 16;
+        }
+        drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
     }
 }
 
@@ -1044,7 +1138,16 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
         for i32 i = 0; i < PREVIEW_COUNT; i++ {
             i64 panel_y = 186 + (i as i64) * 88;
-            strokeRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+            }
+            strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
         }
 
         if isVsBotMode() {
@@ -1054,7 +1157,16 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
             drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
                 i64 panel_y = 186 + (i as i64) * 88;
-                strokeRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.panel_stroke, 0.55));
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                }
+                strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
             }
         }
         return;
@@ -1075,7 +1187,16 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
     drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        strokeRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.panel_stroke, 0.55));
+        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = SIDEBAR_X + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+        }
+        strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
     }
 
     drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);

@@ -146,10 +146,19 @@ fun saveSettingsFile() >> void {
     if g_instant_restart {instant_restart_flag = 1;}
     i32 hard_drop_ring_flag = 0;
     if g_hard_drop_ring {hard_drop_ring_flag = 1;}
+    i32 high_contrast_blocks_flag = 0;
+    if g_high_contrast_blocks {high_contrast_blocks_flag = 1;}
+    i32 big_first_bag_preview_flag = 0;
+    if g_big_first_bag_preview {big_first_bag_preview_flag = 1;}
+    i32 fullscreen_mode_flag = 0;
+    if g_fullscreen_mode {fullscreen_mode_flag = 1;}
 
     writeLineFd(fd, TextFormat("double_row_ui=%i", double_row_flag));
     writeLineFd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
     writeLineFd(fd, TextFormat("hard_drop_ring=%i", hard_drop_ring_flag));
+    writeLineFd(fd, TextFormat("high_contrast_blocks=%i", high_contrast_blocks_flag));
+    writeLineFd(fd, TextFormat("big_first_bag_preview=%i", big_first_bag_preview_flag));
+    writeLineFd(fd, TextFormat("fullscreen_mode=%i", fullscreen_mode_flag));
     writeLineFd(fd, TextFormat("bg_stars_amount=%i", g_bg_stars_amount));
     writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
     writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
@@ -240,6 +249,12 @@ fun loadSettingsFile() >> void {
                     g_instant_restart = parseBoolValue(value, g_instant_restart);
                 } else if (strEq(key, "hard_drop_ring")) {
                     g_hard_drop_ring = parseBoolValue(value, g_hard_drop_ring);
+                } else if (strEq(key, "high_contrast_blocks")) {
+                    g_high_contrast_blocks = parseBoolValue(value, g_high_contrast_blocks);
+                } else if (strEq(key, "big_first_bag_preview")) {
+                    g_big_first_bag_preview = parseBoolValue(value, g_big_first_bag_preview);
+                } else if (strEq(key, "fullscreen_mode")) {
+                    g_fullscreen_mode = parseBoolValue(value, g_fullscreen_mode);
                 } else if (strEq(key, "bg_stars_amount")) {
                     g_bg_stars_amount = atoi(value);
                 } else if (strEq(key, "bg_star_react_mode")) {
