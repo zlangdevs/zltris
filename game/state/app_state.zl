@@ -73,6 +73,7 @@ struct GameRuntime {
     restart_hold_latched bool,
     restart_afterglow f32,
     hold_action i32,
+    hard_drop_lock bool,
     star_soft_glow f32,
     star_hard_burst f32,
     star_hard_target f32,
@@ -260,6 +261,9 @@ f32 g_sdf_multiplier = 14.0;
 bool g_debug_colors = false;
 bool g_ai_enabled = false;
 bool g_ai_armed = false;
+i32 g_ai_worker_next_request = 1;
+i32 g_ai_worker_pending_request = 0;
+i32 g_ai_worker_pending_piece_kind = -1;
 bool g_duel_running = false;
 i32 g_duel_result = DUEL_RESULT_PLAYING;
 i32 g_player_pending_garbage = 0;

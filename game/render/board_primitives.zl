@@ -66,13 +66,10 @@ fun drawCellPixels(screen_x: i32, screen_y: i32, cell_w: i32, cell_h: i32, color
 fun drawMiniCell(screen_x: i64, screen_y: i64, size: i64, color: u32) >> void {
     i32 sx = uiX(screen_x);
     i32 sy = uiY(screen_y);
-    i32 s0 = uiS(size);
-    i32 s1 = uiS(screen_x + size) - sx;
-    i32 s2 = uiS(screen_y + size) - sy;
-    i32 sw = s0;
-    i32 sh = s0;
-    if s1 > 0 {sw = s1;}
-    if s2 > 0 {sh = s2;}
+    i32 ex = uiX(screen_x + size);
+    i32 ey = uiY(screen_y + size);
+    i32 sw = ex - sx;
+    i32 sh = ey - sy;
     if sw < 1 {sw = 1;}
     if sh < 1 {sh = 1;}
     drawCellPixels(sx, sy, sw, sh, color);
