@@ -67,6 +67,7 @@ fun main() >> i32 {
         drawApp(ui_font);
     }
 
+    aiWorkerShutdown();
     if custom_font_loaded {UnloadFont(ui_font);}
     unloadPostEffects();
     unloadStarMusic();

@@ -318,6 +318,8 @@ fun updateDuelBot(dt: f32) >> void {
 fun updateAiBot() >> void {
     if !g_ai_enabled {return;}
 
+    aiWorkerEnsureStarted();
+
     if isRhythmMode() {
         if g_play.round_state != ROUND_RUNNING {return;}
         if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
@@ -342,7 +344,23 @@ fun updateAiBot() >> void {
     aiBoardStackStats(&g_board[0], &max_h, &holes, &garbage_rows, &garbage_cover);
     i32 garbage_access = aiBoardGarbageAccessScore(&g_board[0]);
 
-    AiMove move = findBestMove(&g_board[0], g_piece_kind, g_piece_y, &g_queue[0], lookahead_count, g_rt.combo, b2b, level, 0, 0, 0);
+    if g_ai_worker_pending_request != 0 && g_ai_worker_pending_piece_kind != g_piece_kind {
+        g_ai_worker_pending_request = 0;
+        g_ai_worker_pending_piece_kind = -1;
+    }
+
+    if g_ai_worker_pending_request == 0 {
+        aiWorkerSubmitCurrentState();
+    }
+
+    AiMove move = {0};
+    i32 result_request = 0;
+    if !aiWorkerTryConsumeResult(&move, &result_request) {return;}
+    if result_request != g_ai_worker_pending_request {return;}
+    g_ai_worker_pending_request = 0;
+
+    if g_ai_worker_pending_piece_kind != g_piece_kind {return;}
+    g_ai_worker_pending_piece_kind = -1;
 
     if !move.valid {
         aiLog(TextFormat("fp plan invalid kind=%i lines=%i max_h=%i holes=%i garbage_rows=%i cover=%i access=%i", g_piece_kind, g_play.lines, max_h, holes, garbage_rows, garbage_cover, garbage_access));

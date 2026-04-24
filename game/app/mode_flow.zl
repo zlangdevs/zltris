@@ -621,6 +621,9 @@ fun startGameMode(mode: i32) >> void {
     g_duel_result = DUEL_RESULT_PLAYING;
     g_player_pending_garbage = 0;
     g_bot_pending_garbage = 0;
+    g_ai_worker_pending_request = 0;
+    g_ai_worker_pending_piece_kind = -1;
+    aiWorkerResetQueue();
     g_challenge_garbage_accum = 0.0;
     g_rhythm_target_count = 0;
     g_rhythm_target_index = 0;
@@ -643,6 +646,7 @@ fun startGameMode(mode: i32) >> void {
     }
 
     resetGame();
+    g_rt.hard_drop_lock = false;
     g_rt.mode_timer = 0.0;
     resetRestartHoldState(true);
     g_rt.star_soft_glow = 0.0;

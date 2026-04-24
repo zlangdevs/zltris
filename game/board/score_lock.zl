@@ -240,7 +240,11 @@ fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) 
 fun stepLock() >> void {
     lockCurrentPiece();
     spawnLockEffectPiece(LINE_FX_BOARD_PLAYER, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y);
-    kickBoardShake(3.0, 0.08);
+    if g_rt.hard_drop_lock {
+        g_rt.hard_drop_lock = false;
+    } else {
+        kickBoardShake(3.0, 0.08);
+    }
     g_rt.pieces_placed += 1;
     bool spin = isTSpin(g_piece_kind, g_piece_x, g_piece_y);
     i32 lines_cleared = clearLines();
@@ -302,5 +306,7 @@ fun hardDrop() >> void {
         g_rt.star_hard_target += 0.06 + norm * 0.64;
         if g_rt.star_hard_target > 1.0 {g_rt.star_hard_target = 1.0;}
     }
+    g_rt.hard_drop_lock = true;
+    kickBoardDropPress(6.2 as f32);
     stepLock();
 }

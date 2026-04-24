@@ -75,6 +75,21 @@ fun kickBoardShake(base_amp: f32, time_sec: f32) >> void {
     g_rt.board_shake_seed += 1;
 }
 
+fun kickBoardDropPress(base_amp: f32) >> void {
+    if g_board_bounciness <= 0 {return;}
+
+    f32 mul = (g_board_bounciness as f32) / 98.0;
+    f32 impulse = base_amp * mul;
+    if impulse <= 0.0 as f32 {return;}
+
+    g_rt.board_shake_vel_x *= 0.58 as f32;
+    g_rt.board_shake_vel_y += impulse * (26.0 as f32);
+    g_rt.board_shake_render_y += impulse * (0.95 as f32);
+    g_rt.board_shake_amp += impulse * (0.65 as f32);
+    if g_rt.board_shake_amp > 24.0 as f32 {g_rt.board_shake_amp = 24.0 as f32;}
+    if g_rt.board_shake_time < (0.09 as f32) {g_rt.board_shake_time = 0.09 as f32;}
+}
+
 fun lineClearShakeAmp(lines_cleared: i32) >> f32 {
     if lines_cleared <= 0 {return 0.0;}
     if lines_cleared == 1 {return 4.4;}
