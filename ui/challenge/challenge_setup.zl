@@ -8,15 +8,17 @@ use zltris.ui
 
 #define CHALLENGE_ROW_START_GRAVITY 0
 #define CHALLENGE_ROW_GRAVITY_RAMP 1
-#define CHALLENGE_ROW_INFINITE_HOLD 2
-#define CHALLENGE_ROW_KICK_TABLE 3
-#define CHALLENGE_ROW_GARBAGE_MODE 4
-#define CHALLENGE_ROW_GARBAGE_FACTOR 5
-#define CHALLENGE_ROW_START_GARBAGE 6
-#define CHALLENGE_ROW_GARBAGE_MESSINESS 7
-#define CHALLENGE_ROW_START 8
-#define CHALLENGE_ROW_BACK 9
-#define CHALLENGE_ROW_COUNT 10
+#define CHALLENGE_ROW_BOARD_WIDTH 2
+#define CHALLENGE_ROW_BOARD_HEIGHT 3
+#define CHALLENGE_ROW_INFINITE_HOLD 4
+#define CHALLENGE_ROW_KICK_TABLE 5
+#define CHALLENGE_ROW_GARBAGE_MODE 6
+#define CHALLENGE_ROW_GARBAGE_FACTOR 7
+#define CHALLENGE_ROW_START_GARBAGE 8
+#define CHALLENGE_ROW_GARBAGE_MESSINESS 9
+#define CHALLENGE_ROW_START 10
+#define CHALLENGE_ROW_BACK 11
+#define CHALLENGE_ROW_COUNT 12
 #define CHALLENGE_VISIBLE_ROWS 6
 
 #define CHALLENGE_KICK_SRS 0
@@ -46,6 +48,10 @@ fun challengeInit() >> void {
     g_challenge_setup.mouse_last_x = 0.0 as f32;
     g_challenge_setup.mouse_last_y = 0.0 as f32;
     g_challenge_setup.keyboard_nav_lock = false;
+    if g_challenge_board_width < 4 {g_challenge_board_width = 4;}
+    if g_challenge_board_width > 20 {g_challenge_board_width = 20;}
+    if g_challenge_board_height < 4 {g_challenge_board_height = 4;}
+    if g_challenge_board_height > 40 {g_challenge_board_height = 40;}
 }
 
 fun challengeClampf(v: f32, min_v: f32, max_v: f32) >> f32 {
@@ -104,7 +110,7 @@ fun challengeValueRow(row: i32) >> bool {
 }
 
 fun challengeSliderRow(row: i32) >> bool {
-    return row == CHALLENGE_ROW_START_GRAVITY || row == CHALLENGE_ROW_GRAVITY_RAMP || row == CHALLENGE_ROW_GARBAGE_FACTOR || row == CHALLENGE_ROW_START_GARBAGE || row == CHALLENGE_ROW_GARBAGE_MESSINESS;
+    return row == CHALLENGE_ROW_START_GRAVITY || row == CHALLENGE_ROW_GRAVITY_RAMP || row == CHALLENGE_ROW_BOARD_WIDTH || row == CHALLENGE_ROW_BOARD_HEIGHT || row == CHALLENGE_ROW_GARBAGE_FACTOR || row == CHALLENGE_ROW_START_GARBAGE || row == CHALLENGE_ROW_GARBAGE_MESSINESS;
 }
 
 fun challengeSelectorRow(row: i32) >> bool {
@@ -177,6 +183,8 @@ fun challengeGarbageLabel() >> ptr<u8> {
 fun challengeValueText(row: i32) >> ptr<u8> {
     if row == CHALLENGE_ROW_START_GRAVITY {return TextFormat("%.2f g/s", g_challenge_start_gravity);}
     if row == CHALLENGE_ROW_GRAVITY_RAMP {return TextFormat("%.2f /min", g_challenge_gravity_ramp);}
+    if row == CHALLENGE_ROW_BOARD_WIDTH {return TextFormat("%i", g_challenge_board_width);}
+    if row == CHALLENGE_ROW_BOARD_HEIGHT {return TextFormat("%i", g_challenge_board_height);}
     if row == CHALLENGE_ROW_INFINITE_HOLD {
         if g_challenge_infinite_hold {return "ON";}
         return "OFF";
@@ -193,6 +201,8 @@ fun challengeValueText(row: i32) >> ptr<u8> {
 fun challengeLabelText(row: i32) >> ptr<u8> {
     if row == CHALLENGE_ROW_START_GRAVITY {return "Start Gravity";}
     if row == CHALLENGE_ROW_GRAVITY_RAMP {return "Gravity Ramp";}
+    if row == CHALLENGE_ROW_BOARD_WIDTH {return "Board Width";}
+    if row == CHALLENGE_ROW_BOARD_HEIGHT {return "Board Height";}
     if row == CHALLENGE_ROW_INFINITE_HOLD {return "Infinite Hold";}
     if row == CHALLENGE_ROW_KICK_TABLE {return "Kick Table";}
     if row == CHALLENGE_ROW_GARBAGE_MODE {return "Garbage Mode";}
@@ -209,6 +219,12 @@ fun challengeRowNorm(row: i32) >> f32 {
     }
     if row == CHALLENGE_ROW_GRAVITY_RAMP {
         return challengeSliderPercent(g_challenge_gravity_ramp, 0.0 as f32, 20.0 as f32);
+    }
+    if row == CHALLENGE_ROW_BOARD_WIDTH {
+        return (g_challenge_board_width as f32 - 4.0 as f32) / (16.0 as f32);
+    }
+    if row == CHALLENGE_ROW_BOARD_HEIGHT {
+        return (g_challenge_board_height as f32 - 4.0 as f32) / (36.0 as f32);
     }
     if row == CHALLENGE_ROW_GARBAGE_FACTOR {
         return challengeSliderPercent(g_challenge_garbage_factor, 0.1 as f32, 2.0 as f32);
@@ -234,6 +250,20 @@ fun challengeSetFromNorm(row: i32, raw_norm: f32) >> void {
         f32 v = norm * (20.0 as f32);
         i32 step = (v * (20.0 as f32) + (0.5 as f32)) as i32;
         g_challenge_gravity_ramp = (step as f32) / (20.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_BOARD_WIDTH {
+        i32 v = (4.0 as f32 + norm * (16.0 as f32) + (0.5 as f32)) as i32;
+        if v < 4 {v = 4;}
+        if v > 20 {v = 20;}
+        g_challenge_board_width = v;
+        return;
+    }
+    if row == CHALLENGE_ROW_BOARD_HEIGHT {
+        i32 v = (4.0 as f32 + norm * (36.0 as f32) + (0.5 as f32)) as i32;
+        if v < 4 {v = 4;}
+        if v > 40 {v = 40;}
+        g_challenge_board_height = v;
         return;
     }
     if row == CHALLENGE_ROW_GARBAGE_FACTOR {
@@ -270,6 +300,18 @@ fun challengeNudge(row: i32, dir: i32) >> void {
         f32 v = g_challenge_gravity_ramp + (dir as f32) * (0.05 as f32);
         i32 step = (challengeClampf(v, 0.0 as f32, 20.0 as f32) * (20.0 as f32) + (0.5 as f32)) as i32;
         g_challenge_gravity_ramp = (step as f32) / (20.0 as f32);
+        return;
+    }
+    if row == CHALLENGE_ROW_BOARD_WIDTH {
+        g_challenge_board_width += dir;
+        if g_challenge_board_width < 4 {g_challenge_board_width = 4;}
+        if g_challenge_board_width > 20 {g_challenge_board_width = 20;}
+        return;
+    }
+    if row == CHALLENGE_ROW_BOARD_HEIGHT {
+        g_challenge_board_height += dir;
+        if g_challenge_board_height < 4 {g_challenge_board_height = 4;}
+        if g_challenge_board_height > 40 {g_challenge_board_height = 40;}
         return;
     }
     if row == CHALLENGE_ROW_GARBAGE_FACTOR {

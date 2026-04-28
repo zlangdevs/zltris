@@ -10,10 +10,8 @@ use zltris.settings
 use zltris.sound
 use zltris.theme
 
-#define BOARD_W 10
-#define BOARD_H 22
-#define HIDDEN_ROWS 2
 #define CELL 32
+#define SCREEN_GAME 1
 
 #define UI_BASE_W 648
 #define BOARD_LEFT 48
@@ -44,6 +42,49 @@ fun canUseDoubleRowLayout() >> bool {
     if !g_double_row_ui {return false;}
     i32 free_px = GetScreenWidth() - uiS(UI_BASE_W);
     return free_px >= uiS(210);
+}
+
+fun viewportBaseWidth() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return scaleBaseWidth() as i64;}
+    return ((GetScreenWidth() as f32) / scale) as i64;
+}
+
+fun viewportBaseHeight() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return scaleBaseHeight() as i64;}
+    return ((GetScreenHeight() as f32) / scale) as i64;
+}
+
+fun gameUsesSplitLayout() >> bool {
+    if isVsBotMode() {return true;}
+    if isChallengeMode() {return canUseDoubleRowLayout();}
+    return canUseDoubleRowLayout();
+}
+
+fun boardCellSize() >> i64 {
+    i64 base_cell = CELL as i64;
+    if g_game.screen != SCREEN_GAME {return base_cell;}
+    if isVsBotMode() {return base_cell;}
+    if !isChallengeMode() {return base_cell;}
+
+    i64 w_cells = boardWidth() as i64;
+    i64 h_cells = boardVisibleRows() as i64;
+    if w_cells <= 0 || h_cells <= 0 {return base_cell;}
+
+    i64 overhead_w = nonVsSidebarGap() + 178;
+    if gameUsesSplitLayout() {overhead_w = nonVsSidebarGap() + 440;}
+    i64 free_w = viewportBaseWidth() - overhead_w;
+    i64 free_h = viewportBaseHeight() - currentBoardTop() - 138;
+    if free_w < 24 {free_w = 24;}
+    if free_h < 24 {free_h = 24;}
+
+    i64 by_w = free_w / w_cells;
+    i64 by_h = free_h / h_cells;
+    i64 cell = by_w;
+    if by_h < cell {cell = by_h;}
+    if cell < 6 {cell = 6;}
+    return cell;
 }
 
 fun starIntensityNorm() >> f32 {
@@ -176,7 +217,7 @@ fun vsBotContentWidth() >> i64 {
 }
 
 fun vsBotLayoutLeft() >> i64 {
-    return (UI_BASE_W - vsBotContentWidth()) / 2;
+    return ((scaleBaseWidth() as i64) - vsBotContentWidth()) / 2;
 }
 
 fun vsBotPlayerLeftPanelX() >> i64 { return vsBotLayoutLeft() + vsBotGapBase(); }
@@ -186,7 +227,7 @@ fun vsBotPlayerBoardLeft() >> i64 {
 }
 
 fun vsBotCenterPanelX() >> i64 {
-    return vsBotPlayerBoardLeft() + (BOARD_W as i64) * (CELL as i64) + vsBotGapBase();
+    return vsBotPlayerBoardLeft() + (botBoardWidth() as i64) * boardCellSize() + vsBotGapBase();
 }
 
 fun vsBotBotBoardLeft() >> i64 {
@@ -194,12 +235,16 @@ fun vsBotBotBoardLeft() >> i64 {
 }
 
 fun vsBotBotPanelX() >> i64 {
-    return vsBotBotBoardLeft() + (BOARD_W as i64) * (CELL as i64) + vsBotGapBase();
+    return vsBotBotBoardLeft() + (botBoardWidth() as i64) * boardCellSize() + vsBotGapBase();
 }
 
 fun currentPlayerBoardLeft() >> i64 {
     if isVsBotMode() {return vsBotPlayerBoardLeft();}
-    return BOARD_LEFT;
+    if gameUsesSplitLayout() {return BOARD_LEFT;}
+
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 content_w = board_w + nonVsSidebarGap() + 178;
+    return ((scaleBaseWidth() as i64) - content_w) / 2;
 }
 
 fun duelShowsHighStackArea() >> bool {
@@ -213,7 +258,27 @@ fun currentBoardTop() >> i64 {
 
 fun currentCenterSidebarX() >> i64 {
     if isVsBotMode() {return vsBotCenterPanelX();}
-    return SIDEBAR_X;
+    return currentPlayerBoardLeft() + (boardWidth() as i64) * boardCellSize() + nonVsSidebarGap();
+}
+
+fun nonVsSidebarGap() >> i64 {
+    if gameUsesSplitLayout() {return 54;}
+    i32 w = boardWidth();
+    if w <= 6 {return 20;}
+    if w <= 8 {return 28;}
+    if w <= 12 {return 40;}
+    if w <= 16 {return 30;}
+    return 22;
+}
+
+fun splitLayoutExtraXBase() >> i64 {
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 min_x = -214;
+    i64 right_panel_x = BOARD_LEFT + board_w + nonVsSidebarGap();
+    i64 max_x = right_panel_x + 178;
+    i64 total_w = max_x - min_x;
+    i64 desired_min = ((scaleBaseWidth() as i64) - total_w) / 2;
+    return desired_min - min_x;
 }
 
 fun currentBotBoardLeft() >> i64 {
@@ -228,20 +293,22 @@ fun currentBotBoardTop() >> i64 {
 
 fun boardVisibleStartRow() >> i32 {
     if duelShowsHighStackArea() {return 0;}
-    return HIDDEN_ROWS;
+    i32 hidden = boardHiddenRows();
+    if boardHeight() <= hidden {return 0;}
+    return hidden;
 }
 
 fun boardVisibleRows() >> i32 {
-    return BOARD_H - boardVisibleStartRow();
+    return boardHeight() - boardVisibleStartRow();
 }
 
 fun boardRenderMinRow() >> i32 {
     if duelShowsHighStackArea() {return -HIGH_STACK_SPAWN_ROWS;}
-    return HIDDEN_ROWS;
+    return boardVisibleStartRow();
 }
 
 fun boardScreenY(board_top: i64, row: i64) >> i64 {
-    return board_top + (row - (boardVisibleStartRow() as i64)) * (CELL as i64);
+    return board_top + (row - (boardVisibleStartRow() as i64)) * boardCellSize();
 }
 
 fun vsBotLayoutExtraX() >> i32 {

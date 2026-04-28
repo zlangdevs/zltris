@@ -4,14 +4,14 @@ use zltris.ui
 use zltris.theme
 use zltris.scale
 
-#define BOARD_W 10
 #define CELL 32
 
 #define HIGH_STACK_SPAWN_ROWS 6
 
 fun boardCellRectPixels(board_left: i64, board_top: i64, cell_x: i64, cell_y: i64, out_x: ptr<i32>, out_y: ptr<i32>, out_w: ptr<i32>, out_h: ptr<i32>) >> void {
-    i64 x0_base = board_left + cell_x * (CELL as i64);
-    i64 x1_base = board_left + (cell_x + 1) * (CELL as i64);
+    i64 cell = boardCellSize();
+    i64 x0_base = board_left + cell_x * cell;
+    i64 x1_base = board_left + (cell_x + 1) * cell;
     i64 y0_base = boardScreenY(board_top, cell_y);
     i64 y1_base = boardScreenY(board_top, cell_y + 1);
 
@@ -82,10 +82,11 @@ fun garbageCellColor(theme: Theme) >> u32 {
 fun drawHighStackSpawnZone(theme: Theme, board_left: i64, board_top: i64) >> void {
     if !duelShowsHighStackArea() {return;}
 
-    i64 zone_top = board_top - (HIGH_STACK_SPAWN_ROWS as i64) * (CELL as i64);
-    i64 zone_h = (HIGH_STACK_SPAWN_ROWS as i64) * (CELL as i64);
-    i64 spawn_x = board_left + 3 * (CELL as i64);
-    i64 spawn_w = 4 * (CELL as i64);
+    i64 cell = boardCellSize();
+    i64 zone_top = board_top - (HIGH_STACK_SPAWN_ROWS as i64) * cell;
+    i64 zone_h = (HIGH_STACK_SPAWN_ROWS as i64) * cell;
+    i64 spawn_x = board_left + 3 * cell;
+    i64 spawn_w = 4 * cell;
     fillRect(spawn_x - 6, zone_top - 8, spawn_w + 12, zone_h + 8, alphaColor(theme.panel_stroke, 0.09));
     strokeRect(spawn_x - 6, zone_top - 8, spawn_w + 12, zone_h + 8, alphaColor(theme.panel_stroke, 0.22));
 
@@ -101,8 +102,9 @@ fun drawHighStackSpawnZone(theme: Theme, board_left: i64, board_top: i64) >> voi
         }
     }
 
-    fillRect(board_left, board_top - 4, (BOARD_W * CELL) as i64, 4, alphaColor(theme.text_main, 0.26));
-    strokeRect(board_left - 1, board_top - 1, (BOARD_W * CELL + 2) as i64, 2, alphaColor(theme.text_main, 0.44));
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    fillRect(board_left, board_top - 4, board_w, 4, alphaColor(theme.text_main, 0.26));
+    strokeRect(board_left - 1, board_top - 1, board_w + 2, 2, alphaColor(theme.text_main, 0.44));
 }
 
 fun drawPieceAtBoard(kind: i32, rotation: i32, base_x: i64, base_y: i64, board_left: i64, board_top: i64, color: u32) >> void {

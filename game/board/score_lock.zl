@@ -4,9 +4,6 @@ use zltris.ui
 use zltris.theme
 use zltris.scale
 
-#define BOARD_W 10
-#define BOARD_H 22
-
 #define PIECE_T 2
 
 #define ROUND_RUNNING 0
@@ -38,7 +35,7 @@ fun lockCurrentPiece() >> void {
     for i32 idx = 0; idx < 4; idx++ {
         i32 x = g_piece_x + minoX(g_piece_kind, g_piece_rotation, idx);
         i32 y = g_piece_y + minoY(g_piece_kind, g_piece_rotation, idx);
-        if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {boardSet(x, y, g_piece_kind + 1);}
+        if y >= 0 && y < boardHeight() && x >= 0 && x < boardWidth() {boardSet(x, y, g_piece_kind + 1);}
     }
 }
 
@@ -48,9 +45,9 @@ fun awardLineClear(lines_cleared: i32) >> void {
 
 fun clearLines() >> i32 {
     i32 cleared = 0;
-    for i32 y = BOARD_H - 1; y >= 0; y-- {
+    for i32 y = boardHeight() - 1; y >= 0; y-- {
         bool full = true;
-        for i32 x = 0; x < BOARD_W; x++ {
+        for i32 x = 0; x < boardWidth(); x++ {
             if boardGet(x, y) == 0 {full = false;}
         }
 
@@ -58,11 +55,11 @@ fun clearLines() >> i32 {
             spawnLineClearEffectsForRow(y);
             cleared += 1;
             for i32 pull = y; pull > 0; pull-- {
-                for i32 x = 0; x < BOARD_W; x++ {
+                for i32 x = 0; x < boardWidth(); x++ {
                     boardSet(x, pull, boardGet(x, pull - 1));
                 }
             }
-            for i32 x = 0; x < BOARD_W; x++ {
+            for i32 x = 0; x < boardWidth(); x++ {
                 boardSet(x, 0, 0);
             }
             y += 1;
@@ -75,8 +72,8 @@ fun clearLines() >> i32 {
 }
 
 fun boardIsEmpty() >> bool {
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
             if boardGet(x, y) != 0 {return false;}
         }
     }
@@ -84,8 +81,8 @@ fun boardIsEmpty() >> bool {
 }
 
 fun boardCellOccupiedOrBlocked(x: i32, y: i32) >> bool {
-    if x < 0 || x >= BOARD_W {return true;}
-    if y >= BOARD_H {return true;}
+    if x < 0 || x >= boardWidth() {return true;}
+    if y >= boardHeight() {return true;}
     if y < 0 {return false;}
     return boardGet(x, y) != 0;
 }

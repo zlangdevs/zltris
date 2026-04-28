@@ -12,6 +12,12 @@ use zltris.ui
 #define CELL 32
 #define PREVIEW_COUNT 5
 #define SIDEBAR_X 422
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
 #define PIECE_Z 6
 #define LINE_FX_BOARD_PLAYER 0
 #define LINE_FX_BOARD_BOT 1
@@ -33,6 +39,9 @@ use zltris.ui
 
 #define WINDOW_W 960
 #define WINDOW_H 920
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+#define THEME_EDITOR_BASE_W 1160
 
 #define ROUND_RUNNING 0
 #define ROUND_COUNTDOWN 1
@@ -49,7 +58,7 @@ use zltris.ui
 fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     if (split_layout) {
         i64 left_panel_x = -214;
-        i64 right_panel_x = SIDEBAR_X;
+        i64 right_panel_x = currentCenterSidebarX();
         if isVsBotMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
@@ -123,30 +132,31 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         return;
     }
 
-    fillRect(SIDEBAR_X, 82, 178, 756, theme.panel_bg);
-    strokeRect(SIDEBAR_X, 82, 178, 756, theme.panel_stroke);
+    i64 sidebar_x = currentCenterSidebarX();
+    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
+    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
 
-    drawTextColor(font, "ZLTRIS", SIDEBAR_X + 20, 108, 24, theme.text_main);
-    drawTextColor(font, "first strike", SIDEBAR_X + 20, 142, 11, theme.text_muted);
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
 
-    drawTextColor(font, "HOLD", SIDEBAR_X + 20, 190, 14, theme.text_main);
-    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
-    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
-    fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
-    strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
-    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
-    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 304, 13, theme.panel_stroke);}
-    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), SIDEBAR_X + 20, 320, 10, theme.panel_stroke);}
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    fillRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    strokeRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), sidebar_x + 20, 320, 10, theme.panel_stroke);}
 
-    drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_x = sidebar_x + 20;
         i64 panel_w = 88;
         i64 panel_h = 70;
         i64 piece_size = 12;
         if i == 0 && g_big_first_bag_preview {
-            panel_x = SIDEBAR_X + 12;
+            panel_x = sidebar_x + 12;
             panel_y -= 7;
             panel_w = 104;
             panel_h = 82;
@@ -157,9 +167,9 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
     }
 
-    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
-    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
-    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
+    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), sidebar_x + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), sidebar_x + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), sidebar_x + 20, 772, 11, theme.panel_stroke);}
 }
 
 fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
@@ -205,10 +215,10 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
     if (g_play.round_state == ROUND_COUNTDOWN) {
         ptr<u8> text = "3";
         i64 size = 86;
-        i64 box_x = board_left + 62;
-        i64 box_y = board_top + 224;
         i64 box_w = 196;
         i64 box_h = 196;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
         f32 seg = g_rt.countdown_timer - 3.0;
 
         if (g_rt.countdown_timer <= 3.0 && g_rt.countdown_timer > 2.0) {
@@ -220,10 +230,10 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
         } else if (g_rt.countdown_timer <= 1.0) {
             text = "BUILD";
             size = 46;
-            box_x = board_left + 24;
-            box_y = board_top + 246;
             box_w = 272;
             box_h = 152;
+            box_x = boardCenteredBoxX(board_left, box_w);
+            box_y = boardCenteredBoxY(board_top, box_h);
             seg = g_rt.countdown_timer;
         }
 
@@ -238,30 +248,30 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
     }
 
     if (g_play.round_state == ROUND_FINISHED) {
-        i64 box_x = board_left + 18;
-        i64 box_y = board_top + 224;
         i64 box_w = 284;
         i64 box_h = 178;
         if isRhythmMode() {box_h = 226;}
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
         fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
         strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if (isFortyLinesMode()) {
-            drawTextColor(font, "40 DONE", board_left + 76, board_top + 248, 24, theme.text_main);
-            drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), board_left + 62, board_top + 294, 14, theme.panel_stroke);
+            drawTextColor(font, "40 DONE", box_x + 58, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), box_x + 44, box_y + 70, 14, theme.panel_stroke);
         }
         if (isBlitzMode()) {
-            drawTextColor(font, "BLITZ END", board_left + 60, board_top + 248, 24, theme.text_main);
-            drawTextColor(font, TextFormat("SCORE %i", g_play.score), board_left + 62, board_top + 294, 14, theme.panel_stroke);
+            drawTextColor(font, "BLITZ END", box_x + 42, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("SCORE %i", g_play.score), box_x + 44, box_y + 70, 14, theme.panel_stroke);
         }
         if (isRhythmMode()) {
-            drawTextColor(font, "RHYTHM END", board_left + 46, board_top + 248, 24, theme.text_main);
-            drawTextColor(font, TextFormat("SCORE %i", g_rhythm_score), board_left + 62, board_top + 292, 13, theme.panel_stroke);
-            drawTextColor(font, TextFormat("MISSED %i", g_rhythm_missed_beats), board_left + 62, board_top + 322, 13, theme.panel_stroke);
-            drawTextColor(font, TextFormat("AVG %.0f ms", rhythmAverageAccuracyMs()), board_left + 62, board_top + 352, 13, theme.panel_stroke);
+            drawTextColor(font, "RHYTHM END", box_x + 28, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("SCORE %i", g_rhythm_score), box_x + 44, box_y + 68, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("MISSED %i", g_rhythm_missed_beats), box_x + 44, box_y + 98, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("AVG %.0f ms", rhythmAverageAccuracyMs()), box_x + 44, box_y + 128, 13, theme.panel_stroke);
         }
-        i64 retry_y = board_top + 334;
-        if isRhythmMode() {retry_y = board_top + 410;}
-        drawTextColor(font, "R retry  ESC menu", board_left + 62, retry_y, 12, theme.text_muted);
+        i64 retry_y = box_y + 110;
+        if isRhythmMode() {retry_y = box_y + 186;}
+        drawTextColor(font, "R retry  ESC menu", box_x + 44, retry_y, 12, theme.text_muted);
     }
 }
 
@@ -275,8 +285,8 @@ fun drawRhythmBoardPulse(theme: Theme, board_left: i64, board_top: i64) >> void 
     if marker > strength {strength = marker;}
     if strength <= 0.0 as f32 {return;}
 
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
-    i64 board_w = (BOARD_W * CELL) as i64;
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
     i64 outer_x = board_left - 12;
     i64 outer_y = board_top - 12;
     i64 outer_w = board_w + 24;
@@ -307,8 +317,8 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
 
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
 
     i64 panel_w = board_w;
     i64 panel_h = 68;
@@ -439,6 +449,41 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
+        if settingsThemeManagerOpen() {
+            DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+            drawImpulseGridBackground(font, theme);
+
+            i64 preview_zone_x = 0;
+            i64 preview_zone_y = 0;
+            i64 preview_zone_w = 0;
+            i64 preview_zone_h = 0;
+            themeManagerPreviewRect(&preview_zone_x, &preview_zone_y, &preview_zone_w, &preview_zone_h);
+
+            fillRect(preview_zone_x - 10, preview_zone_y - 10, preview_zone_w + 20, preview_zone_h + 20, alphaColor(theme.panel_bg, 0.70 as f32));
+            strokeRect(preview_zone_x - 10, preview_zone_y - 10, preview_zone_w + 20, preview_zone_h + 20, alphaColor(theme.panel_stroke, 0.88 as f32));
+
+            BeginScissorMode(uiX(preview_zone_x), uiY(preview_zone_y), uiS(preview_zone_w), uiS(preview_zone_h));
+            DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+            drawBackgroundStars(theme);
+            EndScissorMode();
+
+            strokeRect(preview_zone_x, preview_zone_y, preview_zone_w, preview_zone_h, alphaColor(theme.text_muted, 0.60 as f32));
+
+            i64 board_w = (boardWidth() as i64) * boardCellSize();
+            i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+            i64 desired_board_left = preview_zone_x + (preview_zone_w - board_w) / 2;
+            i64 desired_board_top = preview_zone_y + (preview_zone_h - board_h) / 2;
+
+            i64 field_frame_pad = 16;
+            fillRect(desired_board_left - field_frame_pad, desired_board_top - field_frame_pad, board_w + field_frame_pad * 2, board_h + field_frame_pad * 2, alphaColor(theme.bg_outer, 0.22 as f32));
+            strokeRect(desired_board_left - field_frame_pad, desired_board_top - field_frame_pad, board_w + field_frame_pad * 2, board_h + field_frame_pad * 2, alphaColor(theme.panel_stroke, 0.74 as f32));
+
+            drawThemePreviewBoard(theme, desired_board_left, desired_board_top);
+
+            drawThemeManagerStandalone(font, theme);
+            return;
+        }
+
         drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, g_high_contrast_blocks, g_big_first_bag_preview, g_fullscreen_mode, &g_custom_shader_name[0], g_music_mode, g_music_shuffle);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
@@ -465,8 +510,18 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     if isBotDuelsMode() {drawBotDuelsFrame(font);} else {drawGameFrame(font);}
 }
 
+fun applyUiScaleBaseForScreen() >> void {
+    if g_game.screen == SCREEN_SETTINGS && settingsThemeManagerOpen() {
+        setScaleBase(THEME_EDITOR_BASE_W, UI_BASE_H);
+        return;
+    }
+
+    setScaleBase(UI_BASE_W, UI_BASE_H);
+}
+
 fun drawApp(font: Font) >> void {
     g_game = g_game.refresh_screen_size();
+    applyUiScaleBaseForScreen();
     setScaleAlignX(scaleAlignCenter());
     i32 shake_x = 0;
     i32 shake_y = 0;
@@ -476,8 +531,9 @@ fun drawApp(font: Font) >> void {
     }
     if (g_game.screen == SCREEN_GAME && (isVsBotMode() || isBotDuelsMode())) {
         setScaleExtraX(vsBotLayoutExtraX() + shake_x);
-    } else if (g_game.screen == SCREEN_GAME && canUseDoubleRowLayout()) {
-        setScaleExtraX(uiS(131) + shake_x);
+    } else if (g_game.screen == SCREEN_GAME && gameUsesSplitLayout()) {
+        i32 split_offset_x = ((splitLayoutExtraXBase() as f32) * uiScale()) as i32;
+        setScaleExtraX(split_offset_x + shake_x);
     } else {
         setScaleExtraX(shake_x);
     }
@@ -606,6 +662,7 @@ fun drawApp(font: Font) >> void {
 
 fun updateApp() >> void {
     g_game = g_game.refresh_screen_size();
+    applyUiScaleBaseForScreen();
     updateStarMusicPlayback();
 
     if (g_debug_colors && IsKeyPressed(KEY_G)) {
@@ -698,6 +755,7 @@ fun updateApp() >> void {
         bool prev_settings_controls_open = g_settings_controls_expanded;
         bool prev_settings_video_open = g_settings_video_expanded;
         bool prev_settings_audio_open = g_settings_audio_expanded;
+        i32 prev_custom_theme_rev = customThemeRevision();
 
         i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_high_contrast_blocks, &g_big_first_bag_preview, &g_fullscreen_mode, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
         bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
@@ -729,6 +787,7 @@ fun updateApp() >> void {
             custom_shader_changed ||
             prev_music_mode != g_music_mode ||
             prev_music_shuffle != g_music_shuffle ||
+            prev_custom_theme_rev != customThemeRevision() ||
             prev_settings_controls_open != g_settings_controls_expanded ||
             prev_settings_video_open != g_settings_video_expanded ||
             prev_settings_audio_open != g_settings_audio_expanded ||
@@ -816,6 +875,46 @@ fun drawGameFrame(font: Font) >> void {
     drawGameUiLayer(font, theme);
 }
 
+fun currentVisibleBoardWidthPx() >> i64 {
+    return (boardWidth() as i64) * boardCellSize();
+}
+
+fun currentVisibleBoardHeightPx() >> i64 {
+    return (boardVisibleRows() as i64) * boardCellSize();
+}
+
+fun boardCenteredBoxX(board_left: i64, box_w: i64) >> i64 {
+    return board_left + (currentVisibleBoardWidthPx() - box_w) / 2;
+}
+
+fun boardCenteredBoxY(board_top: i64, box_h: i64) >> i64 {
+    return board_top + (currentVisibleBoardHeightPx() - box_h) / 2;
+}
+
+fun controlsHintY() >> i64 {
+    return currentBoardTop() + currentVisibleBoardHeightPx() + 84;
+}
+
+fun controlsHintY2() >> i64 {
+    return controlsHintY() + 25;
+}
+
+fun measureBaseTextWidth(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    Vector2 m = MeasureTextExSize(font, text, uiS(size) as f32, 0.0 as f32);
+    return (m.x / uiScale()) as i64;
+}
+
+fun boardCenteredTextX(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_w = currentVisibleBoardWidthPx();
+    i64 text_w = measureBaseTextWidth(font, text, size);
+    i64 x = board_left + (board_w - text_w) / 2;
+    if x < 12 {x = 12;}
+    i64 max_x = viewportBaseWidth() - text_w - 12;
+    if x > max_x {x = max_x;}
+    return x;
+}
+
 fun shouldDrawGameWidthPopup() >> bool {
     return (isVsBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi();
 }
@@ -832,7 +931,7 @@ fun drawGameBlocksLayer(font: Font, theme: Theme) >> void {
 }
 
 fun drawGameUiLayer(font: Font, theme: Theme) >> void {
-    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    bool split_layout = gameUsesSplitLayout();
     f32 hint_alpha = 1.0;
     if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
 
@@ -846,10 +945,15 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
     if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
-        drawTextColor(font, "LEFT/RIGHT move", 48, 24, 12, theme.text_muted);
-        drawTextColor(font, "TAB settings  F3 color debug", 48, 42, 12, theme.text_muted);
-        drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
-        drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
+        i64 controls_top_x = currentPlayerBoardLeft();
+        drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
+        drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
+        i64 controls_y = controlsHintY();
+        i64 controls_y2 = controlsHintY2();
+        ptr<u8> controls_line_1 = "UP/X rotate CW   Z rotate CCW";
+        ptr<u8> controls_line_2 = "DOWN soft  SPACE hard  C hold";
+        drawTextColor(font, controls_line_1, boardCenteredTextX(font, controls_line_1, 12), controls_y, 12, alphaColor(theme.text_muted, hint_alpha));
+        drawTextColor(font, controls_line_2, boardCenteredTextX(font, controls_line_2, 12), controls_y2, 12, alphaColor(theme.text_muted, hint_alpha));
     }
     drawRhythmBeatIndicator(font, theme);
     i64 board_left = currentPlayerBoardLeft();
@@ -858,40 +962,83 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     drawAllClearFxLabel(font, theme, board_left, board_top);
     
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
-        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
-        strokeRect(board_left + 24, board_top + 224, 272, 140, pieceColor(theme, PIECE_Z));
-        drawTextColor(font, "GAME OVER", board_left + 50, board_top + 256, 24, theme.text_main);
-        drawTextColor(font, "Press R to restart", board_left + 40, board_top + 304, 14, theme.text_muted);
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", box_x + 26, box_y + 32, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", box_x + 16, box_y + 80, 14, theme.text_muted);
     }
 
     drawFortyLinesOverlay(font, theme);
 
     if isVsBotMode() && !g_duel_running {
-        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
-        strokeRect(board_left + 24, board_top + 224, 272, 140, theme.panel_stroke);
-        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", board_left + 74, board_top + 256, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", board_left + 70, board_top + 256, 24, theme.text_main);}
-        drawTextColor(font, "R retry  ESC menu", board_left + 48, board_top + 304, 14, theme.text_muted);
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
+        drawTextColor(font, "R retry  ESC menu", box_x + 24, box_y + 80, 14, theme.text_muted);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}
 }
 
+fun drawThemePreviewBoard(theme: Theme, board_left: i64, board_top: i64) >> void {
+    i32 bw = boardWidth();
+    i32 bh = boardHeight();
+    i32 y0 = boardVisibleStartRow();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
+    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+
+    for i32 y = y0; y < bh; y++ {
+        for i32 x = 0; x < bw; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+
+    i32 px = 0;
+    i32 py = y0 + 1;
+    for i32 kind = 0; kind <= PIECE_Z; kind++ {
+        if px + 4 > bw {
+            px = 0;
+            py += 4;
+        }
+        if py + 3 >= bh {break;}
+        drawPieceAtBoard(kind, 0, px, py, board_left, board_top, pieceColor(theme, kind));
+        px += 3;
+    }
+}
+
 fun drawPlayerBoardBackgroundTargetLayer(theme: Theme) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
     drawHighStackSpawnZone(theme, board_left, board_top);
-    fillRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.board_bg);
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
 }
 
 fun drawPlayerBoardUiTargetLayer(theme: Theme) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
-    strokeRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.panel_stroke);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;
@@ -906,8 +1053,8 @@ fun drawPlayerBoardBlocksTargetLayer(theme: Theme) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
             i32 cell = boardGet(x, y);
             if cell == 0 {continue;}
 
@@ -940,8 +1087,8 @@ fun drawPlayerBoardBlocksTargetLayer(theme: Theme) >> void {
 fun drawBotBoardBackgroundTargetLayer(theme: Theme) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
 
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
@@ -950,14 +1097,14 @@ fun drawBotBoardBackgroundTargetLayer(theme: Theme) >> void {
 fun drawBotBoardUiTargetLayer(theme: Theme, font: Font) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
 
     strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
     drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;
@@ -976,7 +1123,7 @@ fun drawBotBoardUiTargetLayer(theme: Theme, font: Font) >> void {
 fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
     if split_layout {
         i64 left_panel_x = -214;
-        i64 right_panel_x = SIDEBAR_X;
+        i64 right_panel_x = currentCenterSidebarX();
         if isVsBotMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
@@ -1002,11 +1149,12 @@ fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
         return;
     }
 
-    fillRect(SIDEBAR_X, 82, 178, 756, theme.panel_bg);
-    fillRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    i64 sidebar_x = currentCenterSidebarX();
+    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
+    fillRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        fillRect(SIDEBAR_X + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
+        fillRect(sidebar_x + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
     }
 }
 
@@ -1014,8 +1162,8 @@ fun drawBotBoardBlocksTargetLayer(theme: Theme) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             i32 cell = botBoardGet(x, y);
             if cell == 0 {continue;}
 
@@ -1045,7 +1193,7 @@ fun drawBotBoardBlocksTargetLayer(theme: Theme) >> void {
 fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
     if split_layout {
         i64 left_panel_x = -214;
-        i64 right_panel_x = SIDEBAR_X;
+        i64 right_panel_x = currentCenterSidebarX();
         if isVsBotMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
@@ -1090,15 +1238,16 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
         return;
     }
 
-    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, SIDEBAR_X + 20, 216, 88, 88, 14);}
+    i64 sidebar_x = currentCenterSidebarX();
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_x = sidebar_x + 20;
         i64 panel_w = 88;
         i64 panel_h = 70;
         i64 piece_size = 12;
         if i == 0 && g_big_first_bag_preview {
-            panel_x = SIDEBAR_X + 12;
+            panel_x = sidebar_x + 12;
             panel_y -= 7;
             panel_w = 104;
             panel_h = 82;
@@ -1111,7 +1260,7 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
 fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> void {
     if (split_layout) {
         i64 left_panel_x = -214;
-        i64 right_panel_x = SIDEBAR_X;
+        i64 right_panel_x = currentCenterSidebarX();
         if isVsBotMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
@@ -1172,26 +1321,27 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         return;
     }
 
-    strokeRect(SIDEBAR_X, 82, 178, 756, theme.panel_stroke);
+    i64 sidebar_x = currentCenterSidebarX();
+    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
 
-    drawTextColor(font, "ZLTRIS", SIDEBAR_X + 20, 108, 24, theme.text_main);
-    drawTextColor(font, "first strike", SIDEBAR_X + 20, 142, 11, theme.text_muted);
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
 
-    drawTextColor(font, "HOLD", SIDEBAR_X + 20, 190, 14, theme.text_main);
-    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
-    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), SIDEBAR_X + 20, 166, 11, theme.panel_stroke);}
-    strokeRect(SIDEBAR_X + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
-    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), SIDEBAR_X + 20, 304, 13, theme.panel_stroke);}
-    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), SIDEBAR_X + 20, 320, 10, theme.panel_stroke);}
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    strokeRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), sidebar_x + 20, 320, 10, theme.panel_stroke);}
 
-    drawTextColor(font, "NEXT", SIDEBAR_X + 20, 334, 14, theme.text_main);
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
     for i32 i = 0; i < PREVIEW_COUNT; i++ {
         i64 panel_y = 360 + (i as i64) * 82;
-        i64 panel_x = SIDEBAR_X + 20;
+        i64 panel_x = sidebar_x + 20;
         i64 panel_w = 88;
         i64 panel_h = 70;
         if i == 0 && g_big_first_bag_preview {
-            panel_x = SIDEBAR_X + 12;
+            panel_x = sidebar_x + 12;
             panel_y -= 7;
             panel_w = 104;
             panel_h = 82;
@@ -1199,15 +1349,15 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
     }
 
-    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), SIDEBAR_X + 7, 796, 16, theme.text_main);
-    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), SIDEBAR_X + 95, 796, 16, theme.text_main);
-    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), SIDEBAR_X + 20, 772, 11, theme.panel_stroke);}
+    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), sidebar_x + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), sidebar_x + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), sidebar_x + 20, 772, 11, theme.panel_stroke);}
 }
 
 fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
     drawGameBackgroundLayer(theme);
     if shouldDrawGameWidthPopup() {return;}
-    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBackgroundTargetLayer(theme);
     if isVsBotMode() {drawBotBoardBackgroundTargetLayer(theme);}
     drawSidebarBackgroundTargetLayer(theme, split_layout);
@@ -1215,14 +1365,14 @@ fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
 
 fun drawGameBlocksTargetLayer(theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
-    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBlocksTargetLayer(theme);
     if isVsBotMode() {drawBotBoardBlocksTargetLayer(theme);}
     drawSidebarPiecesTargetLayer(theme, split_layout);
 }
 
 fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
-    bool split_layout = canUseDoubleRowLayout() || isVsBotMode();
+    bool split_layout = gameUsesSplitLayout();
     f32 hint_alpha = 1.0;
     if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
 
@@ -1238,10 +1388,15 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
     if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
-        drawTextColor(font, "LEFT/RIGHT move", 48, 24, 12, theme.text_muted);
-        drawTextColor(font, "TAB settings  F3 color debug", 48, 42, 12, theme.text_muted);
-        drawTextColor(font, "UP/X rotate CW   Z rotate CCW", 48, 806, 12, alphaColor(theme.text_muted, hint_alpha));
-        drawTextColor(font, "DOWN soft  SPACE hard  C hold", 48, 831, 12, alphaColor(theme.text_muted, hint_alpha));
+        i64 controls_top_x = currentPlayerBoardLeft();
+        drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
+        drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
+        i64 controls_y = controlsHintY();
+        i64 controls_y2 = controlsHintY2();
+        ptr<u8> controls_line_1 = "UP/X rotate CW   Z rotate CCW";
+        ptr<u8> controls_line_2 = "DOWN soft  SPACE hard  C hold";
+        drawTextColor(font, controls_line_1, boardCenteredTextX(font, controls_line_1, 12), controls_y, 12, alphaColor(theme.text_muted, hint_alpha));
+        drawTextColor(font, controls_line_2, boardCenteredTextX(font, controls_line_2, 12), controls_y2, 12, alphaColor(theme.text_muted, hint_alpha));
     }
     drawRhythmBeatIndicator(font, theme);
     i64 board_left = currentPlayerBoardLeft();
@@ -1250,19 +1405,27 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     drawAllClearFxLabel(font, theme, board_left, board_top);
 
     if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
-        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
-        strokeRect(board_left + 24, board_top + 224, 272, 140, pieceColor(theme, PIECE_Z));
-        drawTextColor(font, "GAME OVER", board_left + 50, board_top + 256, 24, theme.text_main);
-        drawTextColor(font, "Press R to restart", board_left + 40, board_top + 304, 14, theme.text_muted);
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", box_x + 26, box_y + 32, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", box_x + 16, box_y + 80, 14, theme.text_muted);
     }
 
     drawFortyLinesOverlay(font, theme);
 
     if isVsBotMode() && !g_duel_running {
-        fillRect(board_left + 24, board_top + 224, 272, 140, alphaColor(rgba(8, 11, 18, 255), 0.88));
-        strokeRect(board_left + 24, board_top + 224, 272, 140, theme.panel_stroke);
-        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", board_left + 74, board_top + 256, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", board_left + 70, board_top + 256, 24, theme.text_main);}
-        drawTextColor(font, "R retry  ESC menu", board_left + 48, board_top + 304, 14, theme.text_muted);
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
+        drawTextColor(font, "R retry  ESC menu", box_x + 24, box_y + 80, 14, theme.text_muted);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}

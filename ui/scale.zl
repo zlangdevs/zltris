@@ -15,6 +15,14 @@ fun setScaleBase(w: i32, h: i32) >> void {
     if h > 0 {g_scale_base_h = h;}
 }
 
+fun scaleBaseWidth() >> i32 {
+    return g_scale_base_w;
+}
+
+fun scaleBaseHeight() >> i32 {
+    return g_scale_base_h;
+}
+
 fun scaleAlignCenter() >> i32 { return SCALE_ALIGN_CENTER; }
 fun scaleAlignRight() >> i32 { return SCALE_ALIGN_RIGHT; }
 
