@@ -1,5 +1,28 @@
 module zltris.theme;
 
+#define BUILTIN_THEME_COUNT 6
+#define THEME_SLOT_CUSTOM BUILTIN_THEME_COUNT
+#define CUSTOM_THEME_MAX 12
+#define CUSTOM_THEME_NAME_MAX 48
+#define CUSTOM_THEME_NAME_STORAGE 576
+
+#define THEME_FIELD_BG_OUTER 0
+#define THEME_FIELD_BG_INNER 1
+#define THEME_FIELD_PANEL_BG 2
+#define THEME_FIELD_PANEL_STROKE 3
+#define THEME_FIELD_BOARD_BG 4
+#define THEME_FIELD_BOARD_GRID 5
+#define THEME_FIELD_TEXT_MAIN 6
+#define THEME_FIELD_TEXT_MUTED 7
+#define THEME_FIELD_PIECE_I 8
+#define THEME_FIELD_PIECE_O 9
+#define THEME_FIELD_PIECE_T 10
+#define THEME_FIELD_PIECE_J 11
+#define THEME_FIELD_PIECE_L 12
+#define THEME_FIELD_PIECE_S 13
+#define THEME_FIELD_PIECE_Z 14
+#define THEME_FIELD_COUNT 15
+
 struct Theme {
     name ptr<u8>,
     bg_outer u32,
@@ -26,7 +49,7 @@ fun themeRgba(r: i32, g: i32, b: i32, a: i32) >> u32 {
            ((a as u32) << 24);
 }
 
-arr<Theme, 6> g_themes = {
+arr<Theme, BUILTIN_THEME_COUNT> g_builtin_themes = {
     Theme{
         name = "ZLang Neon",
         bg_outer = 0xFF180105,
@@ -137,7 +160,135 @@ arr<Theme, 6> g_themes = {
     },
 };
 
-fun themeCount() >> i32 {return 6;}
+arr<u8, CUSTOM_THEME_NAME_STORAGE> g_custom_theme_names = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_bg_outer = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_bg_inner = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_panel_bg = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_panel_stroke = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_board_bg = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_board_grid = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_text_main = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_text_muted = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_i = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_o = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_t = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_j = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_l = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_s = {0};
+arr<u32, CUSTOM_THEME_MAX> g_custom_piece_z = {0};
+
+i32 g_custom_theme_count = 0;
+i32 g_custom_theme_selected = 0;
+i32 g_custom_theme_revision = 0;
+
+fun themeStrEq(a: ptr<u8>, b: ptr<u8>) >> bool {
+    i32 i = 0;
+    for (true) {
+        if a[i] != b[i] {return false;}
+        if a[i] == 0 {return true;}
+        i += 1;
+    }
+    return true;
+}
+
+fun themeCopyFixed(dst: ptr<u8>, src: ptr<u8>, cap: i32) >> void {
+    i32 i = 0;
+    for (i < cap - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun customThemeNamePtr(index: i32) >> ptr<u8> {
+    if index < 0 || index >= CUSTOM_THEME_MAX {return &g_custom_theme_names[0];}
+    return &g_custom_theme_names[index * CUSTOM_THEME_NAME_MAX];
+}
+
+fun customThemeDefaultName(index: i32) >> ptr<u8> {
+    return TextFormat("Custom %i", index + 1);
+}
+
+fun customThemeCopyFromTheme(index: i32, src: Theme) >> void {
+    g_custom_bg_outer[index] = src.bg_outer;
+    g_custom_bg_inner[index] = src.bg_inner;
+    g_custom_panel_bg[index] = src.panel_bg;
+    g_custom_panel_stroke[index] = src.panel_stroke;
+    g_custom_board_bg[index] = src.board_bg;
+    g_custom_board_grid[index] = src.board_grid;
+    g_custom_text_main[index] = src.text_main;
+    g_custom_text_muted[index] = src.text_muted;
+    g_custom_piece_i[index] = src.piece_i;
+    g_custom_piece_o[index] = src.piece_o;
+    g_custom_piece_t[index] = src.piece_t;
+    g_custom_piece_j[index] = src.piece_j;
+    g_custom_piece_l[index] = src.piece_l;
+    g_custom_piece_s[index] = src.piece_s;
+    g_custom_piece_z[index] = src.piece_z;
+}
+
+fun customThemeSlotCopy(dst: i32, src: i32) >> void {
+    g_custom_bg_outer[dst] = g_custom_bg_outer[src];
+    g_custom_bg_inner[dst] = g_custom_bg_inner[src];
+    g_custom_panel_bg[dst] = g_custom_panel_bg[src];
+    g_custom_panel_stroke[dst] = g_custom_panel_stroke[src];
+    g_custom_board_bg[dst] = g_custom_board_bg[src];
+    g_custom_board_grid[dst] = g_custom_board_grid[src];
+    g_custom_text_main[dst] = g_custom_text_main[src];
+    g_custom_text_muted[dst] = g_custom_text_muted[src];
+    g_custom_piece_i[dst] = g_custom_piece_i[src];
+    g_custom_piece_o[dst] = g_custom_piece_o[src];
+    g_custom_piece_t[dst] = g_custom_piece_t[src];
+    g_custom_piece_j[dst] = g_custom_piece_j[src];
+    g_custom_piece_l[dst] = g_custom_piece_l[src];
+    g_custom_piece_s[dst] = g_custom_piece_s[src];
+    g_custom_piece_z[dst] = g_custom_piece_z[src];
+    themeCopyFixed(customThemeNamePtr(dst), customThemeNamePtr(src), CUSTOM_THEME_NAME_MAX);
+}
+
+fun customThemeAsTheme(index: i32) >> Theme {
+    Theme out = {0};
+    out.name = customThemeNamePtr(index);
+    out.bg_outer = g_custom_bg_outer[index];
+    out.bg_inner = g_custom_bg_inner[index];
+    out.panel_bg = g_custom_panel_bg[index];
+    out.panel_stroke = g_custom_panel_stroke[index];
+    out.board_bg = g_custom_board_bg[index];
+    out.board_grid = g_custom_board_grid[index];
+    out.text_main = g_custom_text_main[index];
+    out.text_muted = g_custom_text_muted[index];
+    out.piece_i = g_custom_piece_i[index];
+    out.piece_o = g_custom_piece_o[index];
+    out.piece_t = g_custom_piece_t[index];
+    out.piece_j = g_custom_piece_j[index];
+    out.piece_l = g_custom_piece_l[index];
+    out.piece_s = g_custom_piece_s[index];
+    out.piece_z = g_custom_piece_z[index];
+    return out;
+}
+
+fun customThemeFixName(index: i32) >> void {
+    if index < 0 || index >= CUSTOM_THEME_MAX {return;}
+}
+
+fun customThemeClampState() >> void {
+    if g_custom_theme_count < 0 {g_custom_theme_count = 0;}
+    if g_custom_theme_count > CUSTOM_THEME_MAX {g_custom_theme_count = CUSTOM_THEME_MAX;}
+
+    if g_custom_theme_count == 0 {
+        g_custom_theme_selected = 0;
+        return;
+    }
+
+    if g_custom_theme_selected < 0 {g_custom_theme_selected = 0;}
+    if g_custom_theme_selected >= g_custom_theme_count {g_custom_theme_selected = g_custom_theme_count - 1;}
+    for i32 i = 0; i < g_custom_theme_count; i++ {customThemeFixName(i);}
+}
+
+fun themeBuiltinCount() >> i32 {return BUILTIN_THEME_COUNT;}
+fun themeCustomSlotIndex() >> i32 {return THEME_SLOT_CUSTOM;}
+fun themeIsCustom(index: i32) >> bool {return index == THEME_SLOT_CUSTOM;}
+fun themeCount() >> i32 {return BUILTIN_THEME_COUNT + 1;}
 
 fun clampThemeIndex(index: i32) >> i32 {
     i32 idx = index;
@@ -148,12 +299,16 @@ fun clampThemeIndex(index: i32) >> i32 {
 
 fun themeName(index: i32) >> ptr<u8> {
     i32 idx = clampThemeIndex(index);
-    return g_themes[idx].name;
+    if idx < BUILTIN_THEME_COUNT {return g_builtin_themes[idx].name;}
+    return "Custom";
 }
 
 fun setTheme(index: i32) >> Theme {
     i32 idx = clampThemeIndex(index);
-    return g_themes[idx];
+    if idx < BUILTIN_THEME_COUNT {return g_builtin_themes[idx];}
+    customThemeClampState();
+    if g_custom_theme_count == 0 {return g_builtin_themes[0];}
+    return customThemeAsTheme(g_custom_theme_selected);
 }
 
 fun switchTheme(current_index: i32, direction: i32) >> i32 {
@@ -161,4 +316,220 @@ fun switchTheme(current_index: i32, direction: i32) >> i32 {
     if idx < 0 {return themeCount() - 1;}
     if idx >= themeCount() {return 0;}
     return idx;
+}
+
+fun customThemeCapacity() >> i32 {return CUSTOM_THEME_MAX;}
+
+fun customThemeCount() >> i32 {
+    customThemeClampState();
+    return g_custom_theme_count;
+}
+
+fun customThemeSelected() >> i32 {
+    customThemeClampState();
+    return g_custom_theme_selected;
+}
+
+fun customThemeSetSelected(index: i32) >> void {
+    customThemeClampState();
+    if g_custom_theme_count == 0 {
+        g_custom_theme_selected = 0;
+        return;
+    }
+    i32 next = index;
+    if next < 0 {next = 0;}
+    if next >= g_custom_theme_count {next = g_custom_theme_count - 1;}
+    if next == g_custom_theme_selected {return;}
+    g_custom_theme_selected = next;
+    g_custom_theme_revision += 1;
+}
+
+fun customThemeName(index: i32) >> ptr<u8> {
+    customThemeClampState();
+    if g_custom_theme_count == 0 {return "";}
+    i32 idx = index;
+    if idx < 0 {idx = 0;}
+    if idx >= g_custom_theme_count {idx = g_custom_theme_count - 1;}
+    customThemeFixName(idx);
+    return customThemeNamePtr(idx);
+}
+
+fun customThemeSetName(index: i32, name: ptr<u8>) >> void {
+    customThemeClampState();
+    if g_custom_theme_count == 0 {return;}
+    if index < 0 || index >= g_custom_theme_count {return;}
+    themeCopyFixed(customThemeNamePtr(index), name, CUSTOM_THEME_NAME_MAX);
+    customThemeFixName(index);
+    g_custom_theme_revision += 1;
+}
+
+fun customThemeFieldCount() >> i32 {return THEME_FIELD_COUNT;}
+
+fun customThemeFieldName(field: i32) >> ptr<u8> {
+    if field == THEME_FIELD_BG_OUTER {return "BG Out";}
+    if field == THEME_FIELD_BG_INNER {return "BG In";}
+    if field == THEME_FIELD_PANEL_BG {return "Panel BG";}
+    if field == THEME_FIELD_PANEL_STROKE {return "Panel Line";}
+    if field == THEME_FIELD_BOARD_BG {return "Board BG";}
+    if field == THEME_FIELD_BOARD_GRID {return "Board Grid";}
+    if field == THEME_FIELD_TEXT_MAIN {return "Text Main";}
+    if field == THEME_FIELD_TEXT_MUTED {return "Text Dim";}
+    if field == THEME_FIELD_PIECE_I {return "I";}
+    if field == THEME_FIELD_PIECE_O {return "O";}
+    if field == THEME_FIELD_PIECE_T {return "T";}
+    if field == THEME_FIELD_PIECE_J {return "J";}
+    if field == THEME_FIELD_PIECE_L {return "L";}
+    if field == THEME_FIELD_PIECE_S {return "S";}
+    if field == THEME_FIELD_PIECE_Z {return "Z";}
+    return "Color";
+}
+
+fun customThemeFieldConfigKey(field: i32) >> ptr<u8> {
+    if field == THEME_FIELD_BG_OUTER {return "bg_outer";}
+    if field == THEME_FIELD_BG_INNER {return "bg_inner";}
+    if field == THEME_FIELD_PANEL_BG {return "panel_bg";}
+    if field == THEME_FIELD_PANEL_STROKE {return "panel_stroke";}
+    if field == THEME_FIELD_BOARD_BG {return "board_bg";}
+    if field == THEME_FIELD_BOARD_GRID {return "board_grid";}
+    if field == THEME_FIELD_TEXT_MAIN {return "text_main";}
+    if field == THEME_FIELD_TEXT_MUTED {return "text_muted";}
+    if field == THEME_FIELD_PIECE_I {return "piece_i";}
+    if field == THEME_FIELD_PIECE_O {return "piece_o";}
+    if field == THEME_FIELD_PIECE_T {return "piece_t";}
+    if field == THEME_FIELD_PIECE_J {return "piece_j";}
+    if field == THEME_FIELD_PIECE_L {return "piece_l";}
+    if field == THEME_FIELD_PIECE_S {return "piece_s";}
+    if field == THEME_FIELD_PIECE_Z {return "piece_z";}
+    return "unknown";
+}
+
+fun customThemeFieldFromConfigKey(key: ptr<u8>) >> i32 {
+    for i32 i = 0; i < THEME_FIELD_COUNT; i++ {
+        if themeStrEq(key, customThemeFieldConfigKey(i)) {return i;}
+    }
+    return -1;
+}
+
+fun customThemeGetColor(index: i32, field: i32) >> u32 {
+    customThemeClampState();
+    if g_custom_theme_count == 0 {
+        Theme fallback = g_builtin_themes[0];
+        if field == THEME_FIELD_BG_OUTER {return fallback.bg_outer;}
+        if field == THEME_FIELD_BG_INNER {return fallback.bg_inner;}
+        if field == THEME_FIELD_PANEL_BG {return fallback.panel_bg;}
+        if field == THEME_FIELD_PANEL_STROKE {return fallback.panel_stroke;}
+        if field == THEME_FIELD_BOARD_BG {return fallback.board_bg;}
+        if field == THEME_FIELD_BOARD_GRID {return fallback.board_grid;}
+        if field == THEME_FIELD_TEXT_MAIN {return fallback.text_main;}
+        if field == THEME_FIELD_TEXT_MUTED {return fallback.text_muted;}
+        if field == THEME_FIELD_PIECE_I {return fallback.piece_i;}
+        if field == THEME_FIELD_PIECE_O {return fallback.piece_o;}
+        if field == THEME_FIELD_PIECE_T {return fallback.piece_t;}
+        if field == THEME_FIELD_PIECE_J {return fallback.piece_j;}
+        if field == THEME_FIELD_PIECE_L {return fallback.piece_l;}
+        if field == THEME_FIELD_PIECE_S {return fallback.piece_s;}
+        if field == THEME_FIELD_PIECE_Z {return fallback.piece_z;}
+        return fallback.panel_stroke;
+    }
+
+    i32 idx = index;
+    if idx < 0 {idx = 0;}
+    if idx >= g_custom_theme_count {idx = g_custom_theme_count - 1;}
+
+    if field == THEME_FIELD_BG_OUTER {return g_custom_bg_outer[idx];}
+    if field == THEME_FIELD_BG_INNER {return g_custom_bg_inner[idx];}
+    if field == THEME_FIELD_PANEL_BG {return g_custom_panel_bg[idx];}
+    if field == THEME_FIELD_PANEL_STROKE {return g_custom_panel_stroke[idx];}
+    if field == THEME_FIELD_BOARD_BG {return g_custom_board_bg[idx];}
+    if field == THEME_FIELD_BOARD_GRID {return g_custom_board_grid[idx];}
+    if field == THEME_FIELD_TEXT_MAIN {return g_custom_text_main[idx];}
+    if field == THEME_FIELD_TEXT_MUTED {return g_custom_text_muted[idx];}
+    if field == THEME_FIELD_PIECE_I {return g_custom_piece_i[idx];}
+    if field == THEME_FIELD_PIECE_O {return g_custom_piece_o[idx];}
+    if field == THEME_FIELD_PIECE_T {return g_custom_piece_t[idx];}
+    if field == THEME_FIELD_PIECE_J {return g_custom_piece_j[idx];}
+    if field == THEME_FIELD_PIECE_L {return g_custom_piece_l[idx];}
+    if field == THEME_FIELD_PIECE_S {return g_custom_piece_s[idx];}
+    if field == THEME_FIELD_PIECE_Z {return g_custom_piece_z[idx];}
+    return g_custom_panel_stroke[idx];
+}
+
+fun customThemeSetColor(index: i32, field: i32, color: u32) >> void {
+    customThemeClampState();
+    if g_custom_theme_count == 0 {return;}
+    if index < 0 || index >= g_custom_theme_count {return;}
+
+    if field == THEME_FIELD_BG_OUTER {g_custom_bg_outer[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_BG_INNER {g_custom_bg_inner[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PANEL_BG {g_custom_panel_bg[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PANEL_STROKE {g_custom_panel_stroke[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_BOARD_BG {g_custom_board_bg[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_BOARD_GRID {g_custom_board_grid[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_TEXT_MAIN {g_custom_text_main[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_TEXT_MUTED {g_custom_text_muted[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_I {g_custom_piece_i[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_O {g_custom_piece_o[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_T {g_custom_piece_t[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_J {g_custom_piece_j[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_L {g_custom_piece_l[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_S {g_custom_piece_s[index] = color; g_custom_theme_revision += 1; return;}
+    if field == THEME_FIELD_PIECE_Z {g_custom_piece_z[index] = color; g_custom_theme_revision += 1; return;}
+}
+
+fun customThemeCreateFromTheme(base: Theme) >> i32 {
+    customThemeClampState();
+    if g_custom_theme_count >= CUSTOM_THEME_MAX {
+        g_custom_theme_selected = g_custom_theme_count - 1;
+        return g_custom_theme_selected;
+    }
+
+    i32 idx = g_custom_theme_count;
+    customThemeCopyFromTheme(idx, base);
+    themeCopyFixed(customThemeNamePtr(idx), customThemeDefaultName(idx), CUSTOM_THEME_NAME_MAX);
+    g_custom_theme_count += 1;
+    g_custom_theme_selected = idx;
+    g_custom_theme_revision += 1;
+    return idx;
+}
+
+fun customThemeDelete(index: i32) >> void {
+    customThemeClampState();
+    if g_custom_theme_count <= 0 {return;}
+
+    i32 idx = index;
+    if idx < 0 {idx = 0;}
+    if idx >= g_custom_theme_count {idx = g_custom_theme_count - 1;}
+
+    for i32 i = idx; i < g_custom_theme_count - 1; i++ {
+        customThemeSlotCopy(i, i + 1);
+    }
+
+    g_custom_theme_count -= 1;
+    if g_custom_theme_count < 0 {g_custom_theme_count = 0;}
+    if g_custom_theme_selected >= g_custom_theme_count {g_custom_theme_selected = g_custom_theme_count - 1;}
+    if g_custom_theme_selected < 0 {g_custom_theme_selected = 0;}
+    g_custom_theme_revision += 1;
+}
+
+fun customThemesBeginLoad() >> void {
+    g_custom_theme_count = 0;
+    g_custom_theme_selected = 0;
+}
+
+fun customThemeEnsureIndex(index: i32) >> void {
+    if index < 0 || index >= CUSTOM_THEME_MAX {return;}
+    for (g_custom_theme_count <= index) {
+        i32 next = g_custom_theme_count;
+        customThemeCopyFromTheme(next, g_builtin_themes[0]);
+        themeCopyFixed(customThemeNamePtr(next), customThemeDefaultName(next), CUSTOM_THEME_NAME_MAX);
+        g_custom_theme_count += 1;
+    }
+}
+
+fun customThemesEndLoad() >> void {
+    customThemeClampState();
+}
+
+fun customThemeRevision() >> i32 {
+    return g_custom_theme_revision;
 }

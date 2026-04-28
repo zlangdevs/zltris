@@ -645,6 +645,7 @@ fun startGameMode(mode: i32) >> void {
         g_rhythm_needs_sync = true;
     }
 
+    applyModeBoardSize(selected_mode);
     resetGame();
     g_rt.hard_drop_lock = false;
     g_rt.mode_timer = 0.0;
@@ -681,14 +682,14 @@ fun restartCurrentModeWithShake() >> void {
 
 fun restartStripeTopScreen() >> i32 {
     i32 screen_h = GetScreenHeight();
-    i32 top_target = uiY(852);
+    i32 top_target = uiY(controlsHintY2() + 21);
     i32 top = (screen_h as f32 - ((screen_h - top_target) as f32) * g_rt.restart_charge) as i32;
     if top < 0 {top = 0;}
     return top;
 }
 
 fun restartAfterglowTopScreen() >> i32 {
-    i32 start_top = uiY(852);
+    i32 start_top = uiY(controlsHintY2() + 21);
     i32 end_top = GetScreenHeight();
     if g_rt.restart_afterglow <= 0.0 {return end_top;}
     f32 p = 1.0 as f32 - (g_rt.restart_afterglow / (0.24 as f32));
@@ -700,7 +701,7 @@ fun restartAfterglowTopScreen() >> i32 {
 fun restartHintAlpha() >> f32 {
     if g_rt.restart_charge <= 0.0 {return 1.0;}
     f32 stripe_top = restartStripeTopScreen() as f32;
-    f32 hint_y = uiY(831) as f32;
+    f32 hint_y = uiY(controlsHintY2()) as f32;
     f32 fade_zone = uiS(180) as f32;
     f32 dist = stripe_top - hint_y;
     f32 a = dist / fade_zone;
@@ -732,7 +733,11 @@ fun drawRestartCharge(font: Font, theme: Theme) >> void {
     if g_rt.hold_action == HOLD_ACTION_MENU {hint = "Hold for menu";}
     f32 hint_size = uiS(12) as f32;
     Vector2 m = MeasureTextExSize(font, hint, hint_size, 0.0 as f32);
-    f32 tx = ((GetScreenWidth() as f32) - m.x) * 0.5;
+    i64 board_center_base_x = currentPlayerBoardLeft() + currentVisibleBoardWidthPx() / 2;
+    f32 tx = (uiX(board_center_base_x) as f32) - m.x * 0.5;
+    if tx < 8.0 {tx = 8.0;}
+    f32 tx_max = (GetScreenWidth() as f32) - m.x - 8.0;
+    if tx > tx_max {tx = tx_max;}
     f32 ty = (top as f32) + uiS(8) as f32;
     f32 hint_alpha = (0.62 as f32 + g_rt.restart_charge * (0.28 as f32)) * alpha_mul;
     DrawTextExXY(font, hint, tx, ty, hint_size, 0.0 as f32, toColor(alphaColor(theme.text_main, hint_alpha)));

@@ -4,8 +4,13 @@ use zltris.ui
 use zltris.theme
 use zltris.scale
 
-#define BOARD_W 10
-#define BOARD_H 22
+#define BOARD_W_DEFAULT 10
+#define BOARD_H_DEFAULT 22
+#define BOARD_W_MAX 20
+#define BOARD_H_MAX 42
+#define BOARD_CELLS (BOARD_W_MAX * BOARD_H_MAX)
+#define BOT_BOARD_W 10
+#define BOT_BOARD_H 22
 #define QUEUE_CAP 14
 #define BAG_SIZE 7
 
@@ -18,6 +23,7 @@ use zltris.scale
 
 #define CHALLENGE_KICK_SRS 0
 #define CHALLENGE_KICK_NONE 1
+#define MODE_CHALLENGE 5
 
 #define THEME_COMPETITIVE_INDEX 5
 
@@ -94,8 +100,59 @@ fun normalizeRotation(rotation: i32) >> i32 {
     return res;
 }
 
+fun boardWidth() >> i32 {
+    i32 w = g_board_width;
+    if w < 4 {w = 4;}
+    if w > BOARD_W_MAX {w = BOARD_W_MAX;}
+    return w;
+}
+
+fun boardHeight() >> i32 {
+    i32 h = g_board_height;
+    if h < 4 {h = 4;}
+    if h > BOARD_H_MAX {h = BOARD_H_MAX;}
+    return h;
+}
+
+fun boardHiddenRows() >> i32 {
+    return 2;
+}
+
+fun botBoardWidth() >> i32 {
+    return BOT_BOARD_W;
+}
+
+fun botBoardHeight() >> i32 {
+    return BOT_BOARD_H;
+}
+
+fun playerSpawnX() >> i32 {
+    i32 x = (boardWidth() - 4) / 2;
+    if x < 0 {x = 0;}
+    return x;
+}
+
+fun applyModeBoardSize(mode: i32) >> void {
+    if mode == MODE_CHALLENGE {
+        g_board_width = g_challenge_board_width;
+        g_board_height = g_challenge_board_height + boardHiddenRows();
+    } else {
+        g_board_width = BOARD_W_DEFAULT;
+        g_board_height = BOARD_H_DEFAULT;
+    }
+
+    if g_board_width < 4 {g_board_width = 4;}
+    if g_board_width > BOARD_W_MAX {g_board_width = BOARD_W_MAX;}
+    if g_board_height < 4 {g_board_height = 4;}
+    if g_board_height > BOARD_H_MAX {g_board_height = BOARD_H_MAX;}
+}
+
 fun boardIndex(x: i32, y: i32) >> i32 {
-    return y * BOARD_W + x;
+    return y * boardWidth() + x;
+}
+
+fun botBoardIndex(x: i32, y: i32) >> i32 {
+    return y * botBoardWidth() + x;
 }
 
 fun boardGet(x: i32, y: i32) >> i32 {
@@ -498,8 +555,8 @@ fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
         i32 x = base_x + minoX(kind, rotation, idx);
         i32 y = base_y + minoY(kind, rotation, idx);
 
-        if x < 0 || x >= BOARD_W {return false;}
-        if y >= BOARD_H {return false;}
+        if x < 0 || x >= boardWidth() {return false;}
+        if y >= boardHeight() {return false;}
         if y >= 0 && boardGet(x, y) != 0 {return false;}
     }
     return true;
@@ -564,18 +621,30 @@ fun gravityInterval() >> f32 {
 
 fun applyComboPracticeWalls() >> void {
     if !isComboTrainerMode() {return;}
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < 3; x++ {boardSet(x, y, 8);}
-        for i32 x = 7; x < BOARD_W; x++ {boardSet(x, y, 8);}
+    i32 w = boardWidth();
+    i32 h = boardHeight();
+    i32 left_open = (w - 4) / 2;
+    if left_open < 0 {left_open = 0;}
+    i32 right_open = left_open + 4;
+    if right_open > w {right_open = w;}
+    for i32 y = 0; y < h; y++ {
+        for i32 x = 0; x < left_open; x++ {boardSet(x, y, 8);}
+        for i32 x = right_open; x < w; x++ {boardSet(x, y, 8);}
     }
 }
 
 fun applyComboPracticeStarterPattern() >> void {
     if !isComboTrainerMode() {return;}
 
-    i32 y_top = BOARD_H - 2;
-    i32 y_bottom = BOARD_H - 1;
-    for i32 x = 3; x <= 6; x++ {
+    i32 y_top = boardHeight() - 2;
+    i32 y_bottom = boardHeight() - 1;
+    i32 left_open = (boardWidth() - 4) / 2;
+    if left_open < 0 {left_open = 0;}
+    i32 x0 = left_open;
+    i32 x1 = left_open + 1;
+    i32 x2 = left_open + 2;
+    i32 x3 = left_open + 3;
+    for i32 x = x0; x <= x3; x++ {
         boardSet(x, y_top, 0);
         boardSet(x, y_bottom, 0);
     }
@@ -585,22 +654,22 @@ fun applyComboPracticeStarterPattern() >> void {
     if pat > 2 {pat = pat % 3;}
 
     if pat == 0 {
-        boardSet(3, y_bottom, 8);
-        boardSet(4, y_bottom, 8);
-        boardSet(5, y_bottom, 8);
+        boardSet(x0, y_bottom, 8);
+        boardSet(x1, y_bottom, 8);
+        boardSet(x2, y_bottom, 8);
         return;
     }
 
     if pat == 1 {
-        boardSet(3, y_top, 8);
-        boardSet(3, y_bottom, 8);
-        boardSet(4, y_bottom, 8);
+        boardSet(x0, y_top, 8);
+        boardSet(x0, y_bottom, 8);
+        boardSet(x1, y_bottom, 8);
         return;
     }
 
-    boardSet(3, y_top, 8);
-    boardSet(4, y_top, 8);
-    boardSet(3, y_bottom, 8);
+    boardSet(x0, y_top, 8);
+    boardSet(x1, y_top, 8);
+    boardSet(x0, y_bottom, 8);
 }
 
 fun applyChallengeStartGarbage() >> void {
@@ -609,7 +678,9 @@ fun applyChallengeStartGarbage() >> void {
 
     i32 lines = g_challenge_start_garbage_lines;
     if lines < 0 {lines = 0;}
-    if lines > 19 {lines = 19;}
+    i32 cap = boardHeight() - 1;
+    if cap < 0 {cap = 0;}
+    if lines > cap {lines = cap;}
     insertGarbageIntoPlayer(lines);
     if g_play.game_over {return;}
 
@@ -627,7 +698,7 @@ fun applyChallengeStartGarbage() >> void {
 fun spawnNextPiece() >> void {
     g_piece_kind = popQueue();
     g_piece_rotation = 0;
-    g_piece_x = 3;
+    g_piece_x = playerSpawnX();
     g_piece_y = playerSpawnY();
     g_rt.gravity_timer = 0.0;
     g_rt.soft_timer = 0.0;
@@ -644,10 +715,8 @@ fun spawnNextPiece() >> void {
 }
 
 fun resetBoard() >> void {
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
-            boardSet(x, y, 0);
-        }
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        g_board[i] = 0;
     }
 }
 
@@ -707,16 +776,16 @@ fun maxI(a: i32, b: i32) >> i32 {
 }
 
 fun botBoardGet(x: i32, y: i32) >> i32 {
-    return g_bot_board[boardIndex(x, y)];
+    return g_bot_board[botBoardIndex(x, y)];
 }
 
 fun botBoardSet(x: i32, y: i32, value: i32) >> void {
-    g_bot_board[boardIndex(x, y)] = value;
+    g_bot_board[botBoardIndex(x, y)] = value;
 }
 
 fun botResetBoard() >> void {
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, y, 0);}
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        g_bot_board[i] = 0;
     }
 }
 
@@ -762,7 +831,7 @@ fun botPieceFits(kind: i32, rotation: i32, x: i32, y: i32) >> bool {
     for i32 i = 0; i < 4; i++ {
         i32 mx = x + minoX(kind, rotation, i);
         i32 my = y + minoY(kind, rotation, i);
-        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
+        if mx < 0 || mx >= botBoardWidth() || my >= botBoardHeight() {return false;}
         if my >= 0 && botBoardGet(mx, my) != 0 {return false;}
     }
     return true;
@@ -771,7 +840,7 @@ fun botPieceFits(kind: i32, rotation: i32, x: i32, y: i32) >> bool {
 fun botSpawnNextPiece() >> void {
     g_bot.piece_kind = botPopQueue();
     g_bot.piece_rotation = 0;
-    g_bot.piece_x = 3;
+    g_bot.piece_x = (botBoardWidth() - 4) / 2;
     g_bot.piece_y = botSpawnY();
     g_bot_plan_len = 0;
     g_bot_plan_index = 0;
@@ -789,8 +858,8 @@ fun botSpawnNextPiece() >> void {
 }
 
 fun botBoardIsEmpty() >> bool {
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             if botBoardGet(x, y) != 0 {return false;}
         }
     }
@@ -799,18 +868,18 @@ fun botBoardIsEmpty() >> bool {
 
 fun botClearLines() >> i32 {
     i32 cleared = 0;
-    for i32 y = BOARD_H - 1; y >= 0; y-- {
+    for i32 y = botBoardHeight() - 1; y >= 0; y-- {
         bool full = true;
-        for i32 x = 0; x < BOARD_W; x++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             if botBoardGet(x, y) == 0 {full = false;}
         }
         if (full) {
             spawnBotLineClearEffectsForRow(y);
             cleared += 1;
             for i32 pull = y; pull > 0; pull-- {
-                for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, pull, botBoardGet(x, pull - 1));}
+                for i32 x = 0; x < botBoardWidth(); x++ {botBoardSet(x, pull, botBoardGet(x, pull - 1));}
             }
-            for i32 x = 0; x < BOARD_W; x++ {botBoardSet(x, 0, 0);}
+            for i32 x = 0; x < botBoardWidth(); x++ {botBoardSet(x, 0, 0);}
             y += 1;
         }
     }
@@ -819,8 +888,8 @@ fun botClearLines() >> i32 {
 }
 
 fun botBoardCellOccupiedOrBlocked(x: i32, y: i32) >> bool {
-    if x < 0 || x >= BOARD_W {return true;}
-    if y >= BOARD_H {return true;}
+    if x < 0 || x >= botBoardWidth() {return true;}
+    if y >= botBoardHeight() {return true;}
     if y < 0 {return false;}
     return botBoardGet(x, y) != 0;
 }
@@ -840,8 +909,8 @@ fun botIsTSpin(kind: i32, x: i32, y: i32) >> bool {
 
 fun insertGarbageIntoPlayer(amount: i32) >> void {
     if amount <= 0 {return;}
-    i32 board_w = BOARD_W as i32;
-    i32 board_h = BOARD_H as i32;
+    i32 board_w = boardWidth();
+    i32 board_h = boardHeight();
     for i32 n = 0; n < amount; n++ {
         bool overflow = false;
         for i32 x = 0; x < board_w; x++ {
@@ -897,8 +966,8 @@ fun addFreePlayGarbageLine() >> void {
 fun insertGarbageIntoBot(amount: i32) >> void {
     if amount <= 0 {return;}
     aiLog(TextFormat("garbage->bot amount=%i pending_before=%i", amount, g_bot_pending_garbage));
-    i32 board_w = BOARD_W as i32;
-    i32 board_h = BOARD_H as i32;
+    i32 board_w = botBoardWidth();
+    i32 board_h = botBoardHeight();
     for i32 n = 0; n < amount; n++ {
         bool overflow = false;
         for i32 x = 0; x < board_w; x++ {
@@ -951,7 +1020,7 @@ fun initBotMatch() >> void {
     g_bot_planned_lines = 0;
     g_bot_planned_spin = false;
     g_bot_planned_all_clear = false;
-    g_bot.target_x = 3;
+    g_bot.target_x = (botBoardWidth() - 4) / 2;
     g_bot.target_y = 0;
     g_bot.target_rotation = 0;
     g_bot.combo = -1;
@@ -987,7 +1056,7 @@ fun holdCurrent() >> void {
     g_piece_kind = g_hold_kind;
     g_hold_kind = current;
     g_piece_rotation = 0;
-    g_piece_x = 3;
+    g_piece_x = playerSpawnX();
     g_piece_y = playerSpawnY();
     g_rt.gravity_timer = 0.0;
     g_rt.soft_timer = 0.0;

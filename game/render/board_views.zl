@@ -10,8 +10,6 @@ use zltris.settings
 use zltris.sound
 use zltris.theme
 
-#define BOARD_W 10
-#define BOARD_H 22
 #define CELL 32
 
 #define BOT_BOARD_TOP 82
@@ -150,13 +148,14 @@ fun drawMiniPieceCentered(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, p
 fun drawBoard(theme: Theme) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
     drawHighStackSpawnZone(theme, board_left, board_top);
-    fillRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.board_bg);
-    strokeRect(board_left - 8, board_top - 8, (BOARD_W * CELL + 16) as i64, board_h + 16, theme.panel_stroke);
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
+    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;
@@ -188,16 +187,16 @@ fun drawBoard(theme: Theme) >> void {
 fun drawBotBoard(theme: Theme, font: Font) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
 
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
     strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
     drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;
@@ -273,8 +272,8 @@ fun arenaSideApm(side: i32) >> f32 {
 fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_y: i64, label: ptr<u8>, champion: bool) >> void {
     BotArenaSide state = g_bot_arena_left;
     if side == BOT_ARENA_RIGHT {state = g_bot_arena_right;}
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
 
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
@@ -283,8 +282,8 @@ fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_
     drawTextColor(font, label, board_x + 72, board_y - 42, 16, theme.text_main);
     drawTextColor(font, TextFormat("GEN %i", state.generation), board_x + 90, board_y - 22, 10, theme.text_muted);
 
-    for i32 y = boardVisibleStartRow(); y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;

@@ -3,8 +3,6 @@ use raylib
 use zltris.scale
 use zltris.theme
 
-#define BOARD_W 10
-#define BOARD_H 22
 #define CELL 32
 #define LINE_CLEAR_FX_MAX 12
 #define LINE_CLEAR_PARTICLE_MAX 192
@@ -134,6 +132,16 @@ fun lineFxBoardTop(board_side: i32) >> i64 {
     return currentBoardTop();
 }
 
+fun lineFxBoardWidth(board_side: i32) >> i32 {
+    if board_side == LINE_FX_BOARD_BOT {return botBoardWidth();}
+    return boardWidth();
+}
+
+fun lineFxBoardHeight(board_side: i32) >> i32 {
+    if board_side == LINE_FX_BOARD_BOT {return botBoardHeight();}
+    return boardHeight();
+}
+
 fun spawnLineClearEffectsForBoardRow(row: i32, board_side: i32) >> void {
     Theme theme = currentTheme();
     i32 sum_r = 0;
@@ -143,8 +151,10 @@ fun spawnLineClearEffectsForBoardRow(row: i32, board_side: i32) >> void {
 
     i64 board_left = lineFxBoardLeft(board_side);
     i64 board_top = lineFxBoardTop(board_side);
+    i64 cell = boardCellSize();
 
-    for i32 x = 0; x < BOARD_W; x++ {
+    i32 bw = lineFxBoardWidth(board_side);
+    for i32 x = 0; x < bw; x++ {
         i32 cell = lineFxBoardCell(board_side, x, row);
         if cell == 0 {continue;}
         u32 color = lineClearCellColor(theme, cell);
@@ -153,9 +163,9 @@ fun spawnLineClearEffectsForBoardRow(row: i32, board_side: i32) >> void {
         sum_b += colorB(color);
         count += 1;
 
-        f32 px = (board_left + (x as i64) * (CELL as i64) + (CELL / 2) as i64) as f32;
-        f32 py = (boardScreenY(board_top, row as i64) + (CELL / 2) as i64) as f32;
-        f32 dir = (((x as f32) + 0.5) / (BOARD_W as f32) - 0.5) * 2.0;
+        f32 px = (board_left + (x as i64) * cell + cell / 2) as f32;
+        f32 py = (boardScreenY(board_top, row as i64) + cell / 2) as f32;
+        f32 dir = (((x as f32) + 0.5) / (bw as f32) - 0.5) * 2.0;
 
         i32 burst = 2;
         if x % 3 == 0 {burst = 3;}
@@ -262,7 +272,7 @@ fun spawnLockEffectPiece(board_side: i32, kind: i32, rotation: i32, base_x: i32,
     for i32 i = 0; i < 4; i++ {
         i32 x = base_x + minoX(kind, rotation, i);
         i32 y = base_y + minoY(kind, rotation, i);
-        if x < 0 || x >= BOARD_W || y < 0 || y >= BOARD_H {continue;}
+        if x < 0 || x >= lineFxBoardWidth(board_side) || y < 0 || y >= lineFxBoardHeight(board_side) {continue;}
         spawnLockEffectCell(board_side, x, y, color);
     }
 }
@@ -287,14 +297,16 @@ fun spawnRestartBoardEffects() >> void {
     clearRestartBoardEffects();
     Theme theme = currentTheme();
     i32 slot = 0;
-    for i32 y = 0; y < BOARD_H; y++ {
-        for i32 x = 0; x < BOARD_W; x++ {
+    i32 bh = boardHeight();
+    i32 bw = boardWidth();
+    for i32 y = 0; y < bh; y++ {
+        for i32 x = 0; x < bw; x++ {
             i32 cell = boardGet(x, y);
             if cell == 0 {continue;}
             if slot >= RESTART_CLEAR_FX_MAX {return;}
 
             u32 color = lineClearCellColor(theme, cell);
-            f32 wave = ((BOARD_H - 1 - y) as f32) * (0.010 as f32);
+            f32 wave = ((bh - 1 - y) as f32) * (0.010 as f32);
             f32 jitter = (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00040 as f32);
             f32 life = (0.20 as f32) + (GetRandomValue(0 as i32, 100 as i32) as f32) * (0.00090 as f32);
 
@@ -400,7 +412,8 @@ fun updateHardDropImpactRings(dt: f32) >> void {
 }
 
 fun drawLineClearEffects(theme: Theme, board_left: i64, board_top: i64, board_side: i32) >> void {
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 cell = boardCellSize();
+    i64 board_w = (lineFxBoardWidth(board_side) as i64) * cell;
 
     for i32 i = 0; i < LINE_CLEAR_FX_MAX; i++ {
         if g_line_fx_row_active[i] == 0 {continue;}
@@ -411,13 +424,13 @@ fun drawLineClearEffects(theme: Theme, board_left: i64, board_top: i64, board_si
         u32 color = g_line_fx_row_color[i];
 
         i64 halo_pad = 4 + (((1.0 as f32) - t) * (11.0 as f32)) as i64;
-        fillRect(board_left - halo_pad, row_y - halo_pad, board_w + halo_pad * 2, (CELL as i64) + halo_pad * 2, alphaColor(shadeColor(color, 1.35 as f32), (0.08 as f32) + fade * (0.22 as f32)));
+        fillRect(board_left - halo_pad, row_y - halo_pad, board_w + halo_pad * 2, cell + halo_pad * 2, alphaColor(shadeColor(color, 1.35 as f32), (0.08 as f32) + fade * (0.22 as f32)));
         i64 core_h = 6 + (((1.0 as f32) - t) * (13.0 as f32)) as i64;
-        fillRect(board_left, row_y + ((CELL as i64) - core_h) / 2, board_w, core_h, alphaColor(shadeColor(color, 1.55 as f32), (0.20 as f32) + fade * (0.50 as f32)));
+        fillRect(board_left, row_y + (cell - core_h) / 2, board_w, core_h, alphaColor(shadeColor(color, 1.55 as f32), (0.20 as f32) + fade * (0.50 as f32)));
 
         i64 sweep_x = board_left + ((board_w as f32) * t) as i64;
-        fillRect(sweep_x - 6, row_y + 2, 12, (CELL - 4) as i64, alphaColor(theme.text_main, fade * (0.32 as f32)));
-        strokeRect(board_left, row_y, board_w, CELL as i64, alphaColor(shadeColor(color, 1.30 as f32), fade * (0.55 as f32)));
+        fillRect(sweep_x - 6, row_y + 2, 12, cell - 4, alphaColor(theme.text_main, fade * (0.32 as f32)));
+        strokeRect(board_left, row_y, board_w, cell, alphaColor(shadeColor(color, 1.30 as f32), fade * (0.55 as f32)));
     }
 
     for i32 i = 0; i < LINE_CLEAR_PARTICLE_MAX; i++ {
@@ -497,8 +510,8 @@ fun drawQuadClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
     t = clamp01(t);
     f32 fade = (1.0 as f32) - t;
 
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
     u32 accent = shadeColor(theme.piece_i, 1.22 as f32);
 
     i64 rail_w = 3 + (((1.0 as f32) - t) * (6.0 as f32)) as i64;
@@ -522,8 +535,8 @@ fun drawAllClearFx(theme: Theme, board_left: i64, board_top: i64) >> void {
     f32 fade = (1.0 as f32) - t;
     f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
 
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
-    i64 board_h = (boardVisibleRows() as i64) * (CELL as i64);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
     u32 accent = shadeColor(theme.piece_o, (1.24 as f32) + pulse * (0.24 as f32));
 
     i64 pad = 8 + (((1.0 as f32) - t) * (16.0 as f32)) as i64;
@@ -549,7 +562,7 @@ fun drawAllClearFxLabel(font: Font, theme: Theme, board_left: i64, board_top: i6
     f32 fade = (1.0 as f32) - t;
     f32 pulse = (1.0 as f32) - absf(t * (2.0 as f32) - (1.0 as f32));
 
-    i64 board_w = (BOARD_W as i64) * (CELL as i64);
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
     i64 banner_w = 250;
     i64 banner_h = 62;
     i64 bx = board_left + (board_w - banner_w) / 2;
@@ -570,8 +583,9 @@ fun drawHardDropImpactRings(board_left: i64, board_top: i64, board_side: i32) >>
         f32 fade = (1.0 as f32) - t;
         f32 radius = g_drop_ring_r0[i] + (g_drop_ring_r1[i] - g_drop_ring_r0[i]) * t;
 
-        i64 cx_base = board_left + (g_drop_ring_cx[i] * (CELL as f32)) as i64;
-        i64 cy_base = board_top + ((g_drop_ring_cy[i] - (boardVisibleStartRow() as f32)) * (CELL as f32)) as i64;
+        f32 cell = boardCellSize() as f32;
+        i64 cx_base = board_left + (g_drop_ring_cx[i] * cell) as i64;
+        i64 cy_base = board_top + ((g_drop_ring_cy[i] - (boardVisibleStartRow() as f32)) * cell) as i64;
         i32 sx = uiX(cx_base);
         i32 sy = uiY(cy_base);
         f32 sr = uiS(radius as i64) as f32;

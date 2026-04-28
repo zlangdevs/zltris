@@ -14,33 +14,34 @@ use zltris.ui
 #define SETTINGS_ROW_INSTANT_RESTART 5
 #define SETTINGS_ROW_SECTION_VIDEO 6
 #define SETTINGS_ROW_THEME 7
-#define SETTINGS_ROW_SHADER 8
-#define SETTINGS_ROW_CHOOSE_SHADER 9
-#define SETTINGS_ROW_BOARD_BOUNCINESS 10
-#define SETTINGS_ROW_CRT_CURVATURE 11
-#define SETTINGS_ROW_CRT_BRIGHTNESS 12
-#define SETTINGS_ROW_VHS_WAVES 13
-#define SETTINGS_ROW_VHS_DAMAGE 14
-#define SETTINGS_ROW_BG_STARS_AMOUNT 15
-#define SETTINGS_ROW_BG_STARS_MODE 16
-#define SETTINGS_ROW_STAR_PEAK_TARGET 17
-#define SETTINGS_ROW_STAR_INTENSITY 18
-#define SETTINGS_ROW_MUSIC_STYLE 19
-#define SETTINGS_ROW_MUSIC_INTENSITY 20
-#define SETTINGS_ROW_DOUBLE_ROW 21
-#define SETTINGS_ROW_HARD_DROP_RING 22
-#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 23
-#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 24
-#define SETTINGS_ROW_FULLSCREEN_MODE 25
+#define SETTINGS_ROW_MANAGE_THEMES 8
+#define SETTINGS_ROW_SHADER 9
+#define SETTINGS_ROW_CHOOSE_SHADER 10
+#define SETTINGS_ROW_BOARD_BOUNCINESS 11
+#define SETTINGS_ROW_CRT_CURVATURE 12
+#define SETTINGS_ROW_CRT_BRIGHTNESS 13
+#define SETTINGS_ROW_VHS_WAVES 14
+#define SETTINGS_ROW_VHS_DAMAGE 15
+#define SETTINGS_ROW_BG_STARS_AMOUNT 16
+#define SETTINGS_ROW_BG_STARS_MODE 17
+#define SETTINGS_ROW_STAR_PEAK_TARGET 18
+#define SETTINGS_ROW_STAR_INTENSITY 19
+#define SETTINGS_ROW_MUSIC_STYLE 20
+#define SETTINGS_ROW_MUSIC_INTENSITY 21
+#define SETTINGS_ROW_DOUBLE_ROW 22
+#define SETTINGS_ROW_HARD_DROP_RING 23
+#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 24
+#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 25
+#define SETTINGS_ROW_FULLSCREEN_MODE 26
 
-#define SETTINGS_ROW_SECTION_AUDIO 26
-#define SETTINGS_ROW_MUSIC_VOLUME 27
-#define SETTINGS_ROW_MUSIC_MODE 28
-#define SETTINGS_ROW_SELECT_SONGS 29
-#define SETTINGS_ROW_MUSIC_SHUFFLE 30
+#define SETTINGS_ROW_SECTION_AUDIO 27
+#define SETTINGS_ROW_MUSIC_VOLUME 28
+#define SETTINGS_ROW_MUSIC_MODE 29
+#define SETTINGS_ROW_SELECT_SONGS 30
+#define SETTINGS_ROW_MUSIC_SHUFFLE 31
 
-#define SETTINGS_ROW_BACK 31
-#define SETTINGS_ROW_COUNT 32
+#define SETTINGS_ROW_BACK 32
+#define SETTINGS_ROW_COUNT 33
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
@@ -59,6 +60,18 @@ use zltris.ui
 
 #define CUSTOM_SHADER_NAME_MAX 96
 #define CUSTOM_SHADER_LIST_MAX 64
+#define CUSTOM_THEME_NAME_MAX 48
+
+#define THEME_MGR_FOCUS_LIST 0
+#define THEME_MGR_FOCUS_NAME 1
+#define THEME_MGR_FOCUS_FIELD 2
+#define THEME_MGR_FOCUS_WHEEL 3
+#define THEME_MGR_FOCUS_BRIGHTNESS 4
+#define THEME_MGR_FOCUS_BUTTONS 5
+
+#define THEME_MGR_BUTTON_NEW 0
+#define THEME_MGR_BUTTON_DELETE 1
+#define THEME_MGR_BUTTON_CLOSE 2
 
 #define SETTINGS_ACTION_NONE 0
 #define SETTINGS_ACTION_BACK 1
@@ -83,6 +96,19 @@ struct SettingsState {
     song_picker_open bool,
     song_picker_scroll f32,
     song_picker_selected i32,
+    theme_custom_active bool,
+    theme_mgr_open bool,
+    theme_mgr_focus i32,
+    theme_mgr_selected i32,
+    theme_mgr_scroll f32,
+    theme_mgr_field i32,
+    theme_mgr_name_edit bool,
+    theme_mgr_name arr<u8, CUSTOM_THEME_NAME_MAX>,
+    theme_mgr_name_cursor i32,
+    theme_mgr_brightness f32,
+    theme_mgr_hue f32,
+    theme_mgr_saturation f32,
+    theme_mgr_button i32,
 }
 
 fun init(self: SettingsState) >> SettingsState {
@@ -108,6 +134,19 @@ fun init(self: SettingsState) >> SettingsState {
     next.song_picker_open = false;
     next.song_picker_scroll = 0.0 as f32;
     next.song_picker_selected = 0;
+    next.theme_custom_active = false;
+    next.theme_mgr_open = false;
+    next.theme_mgr_focus = THEME_MGR_FOCUS_LIST;
+    next.theme_mgr_selected = 0;
+    next.theme_mgr_scroll = 0.0 as f32;
+    next.theme_mgr_field = 0;
+    next.theme_mgr_name_edit = false;
+    next.theme_mgr_name[0] = 0;
+    next.theme_mgr_name_cursor = 0;
+    next.theme_mgr_brightness = 1.0 as f32;
+    next.theme_mgr_hue = 0.0 as f32;
+    next.theme_mgr_saturation = 0.0 as f32;
+    next.theme_mgr_button = THEME_MGR_BUTTON_NEW;
     return next;
 }
 
@@ -135,6 +174,11 @@ fun maxi(a: i32, b: i32) >> i32 {
 
 fun maxf(a: f32, b: f32) >> f32 {
     if a > b {return a;}
+    return b;
+}
+
+fun minf(a: f32, b: f32) >> f32 {
+    if a < b {return a;}
     return b;
 }
 
@@ -652,6 +696,823 @@ fun closeSongPicker() >> void {
     buildDisabledBufFromFlags();
 }
 
+fun colorRf(color: u32) >> f32 {return (color & 255) as f32 / 255.0 as f32;}
+fun colorGf(color: u32) >> f32 {return ((color >> 8) & 255) as f32 / 255.0 as f32;}
+fun colorBf(color: u32) >> f32 {return ((color >> 16) & 255) as f32 / 255.0 as f32;}
+fun colorAf(color: u32) >> f32 {return ((color >> 24) & 255) as f32 / 255.0 as f32;}
+
+fun sqrtApprox(v: f32) >> f32 {
+    if v <= 0.0 as f32 {return 0.0 as f32;}
+    f32 x = v;
+    if x < 1.0 as f32 {x = 1.0 as f32;}
+    for i32 i = 0; i < 6; i++ {
+        x = ((x + v / x) * (0.5 as f32));
+    }
+    return x;
+}
+
+fun hsvToColor(h: f32, s: f32, v: f32, a: f32) >> u32 {
+    f32 hh = h;
+    for (hh < 0.0 as f32) {hh += 360.0 as f32;}
+    for (hh >= 360.0 as f32) {hh -= 360.0 as f32;}
+    f32 ss = clampf(s, 0.0, 1.0);
+    f32 vv = clampf(v, 0.0, 1.0);
+
+    f32 c = vv * ss;
+    f32 hp = hh / (60.0 as f32);
+    f32 hp_mod2 = hp;
+    for (hp_mod2 >= 2.0 as f32) {hp_mod2 -= 2.0 as f32;}
+    for (hp_mod2 < 0.0 as f32) {hp_mod2 += 2.0 as f32;}
+    f32 x = c * ((1.0 as f32) - absf(hp_mod2 - (1.0 as f32)));
+
+    f32 r1 = 0.0 as f32;
+    f32 g1 = 0.0 as f32;
+    f32 b1 = 0.0 as f32;
+    if hp < (1.0 as f32) {
+        r1 = c;
+        g1 = x;
+    } else if hp < (2.0 as f32) {
+        r1 = x;
+        g1 = c;
+    } else if hp < (3.0 as f32) {
+        g1 = c;
+        b1 = x;
+    } else if hp < (4.0 as f32) {
+        g1 = x;
+        b1 = c;
+    } else if hp < (5.0 as f32) {
+        r1 = x;
+        b1 = c;
+    } else {
+        r1 = c;
+        b1 = x;
+    }
+
+    f32 m = vv - c;
+    i32 ri = ((r1 + m) * (255.0 as f32) + (0.5 as f32)) as i32;
+    i32 gi = ((g1 + m) * (255.0 as f32) + (0.5 as f32)) as i32;
+    i32 bi = ((b1 + m) * (255.0 as f32) + (0.5 as f32)) as i32;
+    if ri < 0 {ri = 0;} else if ri > 255 {ri = 255;}
+    if gi < 0 {gi = 0;} else if gi > 255 {gi = 255;}
+    if bi < 0 {bi = 0;} else if bi > 255 {bi = 255;}
+
+    i32 ai = (clampf(a, 0.0, 1.0) * (255.0 as f32) + (0.5 as f32)) as i32;
+    if ai < 0 {ai = 0;} else if ai > 255 {ai = 255;}
+    return themeRgba(ri, gi, bi, ai);
+}
+
+fun colorToHsv(color: u32, out_h: ptr<f32>, out_s: ptr<f32>, out_v: ptr<f32>) >> void {
+    f32 r = colorRf(color);
+    f32 g = colorGf(color);
+    f32 b = colorBf(color);
+
+    f32 maxc = maxf(r, maxf(g, b));
+    f32 minc = minf(r, minf(g, b));
+    f32 delta = maxc - minc;
+
+    f32 h = 0.0 as f32;
+    if delta > (0.00001 as f32) {
+        if maxc >= g && maxc >= b {
+            h = ((g - b) / delta) * (60.0 as f32);
+        } else if g >= r && g >= b {
+            h = (((b - r) / delta) + (2.0 as f32)) * (60.0 as f32);
+        } else {
+            h = (((r - g) / delta) + (4.0 as f32)) * (60.0 as f32);
+        }
+    }
+    if h < 0.0 as f32 {h += 360.0 as f32;}
+
+    f32 s = 0.0 as f32;
+    if maxc > (0.00001 as f32) {s = delta / maxc;}
+    out_h[0] = h;
+    out_s[0] = clampf(s, 0.0, 1.0);
+    out_v[0] = clampf(maxc, 0.0, 1.0);
+}
+
+fun themeMgrNameLen() >> i32 {
+    i32 len = 0;
+    for (len < CUSTOM_THEME_NAME_MAX - 1 && g_settings.theme_mgr_name[len] != 0) {len += 1;}
+    return len;
+}
+
+fun themeMgrClampNameCursor() >> void {
+    i32 len = themeMgrNameLen();
+    if g_settings.theme_mgr_name_cursor < 0 {g_settings.theme_mgr_name_cursor = 0;}
+    if g_settings.theme_mgr_name_cursor > len {g_settings.theme_mgr_name_cursor = len;}
+    if g_settings.theme_mgr_name_cursor > 0 && g_settings.theme_mgr_name_cursor < len {
+        for ((g_settings.theme_mgr_name[g_settings.theme_mgr_name_cursor] & 0xC0) == 0x80) {
+            g_settings.theme_mgr_name_cursor -= 1;
+            if g_settings.theme_mgr_name_cursor <= 0 {break;}
+        }
+    }
+}
+
+fun themeMgrLoadNameBuffer() >> void {
+    copyFixed(&g_settings.theme_mgr_name[0], customThemeName(g_settings.theme_mgr_selected), CUSTOM_THEME_NAME_MAX);
+    g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+}
+
+fun themeMgrCommitNameBuffer() >> void {
+    customThemeSetName(g_settings.theme_mgr_selected, &g_settings.theme_mgr_name[0]);
+    themeMgrClampNameCursor();
+}
+
+fun themeMgrPrevCharStart(index: i32) >> i32 {
+    i32 i = index;
+    if i <= 0 {return 0;}
+    i -= 1;
+    for (i > 0 && (g_settings.theme_mgr_name[i] & 0xC0) == 0x80) {i -= 1;}
+    return i;
+}
+
+fun themeMgrNextCharStart(index: i32) >> i32 {
+    i32 len = themeMgrNameLen();
+    i32 i = index;
+    if i >= len {return len;}
+    i += 1;
+    for (i < len && (g_settings.theme_mgr_name[i] & 0xC0) == 0x80) {i += 1;}
+    return i;
+}
+
+fun themeMgrDeleteAtCursor(backspace: bool) >> void {
+    i32 len = themeMgrNameLen();
+    themeMgrClampNameCursor();
+
+    i32 from = g_settings.theme_mgr_name_cursor;
+    i32 to = g_settings.theme_mgr_name_cursor;
+    if backspace {
+        if from <= 0 {return;}
+        from = themeMgrPrevCharStart(from);
+    } else {
+        if from >= len {return;}
+        to = themeMgrNextCharStart(from);
+    }
+
+    if backspace {to = g_settings.theme_mgr_name_cursor;}
+
+    i32 shift = to - from;
+    if shift <= 0 {return;}
+
+    for i32 i = from; i <= len - shift; i++ {
+        g_settings.theme_mgr_name[i] = g_settings.theme_mgr_name[i + shift];
+    }
+    g_settings.theme_mgr_name_cursor = from;
+    themeMgrCommitNameBuffer();
+}
+
+fun themeMgrInsertChar(ch: i32) >> void {
+    if ch < 32 || ch == 127 {return;}
+
+    arr<u8, 4> bytes = {0};
+    i32 n = 0;
+    if ch <= 0xFF {
+        bytes[0] = ch as u8;
+        n = 1;
+    } else if ch <= 0x7FF {
+        bytes[0] = (0xC0 | ((ch >> 6) & 0x1F)) as u8;
+        bytes[1] = (0x80 | (ch & 0x3F)) as u8;
+        n = 2;
+    } else if ch <= 0xFFFF {
+        bytes[0] = (0xE0 | ((ch >> 12) & 0x0F)) as u8;
+        bytes[1] = (0x80 | ((ch >> 6) & 0x3F)) as u8;
+        bytes[2] = (0x80 | (ch & 0x3F)) as u8;
+        n = 3;
+    } else if ch <= 0x10FFFF {
+        bytes[0] = (0xF0 | ((ch >> 18) & 0x07)) as u8;
+        bytes[1] = (0x80 | ((ch >> 12) & 0x3F)) as u8;
+        bytes[2] = (0x80 | ((ch >> 6) & 0x3F)) as u8;
+        bytes[3] = (0x80 | (ch & 0x3F)) as u8;
+        n = 4;
+    } else {
+        return;
+    }
+
+    i32 len = themeMgrNameLen();
+    themeMgrClampNameCursor();
+    if len + n >= CUSTOM_THEME_NAME_MAX {return;}
+
+    i32 i = len;
+    for (i >= g_settings.theme_mgr_name_cursor) {
+        g_settings.theme_mgr_name[i + n] = g_settings.theme_mgr_name[i];
+        if i == g_settings.theme_mgr_name_cursor {break;}
+        i -= 1;
+    }
+
+    for i32 b = 0; b < n; b++ {
+        g_settings.theme_mgr_name[g_settings.theme_mgr_name_cursor + b] = bytes[b];
+    }
+    g_settings.theme_mgr_name_cursor += n;
+    themeMgrCommitNameBuffer();
+}
+
+fun themeMgrCursorOffset(font: Font, size: i64) >> i64 {
+    themeMgrClampNameCursor();
+    i32 idx = g_settings.theme_mgr_name_cursor;
+    u8 saved = g_settings.theme_mgr_name[idx];
+    g_settings.theme_mgr_name[idx] = 0;
+    i64 w = measureTextWidthBase(font, &g_settings.theme_mgr_name[0], size);
+    g_settings.theme_mgr_name[idx] = saved;
+    return w;
+}
+
+fun themeMgrCursorOffsetAt(font: Font, size: i64, idx: i32) >> i64 {
+    i32 len = themeMgrNameLen();
+    i32 at = idx;
+    if at < 0 {at = 0;}
+    if at > len {at = len;}
+    u8 saved = g_settings.theme_mgr_name[at];
+    g_settings.theme_mgr_name[at] = 0;
+    i64 w = measureTextWidthBase(font, &g_settings.theme_mgr_name[0], size);
+    g_settings.theme_mgr_name[at] = saved;
+    return w;
+}
+
+fun themeMgrSetCursorFromMouse(font: Font, size: i64, text_x: i64, mouse_x: f32) >> void {
+    i32 len = themeMgrNameLen();
+    i32 best_idx = 0;
+    f32 best_dist = absf(mouse_x - (uiX(text_x) as f32));
+
+    i32 idx = 0;
+    for (idx <= len) {
+        i64 w = themeMgrCursorOffsetAt(font, size, idx);
+        f32 px = uiX(text_x + w) as f32;
+        f32 d = absf(mouse_x - px);
+        if d < best_dist {
+            best_dist = d;
+            best_idx = idx;
+        }
+        if idx >= len {break;}
+        idx = themeMgrNextCharStart(idx);
+        if idx <= 0 {idx = len;}
+    }
+
+    g_settings.theme_mgr_name_cursor = best_idx;
+    themeMgrClampNameCursor();
+}
+
+fun themeMgrSyncWheelFromThemeColor() >> void {
+    i32 field = g_settings.theme_mgr_field;
+    if field < 0 {field = 0;}
+    if field >= customThemeFieldCount() {field = customThemeFieldCount() - 1;}
+    g_settings.theme_mgr_field = field;
+
+    u32 color = customThemeGetColor(g_settings.theme_mgr_selected, field);
+    colorToHsv(color, &g_settings.theme_mgr_hue, &g_settings.theme_mgr_saturation, &g_settings.theme_mgr_brightness);
+}
+
+fun themeMgrApplyWheelColor() >> void {
+    u32 old = customThemeGetColor(g_settings.theme_mgr_selected, g_settings.theme_mgr_field);
+    u32 c = hsvToColor(g_settings.theme_mgr_hue, g_settings.theme_mgr_saturation, g_settings.theme_mgr_brightness, colorAf(old));
+    customThemeSetColor(g_settings.theme_mgr_selected, g_settings.theme_mgr_field, c);
+}
+
+fun themeMgrSelectTheme(index: i32) >> void {
+    customThemeSetSelected(index);
+    g_settings.theme_mgr_selected = customThemeSelected();
+    themeMgrLoadNameBuffer();
+    themeMgrSyncWheelFromThemeColor();
+}
+
+fun openThemeManager(theme_index: ptr<i32>) >> void {
+    theme_index[0] = themeCustomSlotIndex();
+    g_settings.theme_custom_active = true;
+    g_settings.theme_mgr_open = true;
+    g_settings.theme_mgr_focus = THEME_MGR_FOCUS_LIST;
+    g_settings.theme_mgr_scroll = 0.0 as f32;
+    g_settings.theme_mgr_field = 0;
+    g_settings.theme_mgr_button = THEME_MGR_BUTTON_NEW;
+    g_settings.theme_mgr_name_edit = false;
+    g_settings.theme_mgr_selected = customThemeSelected();
+    themeMgrLoadNameBuffer();
+    themeMgrSyncWheelFromThemeColor();
+}
+
+fun closeThemeManager() >> void {
+    g_settings.theme_mgr_open = false;
+    g_settings.theme_mgr_name_edit = false;
+}
+
+fun themeMgrFocusNext() >> void {
+    g_settings.theme_mgr_focus += 1;
+    if g_settings.theme_mgr_focus > THEME_MGR_FOCUS_BUTTONS {g_settings.theme_mgr_focus = THEME_MGR_FOCUS_LIST;}
+}
+
+fun visibleBaseTop() >> i64 {
+    f32 scale = uiScale();
+    i32 oy = uiOffsetY(scale);
+    return (((0 - oy) as f32) / scale) as i64;
+}
+
+fun visibleBaseBottom() >> i64 {
+    f32 scale = uiScale();
+    i32 oy = uiOffsetY(scale);
+    return (((GetScreenHeight() - oy) as f32) / scale) as i64;
+}
+
+fun themeManagerLayout(out_left_x: ptr<i64>, out_left_y: ptr<i64>, out_left_w: ptr<i64>, out_left_h: ptr<i64>, out_right_x: ptr<i64>, out_right_y: ptr<i64>, out_right_w: ptr<i64>, out_right_h: ptr<i64>) >> void {
+    i64 left_w = 472;
+    i64 left_h = 700;
+    i64 right_w = 548;
+    i64 right_h = 860;
+
+    i64 vis_left = visibleBaseLeft();
+    i64 vis_right = visibleBaseRight();
+    i64 vis_top = visibleBaseTop();
+    i64 vis_bottom = visibleBaseBottom();
+    i64 avail_w = vis_right - vis_left;
+    i64 avail_h = vis_bottom - vis_top;
+
+    i64 min_gap = 18;
+    i64 max_gap = 96;
+    i64 gap = min_gap;
+    i64 base_total = left_w + right_w + min_gap;
+    if avail_w > base_total {
+        gap += (avail_w - base_total) / 4;
+        if gap > max_gap {gap = max_gap;}
+    }
+
+    i64 group_w = left_w + right_w + gap;
+    i64 group_h = left_h;
+    if right_h > group_h {group_h = right_h;}
+
+    i64 group_x = vis_left + (avail_w - group_w) / 2;
+    i64 group_y = vis_top + (avail_h - group_h) / 2;
+
+    out_left_x[0] = group_x;
+    out_left_y[0] = group_y + (group_h - left_h) / 2;
+    out_left_w[0] = left_w;
+    out_left_h[0] = left_h;
+
+    out_right_x[0] = out_left_x[0] + left_w + gap;
+    out_right_y[0] = group_y + (group_h - right_h) / 2;
+    out_right_w[0] = right_w;
+    out_right_h[0] = right_h;
+}
+
+fun themeManagerPanelRect(out_x: ptr<i64>, out_y: ptr<i64>, out_w: ptr<i64>, out_h: ptr<i64>) >> void {
+    i64 right_x = 0;
+    i64 right_y = 0;
+    i64 right_w = 0;
+    i64 right_h = 0;
+    themeManagerLayout(out_x, out_y, out_w, out_h, &right_x, &right_y, &right_w, &right_h);
+}
+
+fun themeManagerPreviewRect(out_x: ptr<i64>, out_y: ptr<i64>, out_w: ptr<i64>, out_h: ptr<i64>) >> void {
+    i64 left_x = 0;
+    i64 left_y = 0;
+    i64 left_w = 0;
+    i64 left_h = 0;
+    themeManagerLayout(&left_x, &left_y, &left_w, &left_h, out_x, out_y, out_w, out_h);
+}
+
+fun themeMgrListVisible() >> i32 {return 6;}
+
+fun themeMgrSyncListScroll() >> void {
+    i32 count = customThemeCount();
+    i32 visible = themeMgrListVisible();
+    i32 max_scroll = count - visible;
+    if max_scroll < 0 {max_scroll = 0;}
+    if g_settings.theme_mgr_selected < (g_settings.theme_mgr_scroll as i32) {g_settings.theme_mgr_scroll = g_settings.theme_mgr_selected as f32;}
+    if g_settings.theme_mgr_selected >= (g_settings.theme_mgr_scroll as i32) + visible {g_settings.theme_mgr_scroll = (g_settings.theme_mgr_selected - visible + 1) as f32;}
+    if g_settings.theme_mgr_scroll < 0.0 as f32 {g_settings.theme_mgr_scroll = 0.0 as f32;}
+    if g_settings.theme_mgr_scroll > max_scroll as f32 {g_settings.theme_mgr_scroll = max_scroll as f32;}
+}
+
+fun themeMgrWheelHit(mouse: Vector2, cx: i64, cy: i64, radius: i64) >> bool {
+    if !pointInBaseRect(mouse.x, mouse.y, cx - radius, cy - radius, radius * 2, radius * 2) {return false;}
+    f32 dx = (mouse.x - uiX(cx) as f32) / (uiS(radius) as f32);
+    f32 dy = (mouse.y - uiY(cy) as f32) / (uiS(radius) as f32);
+    f32 r = sqrtApprox(dx * dx + dy * dy);
+    return r <= (1.0 as f32);
+}
+
+fun themeMgrWheelSetFromMouse(mouse: Vector2, cx: i64, cy: i64, radius: i64) >> void {
+    f32 dx = (mouse.x - uiX(cx) as f32) / (uiS(radius) as f32);
+    f32 dy = (mouse.y - uiY(cy) as f32) / (uiS(radius) as f32);
+    f32 rr = dx * dx + dy * dy;
+    if rr <= (0.000001 as f32) {
+        g_settings.theme_mgr_saturation = 0.0 as f32;
+        themeMgrApplyWheelColor();
+        return;
+    }
+
+    f32 r = sqrtApprox(rr);
+    if r > (1.0 as f32) {
+        dx = dx / r;
+        dy = dy / r;
+        r = 1.0 as f32;
+    }
+
+    f64 ang = atan2((-dy) as f64, dx as f64);
+    f32 hue = (ang as f32) * (57.2957795 as f32);
+    if hue < 0.0 as f32 {hue += 360.0 as f32;}
+    g_settings.theme_mgr_hue = hue;
+    g_settings.theme_mgr_saturation = clampf(r, 0.0, 1.0);
+    themeMgrApplyWheelColor();
+}
+
+fun themeMgrHandleNameEdit() >> void {
+    themeMgrClampNameCursor();
+
+    if IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT) {
+        g_settings.theme_mgr_name_cursor = themeMgrPrevCharStart(g_settings.theme_mgr_name_cursor);
+        themeMgrClampNameCursor();
+    }
+    if IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT) {
+        g_settings.theme_mgr_name_cursor = themeMgrNextCharStart(g_settings.theme_mgr_name_cursor);
+        themeMgrClampNameCursor();
+    }
+
+    if IsKeyPressed(KEY_BACKSPACE) {themeMgrDeleteAtCursor(true);}
+    if IsKeyPressed(KEY_DELETE) {themeMgrDeleteAtCursor(false);}
+
+    for (true) {
+        i32 ch = GetCharPressed();
+        if ch == 0 {break;}
+        themeMgrInsertChar(ch);
+    }
+
+    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE) {
+        g_settings.theme_mgr_name_edit = false;
+        themeMgrCommitNameBuffer();
+    }
+}
+
+fun drawThemeManager(font: Font, theme: Theme) >> void {
+    i64 panel_x = 0;
+    i64 panel_y = 0;
+    i64 panel_w = 0;
+    i64 panel_h = 0;
+    themeManagerPanelRect(&panel_x, &panel_y, &panel_w, &panel_h);
+
+    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_bg, 0.96 as f32));
+    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.90 as f32));
+
+    drawTextColor(font, "MANAGE CUSTOM THEMES", panel_x + 24, panel_y + 24, 17, theme.text_main);
+    drawTextColor(font, "TAB focus, ENTER action, ESC close", panel_x + 24, panel_y + 48, 11, alphaColor(theme.text_muted, 0.84 as f32));
+    drawTextColor(font, "Live game preview is on the right", panel_x + 24, panel_y + 64, 11, alphaColor(theme.text_muted, 0.72 as f32));
+
+    i64 list_x = panel_x + 24;
+    i64 list_y = panel_y + 82;
+    i64 list_w = 188;
+    i64 row_h = 54;
+    i64 list_h = row_h * (themeMgrListVisible() as i64);
+
+    fillRect(list_x, list_y, list_w, list_h, alphaColor(theme.board_bg, 0.75 as f32));
+    strokeRect(list_x, list_y, list_w, list_h, alphaColor(theme.text_muted, 0.48 as f32));
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_LIST {strokeRect(list_x - 2, list_y - 2, list_w + 4, list_h + 4, alphaColor(theme.panel_stroke, 0.86 as f32));}
+
+    i32 count = customThemeCount();
+    themeMgrSyncListScroll();
+    if count == 0 {
+        drawTextColor(font, "No custom themes yet", list_x + 16, list_y + 20, 11, alphaColor(theme.text_muted, 0.84 as f32));
+        drawTextColor(font, "Press NEW", list_x + 16, list_y + 40, 11, alphaColor(theme.text_muted, 0.84 as f32));
+    }
+    for i32 i = 0; i < count; i++ {
+        i64 y = list_y + ((i as f32 - g_settings.theme_mgr_scroll) * (row_h as f32)) as i64;
+        if y < list_y || y + row_h > list_y + list_h {continue;}
+        bool sel = i == g_settings.theme_mgr_selected;
+        if sel {
+            fillRect(list_x + 6, y + 5, list_w - 12, row_h - 10, alphaColor(theme.panel_stroke, 0.22 as f32));
+            strokeRect(list_x + 6, y + 5, list_w - 12, row_h - 10, alphaColor(theme.panel_stroke, 0.78 as f32));
+        }
+        drawTextColor(font, customThemeName(i), list_x + 14, y + 18, 12, alphaColor(theme.text_main, 0.96 as f32));
+    }
+
+    i64 right_x = panel_x + 226;
+    i64 right_w = panel_w - (right_x - panel_x) - 24;
+
+    i64 name_y = panel_y + 86;
+    fillRect(right_x, name_y, right_w, 54, alphaColor(theme.board_bg, 0.74 as f32));
+    strokeRect(right_x, name_y, right_w, 54, alphaColor(theme.text_muted, 0.52 as f32));
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_NAME {strokeRect(right_x - 2, name_y - 2, right_w + 4, 58, alphaColor(theme.panel_stroke, 0.86 as f32));}
+    drawTextColor(font, "Name", right_x + 12, name_y + 8, 11, alphaColor(theme.text_muted, 0.80 as f32));
+    drawTextColor(font, &g_settings.theme_mgr_name[0], right_x + 12, name_y + 28, 13, theme.text_main);
+    if g_settings.theme_mgr_name_edit {
+        i64 cursor_x = right_x + 12 + themeMgrCursorOffset(font, 13) + 4;
+        fillRect(cursor_x, name_y + 28, 2, 16, alphaColor(theme.panel_stroke, 0.92 as f32));
+    }
+
+    i64 field_y = panel_y + 150;
+    fillRect(right_x, field_y, right_w, 54, alphaColor(theme.board_bg, 0.74 as f32));
+    strokeRect(right_x, field_y, right_w, 54, alphaColor(theme.text_muted, 0.52 as f32));
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_FIELD {strokeRect(right_x - 2, field_y - 2, right_w + 4, 58, alphaColor(theme.panel_stroke, 0.86 as f32));}
+    drawTextColor(font, "<", right_x + 10, field_y + 20, 15, theme.text_main);
+    drawTextColor(font, customThemeFieldName(g_settings.theme_mgr_field), right_x + 28, field_y + 20, 12, theme.text_main);
+    drawTextColor(font, ">", right_x + right_w - 20, field_y + 20, 15, theme.text_main);
+
+    i64 wheel_cx = right_x + right_w / 2;
+    i64 wheel_cy = panel_y + 372;
+    i64 wheel_r = 114;
+
+    i32 center_px_x = uiX(wheel_cx);
+    i32 center_px_y = uiY(wheel_cy);
+    i32 radius_px = uiS(wheel_r);
+    for i32 py = -radius_px; py <= radius_px; py++ {
+        for i32 px = -radius_px; px <= radius_px; px++ {
+            f32 nx = (px as f32) / (radius_px as f32);
+            f32 ny = (py as f32) / (radius_px as f32);
+            f32 rr = nx * nx + ny * ny;
+            if rr > 1.0 as f32 {continue;}
+
+            f32 sat = clampf(sqrtApprox(rr), 0.0, 1.0);
+            f64 ang2 = atan2((-ny) as f64, nx as f64);
+            f32 hue2 = (ang2 as f32) * (57.2957795 as f32);
+            if hue2 < 0.0 as f32 {hue2 += 360.0 as f32;}
+            DrawPixel(center_px_x + px, center_px_y + py, toColor(hsvToColor(hue2, sat, g_settings.theme_mgr_brightness, 1.0 as f32)));
+        }
+    }
+    DrawCircleLines(uiX(wheel_cx), uiY(wheel_cy), uiS(wheel_r) as f32, toColor(alphaColor(theme.text_main, 0.82 as f32)));
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_WHEEL {
+        DrawCircleLines(uiX(wheel_cx), uiY(wheel_cy), uiS(wheel_r + 3) as f32, toColor(alphaColor(theme.panel_stroke, 0.84 as f32)));
+    }
+
+    f64 ang = (g_settings.theme_mgr_hue as f64) * (3.14159265 as f64) / (180.0 as f64);
+    f32 ux = cos(ang) as f32;
+    f32 uy = -(sin(ang) as f32);
+    i64 px = wheel_cx + (ux * (wheel_r as f32) * g_settings.theme_mgr_saturation) as i64;
+    i64 py = wheel_cy + (uy * (wheel_r as f32) * g_settings.theme_mgr_saturation) as i64;
+    DrawCircle(uiX(px), uiY(py), uiS(6) as f32, toColor(alphaColor(theme.text_main, 0.95 as f32)));
+    DrawCircleLines(uiX(px), uiY(py), uiS(8) as f32, toColor(alphaColor(theme.bg_outer, 0.92 as f32)));
+
+    i64 br_x = right_x;
+    i64 br_y = panel_y + 506;
+    i64 br_w = right_w;
+    i64 br_h = 22;
+    for i32 i = 0; i < br_w; i += 6 {
+        f32 t = (i as f32) / (br_w as f32);
+        u32 c = hsvToColor(g_settings.theme_mgr_hue, g_settings.theme_mgr_saturation, t, 1.0 as f32);
+        fillRect(br_x + i, br_y, 6, br_h, c);
+    }
+    strokeRect(br_x, br_y, br_w, br_h, alphaColor(theme.text_muted, 0.76 as f32));
+    i64 knob_x = br_x + (g_settings.theme_mgr_brightness * (br_w as f32)) as i64;
+    fillRect(knob_x - 2, br_y - 3, 4, br_h + 6, alphaColor(theme.text_main, 0.96 as f32));
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BRIGHTNESS {strokeRect(br_x - 2, br_y - 2, br_w + 4, br_h + 4, alphaColor(theme.panel_stroke, 0.84 as f32));}
+
+    u32 preview = customThemeGetColor(g_settings.theme_mgr_selected, g_settings.theme_mgr_field);
+    fillRect(right_x, panel_y + 538, right_w, 56, alphaColor(theme.board_bg, 0.74 as f32));
+    strokeRect(right_x, panel_y + 538, right_w, 56, alphaColor(theme.text_muted, 0.52 as f32));
+    fillRect(right_x + 12, panel_y + 550, 34, 32, preview);
+    strokeRect(right_x + 12, panel_y + 550, 34, 32, alphaColor(theme.text_main, 0.60 as f32));
+    drawTextColor(font, TextFormat("0x%08X", preview), right_x + 56, panel_y + 560, 12, theme.text_main);
+
+    i64 btn_y = panel_y + 620;
+    i64 btn_w = 140;
+    i64 btn_h = 52;
+    arr<ptr<u8>, 3> labels = {"NEW", "DELETE", "CLOSE"};
+    for i32 b = 0; b < 3; b++ {
+        i64 bx = panel_x + 24 + (b as i64) * (btn_w + 12);
+        fillRect(bx, btn_y, btn_w, btn_h, alphaColor(theme.board_bg, 0.78 as f32));
+        u32 st = alphaColor(theme.text_muted, 0.54 as f32);
+        if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BUTTONS && g_settings.theme_mgr_button == b {st = alphaColor(theme.panel_stroke, 0.90 as f32);}
+        strokeRect(bx, btn_y, btn_w, btn_h, st);
+        drawTextCenteredInRect(font, labels[b], bx, btn_y + 2, btn_w, btn_h - 4, 13, alphaColor(theme.text_main, 0.96 as f32));
+    }
+}
+
+fun updateThemeManager(theme_index: ptr<i32>) >> bool {
+    if !g_settings.theme_mgr_open {return false;}
+
+    theme_index[0] = themeCustomSlotIndex();
+    g_settings.theme_custom_active = true;
+
+    i32 count = customThemeCount();
+    if count <= 0 {
+        g_settings.theme_mgr_selected = 0;
+        g_settings.theme_mgr_name[0] = 0;
+        g_settings.theme_mgr_name_cursor = 0;
+        g_settings.theme_mgr_name_edit = false;
+    } else {
+        if g_settings.theme_mgr_selected < 0 {g_settings.theme_mgr_selected = 0;}
+        if g_settings.theme_mgr_selected >= count {g_settings.theme_mgr_selected = count - 1;}
+    }
+    customThemeSetSelected(g_settings.theme_mgr_selected);
+    g_settings.theme_mgr_selected = customThemeSelected();
+    themeMgrSyncListScroll();
+
+    Vector2 mouse = GetMousePosition();
+    i64 panel_x = 0;
+    i64 panel_y = 0;
+    i64 panel_w_tmp = 0;
+    i64 panel_h_tmp = 0;
+    themeManagerPanelRect(&panel_x, &panel_y, &panel_w_tmp, &panel_h_tmp);
+    i64 list_x = panel_x + 24;
+    i64 list_y = panel_y + 82;
+    i64 list_w = 188;
+    i64 list_row_h = 54;
+    i64 list_h = list_row_h * (themeMgrListVisible() as i64);
+
+    i64 right_x = panel_x + 226;
+    i64 right_w = panel_w_tmp - (right_x - panel_x) - 24;
+    i64 name_y = panel_y + 86;
+    i64 field_y = panel_y + 150;
+    i64 wheel_cx = right_x + right_w / 2;
+    i64 wheel_cy = panel_y + 372;
+    i64 wheel_r = 114;
+    i64 br_x = right_x;
+    i64 br_y = panel_y + 506;
+    i64 br_w = right_w;
+    i64 br_h = 22;
+    i64 btn_y = panel_y + 620;
+    i64 btn_w = 140;
+    i64 btn_h = 52;
+
+    if IsKeyPressed(KEY_ESCAPE) {
+        if g_settings.theme_mgr_name_edit {
+            g_settings.theme_mgr_name_edit = false;
+            themeMgrLoadNameBuffer();
+        } else {
+            closeThemeManager();
+        }
+        return true;
+    }
+
+    if g_settings.theme_mgr_name_edit {
+        themeMgrHandleNameEdit();
+        return true;
+    }
+
+    if IsKeyPressed(KEY_TAB) {
+        themeMgrFocusNext();
+        g_settings.keyboard_nav_lock = true;
+    }
+
+    if IsKeyPressed(KEY_N) {
+        Theme base = setTheme(theme_index[0]);
+        i32 next = customThemeCreateFromTheme(base);
+        themeMgrSelectTheme(next);
+        count = customThemeCount();
+    }
+    if count > 0 && IsKeyPressed(KEY_DELETE) {
+        customThemeDelete(g_settings.theme_mgr_selected);
+        themeMgrSelectTheme(customThemeSelected());
+        count = customThemeCount();
+    }
+
+    if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_LIST {
+        if IsKeyPressed(KEY_UP) {themeMgrSelectTheme(g_settings.theme_mgr_selected - 1);}
+        if IsKeyPressed(KEY_DOWN) {themeMgrSelectTheme(g_settings.theme_mgr_selected + 1);}
+    } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_FIELD {
+        if IsKeyPressed(KEY_LEFT) {
+            g_settings.theme_mgr_field -= 1;
+            if g_settings.theme_mgr_field < 0 {g_settings.theme_mgr_field = customThemeFieldCount() - 1;}
+            themeMgrSyncWheelFromThemeColor();
+        }
+        if IsKeyPressed(KEY_RIGHT) {
+            g_settings.theme_mgr_field += 1;
+            if g_settings.theme_mgr_field >= customThemeFieldCount() {g_settings.theme_mgr_field = 0;}
+            themeMgrSyncWheelFromThemeColor();
+        }
+    } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_WHEEL {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT) {
+            g_settings.theme_mgr_hue -= 2.0 as f32;
+            themeMgrApplyWheelColor();
+        }
+        if IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT) {
+            g_settings.theme_mgr_hue += 2.0 as f32;
+            themeMgrApplyWheelColor();
+        }
+        if IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP) {
+            g_settings.theme_mgr_saturation += 0.02 as f32;
+            if g_settings.theme_mgr_saturation > 1.0 as f32 {g_settings.theme_mgr_saturation = 1.0 as f32;}
+            themeMgrApplyWheelColor();
+        }
+        if IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN) {
+            g_settings.theme_mgr_saturation -= 0.02 as f32;
+            if g_settings.theme_mgr_saturation < 0.0 as f32 {g_settings.theme_mgr_saturation = 0.0 as f32;}
+            themeMgrApplyWheelColor();
+        }
+    } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BRIGHTNESS {
+        if IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT) {
+            g_settings.theme_mgr_brightness -= 0.02 as f32;
+            if g_settings.theme_mgr_brightness < 0.0 as f32 {g_settings.theme_mgr_brightness = 0.0 as f32;}
+            themeMgrApplyWheelColor();
+        }
+        if IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT) {
+            g_settings.theme_mgr_brightness += 0.02 as f32;
+            if g_settings.theme_mgr_brightness > 1.0 as f32 {g_settings.theme_mgr_brightness = 1.0 as f32;}
+            themeMgrApplyWheelColor();
+        }
+    } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BUTTONS {
+        if IsKeyPressed(KEY_LEFT) {
+            g_settings.theme_mgr_button -= 1;
+            if g_settings.theme_mgr_button < THEME_MGR_BUTTON_NEW {g_settings.theme_mgr_button = THEME_MGR_BUTTON_CLOSE;}
+        }
+        if IsKeyPressed(KEY_RIGHT) {
+            g_settings.theme_mgr_button += 1;
+            if g_settings.theme_mgr_button > THEME_MGR_BUTTON_CLOSE {g_settings.theme_mgr_button = THEME_MGR_BUTTON_NEW;}
+        }
+    }
+
+    bool do_enter = IsKeyPressed(KEY_ENTER);
+    if do_enter {
+        if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_NAME && count > 0 {
+            g_settings.theme_mgr_name_edit = true;
+            g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+        } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BUTTONS {
+            if g_settings.theme_mgr_button == THEME_MGR_BUTTON_NEW {
+                Theme base = setTheme(theme_index[0]);
+                i32 next = customThemeCreateFromTheme(base);
+                themeMgrSelectTheme(next);
+                count = customThemeCount();
+            } else if g_settings.theme_mgr_button == THEME_MGR_BUTTON_DELETE {
+                if count > 0 {
+                    customThemeDelete(g_settings.theme_mgr_selected);
+                    themeMgrSelectTheme(customThemeSelected());
+                    count = customThemeCount();
+                }
+            } else {
+                closeThemeManager();
+            }
+        }
+    }
+
+    f32 wheel = GetMouseWheelMove();
+    if pointInBaseRect(mouse.x, mouse.y, list_x, list_y, list_w, list_h) {
+        if wheel > 0.0 as f32 {g_settings.theme_mgr_scroll -= 1.0 as f32;}
+        if wheel < 0.0 as f32 {g_settings.theme_mgr_scroll += 1.0 as f32;}
+        themeMgrSyncListScroll();
+    }
+
+    if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+        g_settings.keyboard_nav_lock = false;
+
+        if pointInBaseRect(mouse.x, mouse.y, list_x, list_y, list_w, list_h) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_LIST;
+            i32 idx = (((mouse.y - uiY(list_y) as f32) / (uiS(list_row_h) as f32)) + g_settings.theme_mgr_scroll) as i32;
+            if idx >= 0 && idx < customThemeCount() {themeMgrSelectTheme(idx);}
+        } else if pointInBaseRect(mouse.x, mouse.y, right_x, name_y, right_w, 54) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_NAME;
+            if count > 0 {
+                g_settings.theme_mgr_name_edit = true;
+                g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+            }
+        } else if pointInBaseRect(mouse.x, mouse.y, right_x, field_y, right_w, 54) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_FIELD;
+            if mouse.x < uiX(right_x + right_w / 2) as f32 {
+                g_settings.theme_mgr_field -= 1;
+                if g_settings.theme_mgr_field < 0 {g_settings.theme_mgr_field = customThemeFieldCount() - 1;}
+            } else {
+                g_settings.theme_mgr_field += 1;
+                if g_settings.theme_mgr_field >= customThemeFieldCount() {g_settings.theme_mgr_field = 0;}
+            }
+            themeMgrSyncWheelFromThemeColor();
+        } else if themeMgrWheelHit(mouse, wheel_cx, wheel_cy, wheel_r) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_WHEEL;
+            themeMgrWheelSetFromMouse(mouse, wheel_cx, wheel_cy, wheel_r);
+        } else if pointInBaseRect(mouse.x, mouse.y, br_x, br_y, br_w, br_h) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_BRIGHTNESS;
+            g_settings.theme_mgr_brightness = clampf((mouse.x - uiX(br_x) as f32) / (uiS(br_w) as f32), 0.0, 1.0);
+            themeMgrApplyWheelColor();
+        } else {
+            for i32 b = 0; b < 3; b++ {
+                i64 bx = panel_x + 24 + (b as i64) * (btn_w + 12);
+                if pointInBaseRect(mouse.x, mouse.y, bx, btn_y, btn_w, btn_h) {
+                    g_settings.theme_mgr_focus = THEME_MGR_FOCUS_BUTTONS;
+                    g_settings.theme_mgr_button = b;
+                    if b == THEME_MGR_BUTTON_NEW {
+                        Theme base = setTheme(theme_index[0]);
+                        i32 next = customThemeCreateFromTheme(base);
+                        themeMgrSelectTheme(next);
+                        count = customThemeCount();
+                    } else if b == THEME_MGR_BUTTON_DELETE {
+                        if count > 0 {
+                            customThemeDelete(g_settings.theme_mgr_selected);
+                            themeMgrSelectTheme(customThemeSelected());
+                            count = customThemeCount();
+                        }
+                    } else {
+                        closeThemeManager();
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        if themeMgrWheelHit(mouse, wheel_cx, wheel_cy, wheel_r) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_WHEEL;
+            themeMgrWheelSetFromMouse(mouse, wheel_cx, wheel_cy, wheel_r);
+        }
+        if pointInBaseRect(mouse.x, mouse.y, br_x, br_y, br_w, br_h) {
+            g_settings.theme_mgr_focus = THEME_MGR_FOCUS_BRIGHTNESS;
+            g_settings.theme_mgr_brightness = clampf((mouse.x - uiX(br_x) as f32) / (uiS(br_w) as f32), 0.0, 1.0);
+            themeMgrApplyWheelColor();
+        }
+    }
+
+    return true;
+}
+
+fun settingsThemeManagerOpen() >> bool {
+    return g_settings.theme_mgr_open;
+}
+
+fun drawThemeManagerStandalone(font: Font, theme: Theme) >> void {
+    drawThemeManager(font, theme);
+}
+
 fun sectionAnimForRow(row: i32) >> f32 {
     if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_INSTANT_RESTART {return g_settings.controls_anim;}
     if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_FULLSCREEN_MODE {return g_settings.video_anim;}
@@ -671,6 +1532,7 @@ fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
 
     if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_FULLSCREEN_MODE {
         if !g_settings.video_expanded {return false;}
+        if row == SETTINGS_ROW_MANAGE_THEMES {return g_settings.theme_custom_active;}
         if row == SETTINGS_ROW_CRT_CURVATURE || row == SETTINGS_ROW_CRT_BRIGHTNESS {return shader_mode == SHADER_MODE_CRT;}
         if row == SETTINGS_ROW_VHS_WAVES || row == SETTINGS_ROW_VHS_DAMAGE {return shader_mode == SHADER_MODE_VHS;}
         if row == SETTINGS_ROW_CHOOSE_SHADER {return shader_mode == SHADER_MODE_CUSTOM;}
@@ -986,6 +1848,13 @@ fun settingsEnsureSelectedVisible(bg_stars_mode: i32, shader_mode: i32) >> void 
 }
 
 fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, vhs_waves: f32, vhs_damage: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool, hard_drop_ring: bool, high_contrast_blocks: bool, big_first_bag_preview: bool, fullscreen_mode: bool, custom_shader_name: ptr<u8>, music_mode: i32, music_shuffle: bool) >> void {
+    g_settings.theme_custom_active = theme_index == themeCustomSlotIndex();
+
+    if g_settings.theme_mgr_open {
+        drawThemeManager(font, theme);
+        return;
+    }
+
     settingsEnsureSelectedVisible(bg_stars_mode, shader_mode);
 
     DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
@@ -1113,6 +1982,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
 
     drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, bg_stars_mode, shader_mode);
     if rowVisible(SETTINGS_ROW_THEME, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, bg_stars_mode, shader_mode, "Theme", themeName(theme_index));}
+    if rowVisible(SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode, shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode, shader_mode, "MANAGE THEMES");}
     if rowVisible(SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode, "Shader", shaderModeLabel(shader_mode));}
     if rowVisible(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode) {
         drawButtonRow(font, theme, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode, "CHOOSE CUSTOM SHADER");
@@ -1155,6 +2025,7 @@ fun settingsNudgeRow(row: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr
     }
 
     if row == SETTINGS_ROW_THEME {theme_index[0] = switchTheme(theme_index[0], dir); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MANAGE_THEMES {return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_SHADER {
         shader_mode[0] += dir;
         if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_CUSTOM;}
@@ -1217,6 +2088,9 @@ fun settingsNudgeRow(row: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr
 }
 
 fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>, high_contrast_blocks: ptr<bool>, big_first_bag_preview: ptr<bool>, fullscreen_mode: ptr<bool>, custom_shader_name: ptr<u8>, music_mode: ptr<i32>, music_shuffle: ptr<bool>) >> i32 {
+
+    g_settings.theme_custom_active = theme_index[0] == themeCustomSlotIndex();
+    if !g_settings.theme_custom_active && g_settings.theme_mgr_open {closeThemeManager();}
 
     updateSectionAnimations(GetFrameTime());
 
@@ -1325,6 +2199,8 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         return SETTINGS_ACTION_NONE;
     }
 
+    if updateThemeManager(theme_index) {return SETTINGS_ACTION_NONE;}
+
     if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
     settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
@@ -1379,6 +2255,8 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         if rowIsSectionHeader(g_settings.selected_row) {
             toggleSection(g_settings.selected_row);
             settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        } else if g_settings.selected_row == SETTINGS_ROW_MANAGE_THEMES {
+            openThemeManager(theme_index);
         } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER {
             openShaderPicker(custom_shader_name);
         } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS {
@@ -1415,6 +2293,8 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
                 act = settingsNudgeRow(g_settings.selected_row, selectorDirectionFromMouse(mouse.x), theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
             } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && rowBodyHit(mouse, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode[0], shader_mode[0]) {
                 openShaderPicker(custom_shader_name);
+            } else if g_settings.selected_row == SETTINGS_ROW_MANAGE_THEMES && rowBodyHit(mouse, SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode[0], shader_mode[0]) {
+                openThemeManager(theme_index);
             } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS && rowBodyHit(mouse, SETTINGS_ROW_SELECT_SONGS, bg_stars_mode[0], shader_mode[0]) {
                 if g_star_music_track_count > 0 {openSongPicker();}
             } else if rowUsesToggleMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
