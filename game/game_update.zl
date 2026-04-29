@@ -476,18 +476,26 @@ fun updateGameScreen() >> void {
     updateLineClearEffects(dt);
     updateRestartAfterglow(dt);
 
-    if isVsBotMode() && !canOpenBotSetupUi() {
+    if isAgainstBotMode() && !canOpenBotSetupUi() {
         if IsKeyPressed(KEY_ESCAPE) {enterMenuFromGame();}
         return;
     }
 
     if (g_instant_restart && IsKeyPressed(KEY_R)) {
-        triggerImmediateRestart(true);
+        if isOnlineDuelMode() {
+            onlineSetLocalRestartReady();
+        } else {
+            triggerImmediateRestart(true);
+        }
         return;
     }
 
     if canRestartNowByHotkey() && IsKeyPressed(KEY_R) {
-        triggerImmediateRestart(true);
+        if isOnlineDuelMode() {
+            onlineSetLocalRestartReady();
+        } else {
+            triggerImmediateRestart(true);
+        }
         return;
     }
 
@@ -546,8 +554,10 @@ fun updateGameScreen() >> void {
         return;
     }
 
-    if isVsBotMode() && g_duel_running {updateDuelBot(dt);}
-    if isVsBotMode() && g_duel_running {
+    if isOnlineDuelMode() {onlineUpdateRunningSession(dt);}
+
+    if isAgainstBotMode() && g_duel_running {updateDuelBot(dt);}
+    if isVersusMode() && g_duel_running {
         if g_bot.game_over {
             g_duel_running = false;
             g_duel_result = DUEL_RESULT_PLAYER_WIN;
@@ -557,7 +567,7 @@ fun updateGameScreen() >> void {
         }
     }
 
-    if isVsBotMode() && !g_duel_running {
+    if isVersusMode() && !g_duel_running {
         return;
     }
 

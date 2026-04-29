@@ -29,6 +29,10 @@ use zltris.ui
 #define SCREEN_BOT_SETUP 3
 #define SCREEN_CHALLENGE_SETUP 4
 #define SCREEN_RHYTHM_SETUP 5
+#define SCREEN_ONLINE_DUEL_SETUP 6
+
+#define ONLINE_ROLE_HOST 0
+#define ONLINE_ROLE_CLIENT 1
 
 #define MODE_FREE_PLAY 0
 #define MODE_40_LINES 1
@@ -36,6 +40,7 @@ use zltris.ui
 #define MODE_COMBO_TRAINER 6
 #define MODE_CHALLENGE 5
 #define MODE_RHYTHM 7
+#define MODE_ONLINE_DUEL 8
 
 #define WINDOW_W 960
 #define WINDOW_H 920
@@ -48,6 +53,7 @@ use zltris.ui
 #define ROUND_FINISHED 2
 
 #define DUEL_RESULT_PLAYER_WIN 1
+#define ONLINE_ERR_LEFT 9
 
 #define SHADER_MODE_LIGHT_CRT 1
 #define SHADER_MODE_CRT 2
@@ -59,7 +65,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     if (split_layout) {
         i64 left_panel_x = -214;
         i64 right_panel_x = currentCenterSidebarX();
-        if isVsBotMode() {
+        if isVersusMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
         }
@@ -78,7 +84,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
-        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
         if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
         if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
@@ -105,7 +111,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
             drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
         }
 
-        if isVsBotMode() {
+        if isVersusMode() {
             i64 bot_panel_x = vsBotBotPanelX();
 
             fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
@@ -126,7 +132,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
                 }
                 fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
                 strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
-                drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+                if g_bot_queue[i] >= 0 {drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);}
             }
         }
         return;
@@ -507,12 +513,28 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
         return;
     }
 
+    if (g_game.screen == SCREEN_ONLINE_DUEL_SETUP) {
+        drawOnlineDuelSetup(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
     if isBotDuelsMode() {drawBotDuelsFrame(font);} else {drawGameFrame(font);}
 }
 
 fun applyUiScaleBaseForScreen() >> void {
     if g_game.screen == SCREEN_SETTINGS && settingsThemeManagerOpen() {
         setScaleBase(THEME_EDITOR_BASE_W, UI_BASE_H);
+        return;
+    }
+
+    if g_game.screen == SCREEN_GAME && isVersusMode() {
+        setScaleBase(1100, UI_BASE_H);
+        return;
+    }
+
+    if g_game.screen == SCREEN_ONLINE_DUEL_SETUP {
+        setScaleBase(900, UI_BASE_H);
         return;
     }
 
@@ -529,7 +551,7 @@ fun drawApp(font: Font) >> void {
         shake_x = boardShakeX();
         shake_y = boardShakeY();
     }
-    if (g_game.screen == SCREEN_GAME && (isVsBotMode() || isBotDuelsMode())) {
+    if (g_game.screen == SCREEN_GAME && (isVersusMode() || isBotDuelsMode())) {
         setScaleExtraX(vsBotLayoutExtraX() + shake_x);
     } else if (g_game.screen == SCREEN_GAME && gameUsesSplitLayout()) {
         i32 split_offset_x = ((splitLayoutExtraXBase() as f32) * uiScale()) as i32;
@@ -713,6 +735,14 @@ fun updateApp() >> void {
         } else if (action == menuActionOpenBotSetup()) {
             initBotSetupDefaults();
             g_game = g_game.with_screen(SCREEN_BOT_SETUP);
+        } else if (action == menuActionOpenOnlineDuelHost()) {
+            g_online_role = ONLINE_ROLE_HOST;
+            onlineDuelSetupInit();
+            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
+        } else if (action == menuActionOpenOnlineDuelJoin()) {
+            g_online_role = ONLINE_ROLE_CLIENT;
+            onlineDuelSetupInit();
+            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
         } else if (action == menuActionStartBotDuels()) {
             if BOTDEVMODE {startBotDuelsMode();}
         } else if (action == menuActionOpenSettings()) {
@@ -865,6 +895,22 @@ fun updateApp() >> void {
         return;
     }
 
+    if (g_game.screen == SCREEN_ONLINE_DUEL_SETUP) {
+        i32 online_action = updateOnlineDuelSetup();
+        if online_action == onlineDuelSetupActionBack() {
+            onlineAbortSession();
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if online_action == onlineDuelSetupActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_ONLINE_DUEL);
+            onlineMarkGameStarted();
+            return;
+        }
+        return;
+    }
+
     updateGameScreen();
 }
 
@@ -889,6 +935,26 @@ fun boardCenteredBoxX(board_left: i64, box_w: i64) >> i64 {
 
 fun boardCenteredBoxY(board_top: i64, box_h: i64) >> i64 {
     return board_top + (currentVisibleBoardHeightPx() - box_h) / 2;
+}
+
+fun drawOpponentLeftOverlay(font: Font, theme: Theme) >> void {
+    if !isOnlineDuelMode() {return;}
+    if g_duel_running {return;}
+    if g_online_disconnect_reason != ONLINE_ERR_LEFT {return;}
+
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+    i64 box_w = board_w - 32;
+    if box_w < 172 {box_w = 172;}
+    i64 box_h = 74;
+    i64 box_x = board_x + (board_w - box_w) / 2;
+    i64 box_y = board_y + (board_h - box_h) / 2;
+
+    fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.90));
+    strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.88));
+    drawTextCenteredInRect(font, "left the game", box_x, box_y, box_w, box_h, 16, theme.text_main);
 }
 
 fun controlsHintY() >> i64 {
@@ -916,7 +982,7 @@ fun boardCenteredTextX(font: Font, text: ptr<u8>, size: i64) >> i64 {
 }
 
 fun shouldDrawGameWidthPopup() >> bool {
-    return (isVsBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi();
+    return (isAgainstBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi();
 }
 
 fun drawGameBackgroundLayer(theme: Theme) >> void {
@@ -927,7 +993,7 @@ fun drawGameBackgroundLayer(theme: Theme) >> void {
 fun drawGameBlocksLayer(font: Font, theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     drawBoard(theme);
-    if isVsBotMode() {drawBotBoard(theme, font);}
+    if isVersusMode() {drawBotBoard(theme, font);}
 }
 
 fun drawGameUiLayer(font: Font, theme: Theme) >> void {
@@ -944,7 +1010,7 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     drawSidebar(font, theme, split_layout);
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
-    if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
+    if !(isAgainstBotMode() && g_bot_setup.high_stack_tolerance) {
         i64 controls_top_x = currentPlayerBoardLeft();
         drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
         drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
@@ -961,7 +1027,7 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
     
-    if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
+    if g_play.game_over && !(isVersusMode() && !g_duel_running) {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -973,8 +1039,9 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     }
 
     drawFortyLinesOverlay(font, theme);
+    drawOpponentLeftOverlay(font, theme);
 
-    if isVsBotMode() && !g_duel_running {
+    if isVersusMode() && !g_duel_running {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -982,7 +1049,9 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
         fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
         strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
-        drawTextColor(font, "R retry  ESC menu", box_x + 24, box_y + 80, 14, theme.text_muted);
+        ptr<u8> footer = "R retry  ESC menu";
+        if isOnlineDuelMode() {footer = "R retry  ESC room";}
+        drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}
@@ -1101,7 +1170,9 @@ fun drawBotBoardUiTargetLayer(theme: Theme, font: Font) >> void {
     i64 board_h = (botBoardHeight() as i64) * boardCellSize();
 
     strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
-    drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
+    ptr<u8> opp_title = "OPPONENT";
+    if isAgainstBotMode() {opp_title = "BOT";}
+    drawTextColor(font, opp_title, board_x + 120, board_y - 42, 16, theme.text_main);
 
     for i32 y = 0; y < botBoardHeight(); y++ {
         for i32 x = 0; x < botBoardWidth(); x++ {
@@ -1124,7 +1195,7 @@ fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
     if split_layout {
         i64 left_panel_x = -214;
         i64 right_panel_x = currentCenterSidebarX();
-        if isVsBotMode() {
+        if isVersusMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
         }
@@ -1138,7 +1209,7 @@ fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
             fillRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
         }
 
-        if isVsBotMode() {
+        if isAgainstBotMode() {
             i64 bot_panel_x = vsBotBotPanelX();
             fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -1180,7 +1251,7 @@ fun drawBotBoardBlocksTargetLayer(theme: Theme) >> void {
         }
     }
 
-    if !g_bot.game_over {
+    if !g_bot.game_over && g_bot.piece_kind >= 0 {
         drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, botGhostY() as i64, board_x, board_y, ghostColor(pieceColor(theme, g_bot.piece_kind)));
         drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
     }
@@ -1194,7 +1265,7 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
     if split_layout {
         i64 left_panel_x = -214;
         i64 right_panel_x = currentCenterSidebarX();
-        if isVsBotMode() {
+        if isVersusMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
         }
@@ -1217,7 +1288,7 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
             drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
         }
 
-        if isVsBotMode() {
+        if isAgainstBotMode() {
             i64 bot_panel_x = vsBotBotPanelX();
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
                 i64 panel_y = 186 + (i as i64) * 88;
@@ -1232,7 +1303,7 @@ fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
                     panel_h = 92;
                     piece_size = 18;
                 }
-                drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+                if g_bot_queue[i] >= 0 {drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);}
             }
         }
         return;
@@ -1261,7 +1332,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
     if (split_layout) {
         i64 left_panel_x = -214;
         i64 right_panel_x = currentCenterSidebarX();
-        if isVsBotMode() {
+        if isVersusMode() {
             left_panel_x = vsBotPlayerLeftPanelX();
             right_panel_x = currentCenterSidebarX();
         }
@@ -1277,7 +1348,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
         drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
         drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
-        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVsBotMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
         if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
         if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
@@ -1299,7 +1370,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
             strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
         }
 
-        if isVsBotMode() {
+        if isAgainstBotMode() {
             i64 bot_panel_x = vsBotBotPanelX();
 
             strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
@@ -1359,7 +1430,7 @@ fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBackgroundTargetLayer(theme);
-    if isVsBotMode() {drawBotBoardBackgroundTargetLayer(theme);}
+    if isVersusMode() {drawBotBoardBackgroundTargetLayer(theme);}
     drawSidebarBackgroundTargetLayer(theme, split_layout);
 }
 
@@ -1367,7 +1438,7 @@ fun drawGameBlocksTargetLayer(theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBlocksTargetLayer(theme);
-    if isVsBotMode() {drawBotBoardBlocksTargetLayer(theme);}
+    if isVersusMode() {drawBotBoardBlocksTargetLayer(theme);}
     drawSidebarPiecesTargetLayer(theme, split_layout);
 }
 
@@ -1383,11 +1454,11 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     }
 
     drawPlayerBoardUiTargetLayer(theme);
-    if isVsBotMode() {drawBotBoardUiTargetLayer(theme, font);}
+    if isVersusMode() {drawBotBoardUiTargetLayer(theme, font);}
     drawSidebarUiTargetLayer(font, theme, split_layout);
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
-    if !(isVsBotMode() && g_bot_setup.high_stack_tolerance) {
+    if !(isAgainstBotMode() && g_bot_setup.high_stack_tolerance) {
         i64 controls_top_x = currentPlayerBoardLeft();
         drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
         drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
@@ -1404,7 +1475,7 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
 
-    if g_play.game_over && !(isVsBotMode() && !g_duel_running) {
+    if g_play.game_over && !(isVersusMode() && !g_duel_running) {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -1416,8 +1487,9 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     }
 
     drawFortyLinesOverlay(font, theme);
+    drawOpponentLeftOverlay(font, theme);
 
-    if isVsBotMode() && !g_duel_running {
+    if isVersusMode() && !g_duel_running {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -1425,7 +1497,9 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
         fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
         strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
-        drawTextColor(font, "R retry  ESC menu", box_x + 24, box_y + 80, 14, theme.text_muted);
+        ptr<u8> footer = "R retry  ESC menu";
+        if isOnlineDuelMode() {footer = "R retry  ESC room";}
+        drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}

@@ -280,13 +280,13 @@ fun loadBotDuelsFile() >> void {
     }
 
     arr<u8, 4096> data = {0};
-    i64 bytes_read = readAll(fd, &data[0], 4095);
+    i32 bytes_read = readAll(fd, &data[0], 4095) as i32;
     close(fd);
     if bytes_read <= 0 {
         g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
         return;
     }
-    data[bytes_read as i32] = 0;
+    data[bytes_read] = 0;
 
     arr<i32, AI_TUNE_COUNT> champion_tune_seen = {0};
     arr<i32, BOT_ARENA_HISTORY_TUNING_CELLS> history_tune_seen = {0};

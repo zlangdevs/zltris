@@ -13,6 +13,7 @@ use zltris.theme
 #define BOTDEVMODE false
 
 #define SCREEN_MENU 0
+#define SCREEN_ONLINE_DUEL_SETUP 6
 
 #define MODE_FREE_PLAY 0
 #define MODE_40_LINES 1
@@ -22,6 +23,7 @@ use zltris.theme
 #define MODE_CHALLENGE 5
 #define MODE_COMBO_TRAINER 6
 #define MODE_RHYTHM 7
+#define MODE_ONLINE_DUEL 8
 
 #define BLITZ_DURATION_SECONDS 120.0
 
@@ -57,6 +59,18 @@ fun isBlitzMode() >> bool {
 
 fun isVsBotMode() >> bool {
     return g_play.is_mode(MODE_VS_BOT);
+}
+
+fun isOnlineDuelMode() >> bool {
+    return g_play.is_mode(MODE_ONLINE_DUEL);
+}
+
+fun isAgainstBotMode() >> bool {
+    return isVsBotMode();
+}
+
+fun isVersusMode() >> bool {
+    return isVsBotMode() || isOnlineDuelMode();
 }
 
 fun isChallengeMode() >> bool {
@@ -561,6 +575,10 @@ fun resetRestartHoldState(clear_afterglow: bool) >> void {
 fun enterMenuFromGame() >> void {
     g_rt.restart_afterglow = 0.0;
     g_music_playback_rate = 1.0 as f32;
+    if isOnlineDuelMode() {
+        onlineReturnToLobbyFromMatch(true);
+        return;
+    }
     if isRhythmMode() {rhythmRestoreMusicPlaylistIfNeeded();}
     g_game = g_game.with_screen(SCREEN_MENU);
     menuInit();
@@ -574,7 +592,7 @@ fun triggerImmediateRestart(block_hold: bool) >> void {
 
 fun canRestartNowByHotkey() >> bool {
     if g_play.game_over {return true;}
-    if isVsBotMode() && !g_duel_running {return true;}
+    if isVersusMode() && !g_duel_running {return true;}
     if modeUsesRoundState() && g_play.round_state == ROUND_FINISHED {return true;}
     return false;
 }
@@ -662,12 +680,15 @@ fun startGameMode(mode: i32) >> void {
         g_rt.countdown_timer = 0.0;
     }
 
-    if isChallengeMode() {
+    if isChallengeMode() || isOnlineDuelMode() {
         applyChallengeStartGarbage();
     }
 
-    if isVsBotMode() {
+    if isAgainstBotMode() {
         initBotMatch();
+        g_duel_running = true;
+    } else if isOnlineDuelMode() {
+        onlinePrepareMatchRuntime();
         g_duel_running = true;
     } else if isBotDuelsMode() {
         initBotArenaRound();
@@ -790,7 +811,11 @@ fun updateRestartCharge(dt: f32) >> bool {
             g_rt.restart_charge = 1.0;
             g_rt.restart_hold_latched = true;
             if action == HOLD_ACTION_RESTART {
-                triggerImmediateRestart(true);
+                if isOnlineDuelMode() {
+                    onlineSetLocalRestartReady();
+                } else {
+                    triggerImmediateRestart(true);
+                }
                 g_rt.restart_afterglow = 0.24 as f32;
                 return true;
             }
@@ -811,7 +836,7 @@ fun updateRestartCharge(dt: f32) >> bool {
 }
 
 fun canShowHoldRestartEffect() >> bool {
-    if isVsBotMode() && !g_duel_running {return false;}
+    if isVersusMode() && !g_duel_running {return false;}
     if g_play.game_over {return false;}
     if modeUsesRoundState() && g_play.round_state != ROUND_RUNNING {return false;}
     return true;
