@@ -57,7 +57,7 @@ fun viewportBaseHeight() >> i64 {
 }
 
 fun gameUsesSplitLayout() >> bool {
-    if isVsBotMode() {return true;}
+    if isVersusMode() {return true;}
     if isChallengeMode() {return canUseDoubleRowLayout();}
     return canUseDoubleRowLayout();
 }
@@ -65,25 +65,31 @@ fun gameUsesSplitLayout() >> bool {
 fun boardCellSize() >> i64 {
     i64 base_cell = CELL as i64;
     if g_game.screen != SCREEN_GAME {return base_cell;}
-    if isVsBotMode() {return base_cell;}
-    if !isChallengeMode() {return base_cell;}
+    if isAgainstBotMode() {return base_cell;}
+    if !isChallengeMode() && !isOnlineDuelMode() {return base_cell;}
 
     i64 w_cells = boardWidth() as i64;
     i64 h_cells = boardVisibleRows() as i64;
     if w_cells <= 0 || h_cells <= 0 {return base_cell;}
 
     i64 overhead_w = nonVsSidebarGap() + 178;
-    if gameUsesSplitLayout() {overhead_w = nonVsSidebarGap() + 440;}
+    if isOnlineDuelMode() {
+        overhead_w = 540 + vsBotGapBase() * 5;
+    } else if gameUsesSplitLayout() {
+        overhead_w = nonVsSidebarGap() + 440;
+    }
     i64 free_w = viewportBaseWidth() - overhead_w;
     i64 free_h = viewportBaseHeight() - currentBoardTop() - 138;
     if free_w < 24 {free_w = 24;}
     if free_h < 24 {free_h = 24;}
 
     i64 by_w = free_w / w_cells;
+    if isOnlineDuelMode() {by_w = free_w / (w_cells * 2);}
     i64 by_h = free_h / h_cells;
     i64 cell = by_w;
     if by_h < cell {cell = by_h;}
     if cell < 6 {cell = 6;}
+    if cell > base_cell {cell = base_cell;}
     return cell;
 }
 
@@ -213,7 +219,11 @@ fun vsBotGapBase() >> i64 {
 }
 
 fun vsBotContentWidth() >> i64 {
-    return 1180 + vsBotGapBase() * 5;
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    if isOnlineDuelMode() {
+        return 362 + vsBotGapBase() * 4 + board_w * 2;
+    }
+    return 540 + vsBotGapBase() * 5 + board_w * 2;
 }
 
 fun vsBotLayoutLeft() >> i64 {
@@ -227,7 +237,7 @@ fun vsBotPlayerBoardLeft() >> i64 {
 }
 
 fun vsBotCenterPanelX() >> i64 {
-    return vsBotPlayerBoardLeft() + (botBoardWidth() as i64) * boardCellSize() + vsBotGapBase();
+    return vsBotPlayerBoardLeft() + (boardWidth() as i64) * boardCellSize() + vsBotGapBase();
 }
 
 fun vsBotBotBoardLeft() >> i64 {
@@ -235,11 +245,12 @@ fun vsBotBotBoardLeft() >> i64 {
 }
 
 fun vsBotBotPanelX() >> i64 {
+    if isOnlineDuelMode() { return -10000; }
     return vsBotBotBoardLeft() + (botBoardWidth() as i64) * boardCellSize() + vsBotGapBase();
 }
 
 fun currentPlayerBoardLeft() >> i64 {
-    if isVsBotMode() {return vsBotPlayerBoardLeft();}
+    if isVersusMode() {return vsBotPlayerBoardLeft();}
     if gameUsesSplitLayout() {return BOARD_LEFT;}
 
     i64 board_w = (boardWidth() as i64) * boardCellSize();
@@ -257,7 +268,7 @@ fun currentBoardTop() >> i64 {
 }
 
 fun currentCenterSidebarX() >> i64 {
-    if isVsBotMode() {return vsBotCenterPanelX();}
+    if isVersusMode() {return vsBotCenterPanelX();}
     return currentPlayerBoardLeft() + (boardWidth() as i64) * boardCellSize() + nonVsSidebarGap();
 }
 
@@ -282,7 +293,7 @@ fun splitLayoutExtraXBase() >> i64 {
 }
 
 fun currentBotBoardLeft() >> i64 {
-    if isVsBotMode() {return vsBotBotBoardLeft();}
+    if isVersusMode() {return vsBotBotBoardLeft();}
     return BOT_BOARD_LEFT;
 }
 

@@ -208,7 +208,7 @@ fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) 
 
     i32 attack = lockAttack(lines_cleared, spin, mini, difficult, b2b_chain, g_rt.combo, all_clear);
     g_rt.attack_sent += attack;
-    if isVsBotMode() {routePlayerAttack(attack);}
+    if isVersusMode() {routePlayerAttack(attack);}
 
     if isChallengeMode() {
         f32 factor = challengeGarbageFactor();
@@ -272,7 +272,7 @@ fun stepLock() >> void {
         return;
     }
 
-    if isVsBotMode() && g_player_pending_garbage > 0 {
+    if isVersusMode() && g_player_pending_garbage > 0 {
         insertGarbageIntoPlayer(g_player_pending_garbage);
         g_player_pending_garbage = 0;
         if g_play.game_over {return;}

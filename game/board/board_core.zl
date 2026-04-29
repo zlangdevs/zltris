@@ -24,6 +24,7 @@ use zltris.scale
 #define CHALLENGE_KICK_SRS 0
 #define CHALLENGE_KICK_NONE 1
 #define MODE_CHALLENGE 5
+#define MODE_ONLINE_DUEL 8
 
 #define THEME_COMPETITIVE_INDEX 5
 
@@ -118,11 +119,42 @@ fun boardHiddenRows() >> i32 {
     return 2;
 }
 
+fun modeUsesCustomRules() >> bool {
+    return isChallengeMode() || isOnlineDuelMode();
+}
+
+fun modeStartGravity() >> f32 {
+    if isOnlineDuelMode() {return g_online_start_gravity;}
+    return g_challenge_start_gravity;
+}
+
+fun modeGravityRamp() >> f32 {
+    if isOnlineDuelMode() {return g_online_gravity_ramp;}
+    return g_challenge_gravity_ramp;
+}
+
+fun modeInfiniteHold() >> bool {
+    if isOnlineDuelMode() {return g_online_infinite_hold;}
+    return g_challenge_infinite_hold;
+}
+
+fun modeKickTable() >> i32 {
+    if isOnlineDuelMode() {return g_online_kick_table;}
+    return g_challenge_kick_table;
+}
+
+fun modeStartGarbageLines() >> i32 {
+    if isOnlineDuelMode() {return g_online_start_garbage_lines;}
+    return g_challenge_start_garbage_lines;
+}
+
 fun botBoardWidth() >> i32 {
+    if isOnlineDuelMode() {return boardWidth();}
     return BOT_BOARD_W;
 }
 
 fun botBoardHeight() >> i32 {
+    if isOnlineDuelMode() {return boardHeight();}
     return BOT_BOARD_H;
 }
 
@@ -136,6 +168,9 @@ fun applyModeBoardSize(mode: i32) >> void {
     if mode == MODE_CHALLENGE {
         g_board_width = g_challenge_board_width;
         g_board_height = g_challenge_board_height + boardHiddenRows();
+    } else if mode == MODE_ONLINE_DUEL {
+        g_board_width = g_online_board_width;
+        g_board_height = g_online_board_height + boardHiddenRows();
     } else {
         g_board_width = BOARD_W_DEFAULT;
         g_board_height = BOARD_H_DEFAULT;
@@ -610,8 +645,8 @@ fun playerSpawnY() >> i32 {
 }
 
 fun gravityInterval() >> f32 {
-    if isChallengeMode() {
-        f32 speed = g_challenge_start_gravity + g_challenge_gravity_ramp * (g_rt.run_timer / (60.0 as f32));
+    if modeUsesCustomRules() {
+        f32 speed = modeStartGravity() + modeGravityRamp() * (g_rt.run_timer / (60.0 as f32));
         if speed < (0.05 as f32) {speed = 0.05 as f32;}
         if speed > (60.0 as f32) {speed = 60.0 as f32;}
         return (1.0 as f32) / speed;
@@ -673,10 +708,10 @@ fun applyComboPracticeStarterPattern() >> void {
 }
 
 fun applyChallengeStartGarbage() >> void {
-    if !isChallengeMode() {return;}
-    if g_challenge_start_garbage_lines <= 0 {return;}
+    if !modeUsesCustomRules() {return;}
+    if modeStartGarbageLines() <= 0 {return;}
 
-    i32 lines = g_challenge_start_garbage_lines;
+    i32 lines = modeStartGarbageLines();
     if lines < 0 {lines = 0;}
     i32 cap = boardHeight() - 1;
     if cap < 0 {cap = 0;}
@@ -986,6 +1021,15 @@ fun insertGarbageIntoBot(amount: i32) >> void {
 
 fun routePlayerAttack(attack: i32) >> void {
     if attack <= 0 {return;}
+
+    if isOnlineDuelMode() {
+        i32 cancel_online = minI(attack, g_player_pending_garbage);
+        g_player_pending_garbage -= cancel_online;
+        i32 out_online = attack - cancel_online;
+        if out_online > 0 {onlineQueueOutgoingAttack(out_online);}
+        return;
+    }
+
     i32 cancel = minI(attack, g_player_pending_garbage);
     g_player_pending_garbage -= cancel;
     i32 out = attack - cancel;
@@ -1043,13 +1087,13 @@ fun initBotMatch() >> void {
 }
 
 fun holdCurrent() >> void {
-    if g_hold_used && !g_challenge_infinite_hold {return;}
+    if g_hold_used && !modeInfiniteHold() {return;}
 
     i32 current = g_piece_kind;
     if (g_hold_kind < 0) {
         g_hold_kind = current;
         spawnNextPiece();
-        if g_challenge_infinite_hold {g_hold_used = false;} else {g_hold_used = true;}
+        if modeInfiniteHold() {g_hold_used = false;} else {g_hold_used = true;}
         return;
     }
 
@@ -1061,7 +1105,7 @@ fun holdCurrent() >> void {
     g_rt.gravity_timer = 0.0;
     g_rt.soft_timer = 0.0;
     g_rt.lock_timer = 0.0;
-    if g_challenge_infinite_hold {g_hold_used = false;} else {g_hold_used = true;}
+    if modeInfiniteHold() {g_hold_used = false;} else {g_hold_used = true;}
     g_rt.shift_hold_timer = 0.0;
     g_rt.shift_repeat_timer = 0.0;
     g_rt.shift_dir = 0;
@@ -1099,7 +1143,7 @@ fun tryRotate(dir: i32) >> bool {
     }
 
     i32 max_tests = 5;
-    if isChallengeMode() && g_challenge_kick_table == CHALLENGE_KICK_NONE {max_tests = 1;}
+    if modeUsesCustomRules() && modeKickTable() == CHALLENGE_KICK_NONE {max_tests = 1;}
     for i32 test = 0; test < max_tests; test++ {
         i32 dx = kickX(g_piece_kind, from, to, test);
         i32 dy = kickY(g_piece_kind, from, to, test);

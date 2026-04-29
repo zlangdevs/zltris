@@ -188,14 +188,14 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
     i64 board_w = (botBoardWidth() as i64) * boardCellSize();
-    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+    i64 board_h = ((botBoardHeight() - boardVisibleStartRow()) as i64) * boardCellSize();
 
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
     strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
     drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
 
-    for i32 y = 0; y < botBoardHeight(); y++ {
+    for i32 y = boardVisibleStartRow(); y < botBoardHeight(); y++ {
         for i32 x = 0; x < botBoardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
@@ -213,7 +213,7 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
         }
     }
 
-    if !g_bot.game_over {
+    if !g_bot.game_over && g_bot.piece_kind >= 0 {
         drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, botGhostY() as i64, board_x, board_y, ghostColor(pieceColor(theme, g_bot.piece_kind)));
         drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
     }
@@ -273,7 +273,7 @@ fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_
     BotArenaSide state = g_bot_arena_left;
     if side == BOT_ARENA_RIGHT {state = g_bot_arena_right;}
     i64 board_w = (botBoardWidth() as i64) * boardCellSize();
-    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+    i64 board_h = ((botBoardHeight() - boardVisibleStartRow()) as i64) * boardCellSize();
 
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
@@ -282,7 +282,7 @@ fun drawArenaSideBoard(theme: Theme, font: Font, side: i32, board_x: i64, board_
     drawTextColor(font, label, board_x + 72, board_y - 42, 16, theme.text_main);
     drawTextColor(font, TextFormat("GEN %i", state.generation), board_x + 90, board_y - 22, 10, theme.text_muted);
 
-    for i32 y = 0; y < botBoardHeight(); y++ {
+    for i32 y = boardVisibleStartRow(); y < botBoardHeight(); y++ {
         for i32 x = 0; x < botBoardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
