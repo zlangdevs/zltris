@@ -3,6 +3,7 @@ use raylib
 use std.io
 use std.fs
 use std.math
+use std.thread
 use zltris.aubio
 
 #define STAR_MUSIC_STYLE_PULSE 0
@@ -17,6 +18,21 @@ use zltris.aubio
 #define STAR_MUSIC_MODE_BUILTIN 0
 #define STAR_MUSIC_MODE_CUSTOM 1
 #define STAR_MUSIC_CUSTOM_DIR "assets/songs"
+
+struct StarMusicAnalyzeRequest {
+    request_id i32,
+    track_index i32,
+    path arr<u8, STAR_MUSIC_PATH_MAX>,
+}
+
+struct StarMusicAnalyzeResult {
+    request_id i32,
+    track_index i32,
+    beat_count i32,
+    beats arr<f32, STAR_MUSIC_MAX_BEATS>,
+    strength_raw arr<f32, STAR_MUSIC_MAX_BEATS>,
+    accent arr<f32, STAR_MUSIC_MAX_BEATS>,
+}
 
 f32 g_star_music_intensity = 0.6;
 i32 g_star_music_style = STAR_MUSIC_STYLE_PULSE;
@@ -50,6 +66,19 @@ arr<u8, 4096> g_music_disabled_buf = {0};
 bool g_songs_modified = false;
 bool g_music_lock_single_track = false;
 bool g_music_track_ended = false;
+
+Mutex g_star_music_analyze_mutex = {0};
+CondVar g_star_music_analyze_cond = {0};
+Thread g_star_music_analyze_thread = {0};
+bool g_star_music_analyze_init = false;
+bool g_star_music_analyze_running = false;
+bool g_star_music_analyze_stop = false;
+bool g_star_music_analyze_has_request = false;
+StarMusicAnalyzeRequest g_star_music_analyze_request = {0};
+bool g_star_music_analyze_has_result = false;
+StarMusicAnalyzeResult g_star_music_analyze_result = {0};
+i32 g_star_music_analyze_next_request = 1;
+i32 g_star_music_analyze_expected_request = 0;
 
 fun trackPathPtr(slot: i32) >> ptr<u8> {
     return &g_star_music_track_path_buf[slot * STAR_MUSIC_PATH_MAX];
@@ -470,6 +499,135 @@ fun buildMusicPlaylist() >> void {
     printf("[zltris] playlist tracks: %i\n", g_star_music_track_count);
 }
 
+fun starMusicCopyPath(dst: ptr<u8>, src: ptr<u8>) >> void {
+    i32 i = 0;
+    for (i < STAR_MUSIC_PATH_MAX - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun starMusicAnalyzeThreadMain(arg: ptr<void>) >> ptr<void> {
+    for true {
+        mutexLock(&g_star_music_analyze_mutex);
+        for (!g_star_music_analyze_stop && !g_star_music_analyze_has_request) {
+            condWait(&g_star_music_analyze_cond, &g_star_music_analyze_mutex);
+        }
+
+        if g_star_music_analyze_stop {
+            mutexUnlock(&g_star_music_analyze_mutex);
+            break;
+        }
+
+        StarMusicAnalyzeRequest req = g_star_music_analyze_request;
+        g_star_music_analyze_has_request = false;
+        mutexUnlock(&g_star_music_analyze_mutex);
+
+        StarMusicAnalyzeResult result = {0};
+        result.request_id = req.request_id;
+        result.track_index = req.track_index;
+        analyzeMusicBeatsInto(&req.path[0], &result.beats[0], &result.strength_raw[0], &result.accent[0], &result.beat_count);
+
+        mutexLock(&g_star_music_analyze_mutex);
+        g_star_music_analyze_result = result;
+        g_star_music_analyze_has_result = true;
+        mutexUnlock(&g_star_music_analyze_mutex);
+    }
+
+    return arg;
+}
+
+fun starMusicAnalyzeWorkerEnsureStarted() >> void {
+    if g_star_music_analyze_running {return;}
+
+    if !g_star_music_analyze_init {
+        mutexInit(&g_star_music_analyze_mutex);
+        condInit(&g_star_music_analyze_cond);
+        g_star_music_analyze_init = true;
+    }
+
+    g_star_music_analyze_stop = false;
+    g_star_music_analyze_has_request = false;
+    g_star_music_analyze_has_result = false;
+    if threadCreate(&g_star_music_analyze_thread, starMusicAnalyzeThreadMain, null) {
+        g_star_music_analyze_running = true;
+    }
+}
+
+fun starMusicAnalyzeWorkerShutdown() >> void {
+    if !g_star_music_analyze_running {return;}
+
+    mutexLock(&g_star_music_analyze_mutex);
+    g_star_music_analyze_stop = true;
+    condBroadcast(&g_star_music_analyze_cond);
+    mutexUnlock(&g_star_music_analyze_mutex);
+
+    threadJoin(g_star_music_analyze_thread);
+    g_star_music_analyze_running = false;
+}
+
+fun starMusicQueueAnalyzeTrack(path: ptr<u8>, track_index: i32) >> void {
+    if !g_star_music_analyze_running {
+        analyzeMusicBeats(path);
+        g_star_music_analyze_expected_request = 0;
+        return;
+    }
+
+    i32 request_id = g_star_music_analyze_next_request;
+    g_star_music_analyze_next_request += 1;
+    if g_star_music_analyze_next_request < 1 {g_star_music_analyze_next_request = 1;}
+
+    StarMusicAnalyzeRequest req = {0};
+    req.request_id = request_id;
+    req.track_index = track_index;
+    starMusicCopyPath(&req.path[0], path);
+
+    mutexLock(&g_star_music_analyze_mutex);
+    g_star_music_analyze_request = req;
+    g_star_music_analyze_has_request = true;
+    g_star_music_analyze_has_result = false;
+    condSignal(&g_star_music_analyze_cond);
+    mutexUnlock(&g_star_music_analyze_mutex);
+
+    g_star_music_analyze_expected_request = request_id;
+}
+
+fun starMusicTryApplyAnalyzeResult() >> void {
+    if !g_star_music_analyze_running {return;}
+
+    bool has = false;
+    StarMusicAnalyzeResult result = {0};
+
+    mutexLock(&g_star_music_analyze_mutex);
+    if g_star_music_analyze_has_result {
+        has = true;
+        result = g_star_music_analyze_result;
+        g_star_music_analyze_has_result = false;
+    }
+    mutexUnlock(&g_star_music_analyze_mutex);
+
+    if !has {return;}
+    if result.request_id != g_star_music_analyze_expected_request {return;}
+    if result.track_index != g_star_music_track_index {return;}
+
+    i32 count = result.beat_count;
+    if count < 0 {count = 0;}
+    if count > STAR_MUSIC_MAX_BEATS {count = STAR_MUSIC_MAX_BEATS;}
+    g_star_music_beat_count = count;
+    g_star_music_beat_index = 0;
+    g_star_music_hits_total = 0;
+    g_star_music_hit_strength = 0.0 as f32;
+
+    for i32 i = 0; i < count; i++ {
+        g_star_music_beats[i] = result.beats[i];
+        g_star_music_beat_strength_raw[i] = result.strength_raw[i];
+        g_star_music_beat_accent[i] = result.accent[i];
+    }
+    applyStyleStrengthCurveToBeats();
+    printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
+}
+
 fun loadStarMusicTrack(index: i32) >> void {
     if g_star_music_track_count <= 0 {return;}
     if index < 0 {index = 0;}
@@ -497,6 +655,9 @@ fun loadStarMusicTrack(index: i32) >> void {
     g_star_music_track_index = index;
     g_star_music_time = 0.0;
     g_star_music_prev_time = 0.0;
+    g_star_music_hits_total = 0;
+    g_star_music_hit_strength = 0.0 as f32;
+    g_star_music_beat_count = 0;
     g_star_music_beat_index = 0;
     g_star_music_attack_speed = 1.0;
     g_star_music_decay_speed = 1.0;
@@ -506,7 +667,7 @@ fun loadStarMusicTrack(index: i32) >> void {
     PlayMusicStream(g_star_music);
     g_star_music_loaded = true;
 
-    analyzeMusicBeats(path);
+    starMusicQueueAnalyzeTrack(path, g_star_music_track_index);
     printf("[zltris] now playing #%i: %s\n", index + 1, path);
 }
 
@@ -515,11 +676,8 @@ fun starMusicIntensityNorm() >> f32 {
     return sqrt(n as f64) as f32;
 }
 
-fun analyzeMusicBeats(path: ptr<u8>) >> void {
-    g_star_music_beat_count = 0;
-    g_star_music_beat_index = 0;
-    g_star_music_hits_total = 0;
-    g_star_music_hit_strength = 0.0;
+fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: ptr<f32>, out_accent: ptr<f32>, out_count: ptr<i32>) >> void {
+    out_count[0] = 0;
 
     Wave wave = LoadWave(path);
     if wave.frameCount == 0 || wave.sampleRate == 0 || wave.channels == 0 {
@@ -630,8 +788,9 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
             f32 beat_sec = aubio_tempo_get_last_s(tempo);
             if beat_sec >= 0.0 as f32 {
                 if last_beat < 0.0 as f32 || beat_sec - last_beat > 0.08 as f32 {
-                    if g_star_music_beat_count < STAR_MUSIC_MAX_BEATS {
-                        g_star_music_beats[g_star_music_beat_count] = beat_sec;
+                    if out_count[0] < STAR_MUSIC_MAX_BEATS {
+                        i32 beat_slot = out_count[0];
+                        out_beats[beat_slot] = beat_sec;
                         i32 beat_frame = (beat_sec * (samplerate as f32)) as i32;
                         if beat_frame < 0 {beat_frame = 0;}
                         if beat_frame >= frame_count {beat_frame = frame_count - 1;}
@@ -641,10 +800,10 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
                         f32 beat_bass = beatWindowBassEnergy(samples, frame_count, channels, beat_frame, beat_half_window, samplerate);
                         f32 onset_score = beatOnsetScore(samples, frame_count, channels, beat_frame, samplerate);
                         f32 combined_accent = accent * (0.30 as f32) + onset_score * (0.70 as f32);
-                        g_star_music_beat_strength[g_star_music_beat_count] = beat_energy;
-                        beat_bass_energy[g_star_music_beat_count] = beat_bass;
-                        g_star_music_beat_accent[g_star_music_beat_count] = combined_accent;
-                        g_star_music_beat_count += 1;
+                        out_strength_raw[beat_slot] = beat_energy;
+                        beat_bass_energy[beat_slot] = beat_bass;
+                        out_accent[beat_slot] = combined_accent;
+                        out_count[0] += 1;
                         last_beat = beat_sec;
                     }
                 }
@@ -668,8 +827,8 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
     if hops > 0 {mean_bass = sum_bass / (hops as f32);}
     if mean_bass < 0.0001 as f32 {mean_bass = 0.0001 as f32;}
 
-    for i32 i = 0; i < g_star_music_beat_count; i++ {
-        f32 beat_full = g_star_music_beat_strength[i];
+    for i32 i = 0; i < out_count[0]; i++ {
+        f32 beat_full = out_strength_raw[i];
         f32 beat_bass = beat_bass_energy[i];
 
         f32 loud_norm = beat_full / (max_energy + 0.0001 as f32);
@@ -685,7 +844,7 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
         if bass_share_norm < 0.0 as f32 {bass_share_norm = 0.0 as f32;}
         if bass_share_norm > 1.0 as f32 {bass_share_norm = 1.0 as f32;}
 
-        f32 accent_norm = sndClamp01((g_star_music_beat_accent[i] - (1.0 as f32)) / (2.5 as f32));
+        f32 accent_norm = sndClamp01((out_accent[i] - (1.0 as f32)) / (2.5 as f32));
         f32 strength = bass_norm * (0.35 as f32)
                      + bass_rel * (0.25 as f32)
                      + accent_norm * (0.20 as f32)
@@ -694,11 +853,17 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
                      + rel_norm * (0.04 as f32);
         if strength < 0.0 as f32 {strength = 0.0 as f32;}
         if strength > 1.0 as f32 {strength = 1.0 as f32;}
-        g_star_music_beat_strength_raw[i] = strength;
+        out_strength_raw[i] = strength;
     }
+}
 
+fun analyzeMusicBeats(path: ptr<u8>) >> void {
+    g_star_music_beat_count = 0;
+    g_star_music_beat_index = 0;
+    g_star_music_hits_total = 0;
+    g_star_music_hit_strength = 0.0;
+    analyzeMusicBeatsInto(path, &g_star_music_beats[0], &g_star_music_beat_strength_raw[0], &g_star_music_beat_accent[0], &g_star_music_beat_count);
     applyStyleStrengthCurveToBeats();
-
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
 
@@ -718,6 +883,8 @@ fun loadStarMusic() >> void {
         return;
     }
 
+    starMusicAnalyzeWorkerEnsureStarted();
+
     buildMusicPlaylist();
     if g_star_music_track_count <= 0 {return;}
     i32 start_track = getRandomEnabledTrack();
@@ -727,6 +894,7 @@ fun loadStarMusic() >> void {
 fun updateStarMusicPlayback() >> void {
     g_star_music_hits_frame = 0;
     g_star_music_hit_strength = 0.0;
+    starMusicTryApplyAnalyzeResult();
     f32 speed = styleLerpSpeed();
     g_star_music_attack_speed += (1.0 as f32 - g_star_music_attack_speed) * speed;
     g_star_music_decay_speed += (1.0 as f32 - g_star_music_decay_speed) * speed;
@@ -868,6 +1036,7 @@ fun currentMusicBeatPhase() >> f32 {
 }
 
 fun unloadStarMusic() >> void {
+    starMusicAnalyzeWorkerShutdown();
     if g_star_music_loaded {
         StopMusicStream(g_star_music);
         UnloadMusicStream(g_star_music);
