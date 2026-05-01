@@ -1,0 +1,335 @@
+module zltris.sound;
+use raylib
+use std.math
+
+#define SFX_RATE 44100
+#define SFX_MAX_FRAMES 22050
+#define SFX_MENU_MOVE 0
+#define SFX_MENU_CONFIRM 1
+#define SFX_MENU_BACK 2
+#define SFX_HARD_DROP 3
+#define SFX_LOCK 4
+#define SFX_CLEAR_1 5
+#define SFX_CLEAR_2 6
+#define SFX_CLEAR_3 7
+#define SFX_CLEAR_4 8
+#define SFX_COMBO 9
+#define SFX_B2B 10
+#define SFX_ALL_CLEAR 11
+#define SFX_TRANSITION 12
+#define SFX_GARBAGE_WARN 13
+
+arr<i16, SFX_MAX_FRAMES> g_sfx_pcm = {0};
+Sound g_sfx_menu_move = {0};
+Sound g_sfx_menu_confirm = {0};
+Sound g_sfx_menu_back = {0};
+Sound g_sfx_hard_drop = {0};
+Sound g_sfx_lock = {0};
+Sound g_sfx_clear_1 = {0};
+Sound g_sfx_clear_2 = {0};
+Sound g_sfx_clear_3 = {0};
+Sound g_sfx_clear_4 = {0};
+Sound g_sfx_combo = {0};
+Sound g_sfx_b2b = {0};
+Sound g_sfx_all_clear = {0};
+Sound g_sfx_transition = {0};
+Sound g_sfx_garbage_warn = {0};
+bool g_sfx_loaded = false;
+f32 g_sfx_volume = 0.62;
+u32 g_sfx_noise_seed = 0xC0FFEE;
+
+fun sfxClamp01(v: f32) >> f32 {
+    if v < 0.0 {return 0.0;}
+    if v > 1.0 {return 1.0;}
+    return v;
+}
+
+fun sfxAbsf(v: f32) >> f32 {
+    if v < 0.0 {return 0.0 - v;}
+    return v;
+}
+
+fun sfxSmooth(t: f32) >> f32 {
+    f32 c = sfxClamp01(t);
+    return c * c * (3.0 - 2.0 * c);
+}
+
+fun sfxEnv(t: f32, dur: f32, attack: f32, release: f32) >> f32 {
+    f32 a = 1.0;
+    if attack > 0.001 {a = sfxClamp01(t / attack);}
+    f32 r = 1.0;
+    if release > 0.001 {r = sfxClamp01((dur - t) / release);}
+    return sfxSmooth(a) * sfxSmooth(r);
+}
+
+fun sfxNoise() >> f32 {
+    g_sfx_noise_seed = g_sfx_noise_seed * 1664525 + 1013904223;
+    i32 v = ((g_sfx_noise_seed >> 16) & 65535) as i32;
+    return (v as f32) / 32768.0 - 1.0;
+}
+
+fun sfxTri(phase: f32) >> f32 {
+    f32 p = phase - ((phase as i32) as f32);
+    f32 v = 4.0 * sfxAbsf(p - 0.5) - 1.0;
+    return v;
+}
+
+fun sfxPulse(phase: f32, width: f32) >> f32 {
+    f32 p = phase - ((phase as i32) as f32);
+    if p < width {return 1.0;}
+    return -1.0;
+}
+
+fun sfxTone(t: f32, freq: f32, shape: i32) >> f32 {
+    f32 phase = t * freq;
+    if shape == 0 {return sin((phase as f64) * PI * 2.0) as f32;}
+    if shape == 1 {return sfxTri(phase);}
+    return sfxPulse(phase, 0.38);
+}
+
+fun sfxSat(v: f32) >> f32 {
+    f32 x = v;
+    if x > 1.6 {x = 1.6;}
+    if x < -1.6 {x = -1.6;}
+    return x * (1.0 - 0.18 * sfxAbsf(x));
+}
+
+fun sfxLayer(t: f32, freq: f32, shape: i32) >> f32 {
+    return sfxTone(t, freq, shape) * 0.54 + sfxTone(t, freq * 1.005, shape) * 0.28 + sfxTone(t, freq * 0.497, 0) * 0.18;
+}
+
+fun sfxFifth(t: f32, freq: f32, shape: i32) >> f32 {
+    return sfxLayer(t, freq, shape) * 0.62 + sfxLayer(t, freq * 1.5, 1) * 0.25 + sfxTone(t, freq * 2.0, 0) * 0.13;
+}
+
+fun sfxPing(t: f32, p: f32, freq: f32) >> f32 {
+    f32 a = sfxEnv(t, 0.090, 0.004, 0.076);
+    f32 b = sfxEnv(t - 0.030, 0.115, 0.004, 0.095);
+    if p < 0.18 {b = 0.0;}
+    return sfxTone(t, freq, 0) * a * 0.26 + sfxTone(t, freq * 1.5, 0) * b * 0.13;
+}
+
+fun sfxWriteSample(i: i32, v: f32) >> void {
+    f32 x = sfxSat(v);
+    if x > 1.0 {x = 1.0;}
+    if x < -1.0 {x = -1.0;}
+    g_sfx_pcm[i] = (x * 30000.0) as i16;
+}
+
+fun sfxFrames(seconds: f32) >> i32 {
+    i32 frames = (seconds * (SFX_RATE as f32)) as i32;
+    if frames < 1 {frames = 1;}
+    if frames > SFX_MAX_FRAMES {frames = SFX_MAX_FRAMES;}
+    return frames;
+}
+
+fun sfxRender(kind: i32, param: i32) >> i32 {
+    f32 dur = 0.10;
+    if kind == SFX_MENU_MOVE {dur = 0.060;}
+    if kind == SFX_MENU_CONFIRM {dur = 0.150;}
+    if kind == SFX_MENU_BACK {dur = 0.115;}
+    if kind == SFX_HARD_DROP {dur = 0.180;}
+    if kind == SFX_LOCK {dur = 0.085;}
+    if kind == SFX_CLEAR_1 {dur = 0.170;}
+    if kind == SFX_CLEAR_2 {dur = 0.190;}
+    if kind == SFX_CLEAR_3 {dur = 0.215;}
+    if kind == SFX_CLEAR_4 {dur = 0.265;}
+    if kind == SFX_COMBO {dur = 0.165;}
+    if kind == SFX_B2B {dur = 0.230;}
+    if kind == SFX_ALL_CLEAR {dur = 0.430;}
+    if kind == SFX_TRANSITION {dur = 0.360;}
+    if kind == SFX_GARBAGE_WARN {dur = 0.310;}
+
+    i32 frames = sfxFrames(dur);
+    f32 inv_frames = 1.0 / (frames as f32);
+    for i32 i = 0; i < frames; i++ {
+        f32 t = (i as f32) / (SFX_RATE as f32);
+        f32 p = (i as f32) * inv_frames;
+        f32 v = 0.0;
+
+        if kind == SFX_MENU_MOVE {
+            f32 e = sfxEnv(t, dur, 0.004, 0.048);
+            f32 f = 720.0 + p * 460.0;
+            v = (sfxFifth(t, f, 1) * 0.46 + sfxPing(t, p, f * 2.0) * 0.70) * e;
+        } else if kind == SFX_MENU_CONFIRM {
+            f32 e = sfxEnv(t, dur, 0.007, 0.082);
+            f32 step = 0.0;
+            if p > 0.34 {step = 1.0;}
+            if p > 0.68 {step = 2.0;}
+            f32 f = 430.0 + step * 165.0;
+            v = (sfxFifth(t, f, 1) * 0.55 + sfxPing(t, p, 1180.0) * 0.34) * e;
+        } else if kind == SFX_MENU_BACK {
+            f32 e = sfxEnv(t, dur, 0.005, 0.074);
+            f32 f = 560.0 - p * 250.0;
+            v = (sfxFifth(t, f, 1) * 0.45 + sfxTone(t, f * 0.75, 0) * 0.18) * e;
+        } else if kind == SFX_HARD_DROP {
+            f32 dist = param as f32;
+            if dist > 28.0 {dist = 28.0;}
+            f32 transient_env = sfxEnv(t, 0.012, 0.0006, 0.010);
+            f32 transient = sfxNoise() * transient_env * 0.36;
+            f32 click = (sfxTone(t, 1800.0, 0) + sfxNoise() * 0.6) * sfxEnv(t, 0.020, 0.0008, 0.018) * 0.18;
+            f32 body_drop = 1.0 - sfxClamp01(t / 0.080);
+            f32 body_f = 165.0 + 95.0 * body_drop;
+            f32 body_env = sfxEnv(t, dur, 0.003, 0.140);
+            f32 body = (sfxTone(t, body_f, 0) * 0.62 + sfxTone(t, body_f * 1.008, 1) * 0.32 + sfxTone(t, body_f * 0.5, 0) * 0.22) * body_env * 0.55;
+            f32 air = sfxNoise() * sfxEnv(t, 0.060, 0.002, 0.052) * 0.10;
+            v = transient + click + body + air;
+        } else if kind == SFX_LOCK {
+            f32 e = sfxEnv(t, dur, 0.003, 0.058);
+            v = (sfxLayer(t, 175.0 - p * 30.0, 1) * 0.22 + sfxNoise() * 0.050) * e;
+        } else if kind >= SFX_CLEAR_1 && kind <= SFX_CLEAR_4 {
+            i32 lines = kind - SFX_CLEAR_1 + 1;
+            f32 lf = lines as f32;
+            f32 e = sfxEnv(t, dur, 0.010, 0.095 + lf * 0.016);
+            f32 sweep = p * (150.0 + lf * 82.0);
+            f32 base = 300.0 + lf * 68.0;
+            f32 chord = sfxFifth(t, base + sweep, 1) * 0.43 + sfxLayer(t, base * 2.0 + sweep * 0.65, 0) * 0.18;
+            f32 sparkle = sfxTone(t, base * 3.0 + sweep * 1.2, 0) * sfxEnv(t - 0.026, dur, 0.010, 0.090) * 0.075;
+            if p < 0.12 {sparkle = 0.0;}
+            v = (chord + sparkle) * e;
+        } else if kind == SFX_COMBO {
+            f32 combo = param as f32;
+            if combo > 12.0 {combo = 12.0;}
+            f32 e = sfxEnv(t, dur, 0.007, 0.075);
+            f32 f = 600.0 + combo * 38.0 + p * 460.0;
+            v = (sfxFifth(t, f, 1) * 0.30 + sfxPing(t, p, f * 1.35) * 0.45) * e;
+        } else if kind == SFX_B2B {
+            f32 e = sfxEnv(t, dur, 0.014, 0.135);
+            f32 shimmer = sfxLayer(t, 820.0 + p * 410.0, 0) * 0.22 + sfxFifth(t, 1080.0 + p * 520.0, 1) * 0.21;
+            v = shimmer * e + sfxNoise() * e * 0.022;
+        } else if kind == SFX_ALL_CLEAR {
+            f32 e = sfxEnv(t, dur, 0.014, 0.170);
+            f32 note = 0.0;
+            if p > 0.22 {note = 1.0;}
+            if p > 0.44 {note = 2.0;}
+            if p > 0.66 {note = 3.0;}
+            f32 f = 500.0 + note * 185.0 + p * 145.0;
+            v = (sfxFifth(t, f, 1) * 0.42 + sfxLayer(t, f * 2.0, 0) * 0.18 + sfxPing(t, p, f * 2.5) * 0.25) * e;
+        } else if kind == SFX_GARBAGE_WARN {
+            f32 e = sfxEnv(t, dur, 0.006, 0.180);
+            f32 trem = 0.78 + 0.22 * sfxTone(t, 11.0, 0);
+            f32 rumble_f = 95.0 - p * 18.0;
+            f32 rumble = (sfxTone(t, rumble_f, 1) * 0.55 + sfxTone(t, rumble_f * 0.5, 0) * 0.40) * trem;
+            f32 alarm_step = 0.0;
+            if p > 0.18 {alarm_step = 1.0;}
+            if p > 0.36 {alarm_step = 0.0;}
+            if p > 0.54 {alarm_step = 1.0;}
+            f32 alarm_f = 380.0 + alarm_step * 90.0;
+            f32 alarm = (sfxTone(t, alarm_f, 2) * 0.42 + sfxTone(t, alarm_f * 1.005, 1) * 0.22) * sfxEnv(t, dur, 0.020, 0.140) * 0.38;
+            f32 grit = sfxNoise() * sfxEnv(t, dur, 0.010, 0.200) * 0.045;
+            v = rumble * 0.55 + alarm + grit;
+        } else if kind == SFX_TRANSITION {
+            f32 e = sfxEnv(t, dur, 0.024, 0.170);
+            f32 f = 160.0 + p * p * 1180.0;
+            v = (sfxLayer(t, f, 1) * 0.14 + sfxTone(t, f * 2.0, 0) * 0.08 + sfxNoise() * (0.10 + p * 0.07)) * e;
+        }
+
+        sfxWriteSample(i, v * 0.92);
+    }
+    return frames;
+}
+
+fun sfxBuild(kind: i32, param: i32) >> Sound {
+    i32 frames = sfxRender(kind, param);
+    ptr<i16> pcm = &g_sfx_pcm[0];
+    ptr<void> sample_data = pcm as ptr<void>;
+    Wave wave = Wave{
+        frameCount = frames as u32,
+        sampleRate = SFX_RATE as u32,
+        sampleSize = 16 as u32,
+        channels = 1 as u32,
+        data = sample_data,
+    };
+    return LoadSoundFromWave(wave);
+}
+
+fun sfxPlay(sound: Sound, vol: f32, pitch: f32) >> void {
+    if !g_sfx_loaded {return;}
+    if !IsSoundValid(sound) {return;}
+    SetSoundVolume(sound, g_sfx_volume * vol);
+    SetSoundPitch(sound, pitch);
+    PlaySound(sound);
+}
+
+fun loadSfx() >> void {
+    if g_sfx_loaded {return;}
+    if !IsAudioDeviceReady() {InitAudioDevice();}
+    if !IsAudioDeviceReady() {return;}
+    g_sfx_menu_move = sfxBuild(SFX_MENU_MOVE, 0);
+    g_sfx_menu_confirm = sfxBuild(SFX_MENU_CONFIRM, 0);
+    g_sfx_menu_back = sfxBuild(SFX_MENU_BACK, 0);
+    g_sfx_hard_drop = sfxBuild(SFX_HARD_DROP, 14);
+    g_sfx_lock = sfxBuild(SFX_LOCK, 0);
+    g_sfx_clear_1 = sfxBuild(SFX_CLEAR_1, 0);
+    g_sfx_clear_2 = sfxBuild(SFX_CLEAR_2, 0);
+    g_sfx_clear_3 = sfxBuild(SFX_CLEAR_3, 0);
+    g_sfx_clear_4 = sfxBuild(SFX_CLEAR_4, 0);
+    g_sfx_combo = sfxBuild(SFX_COMBO, 4);
+    g_sfx_b2b = sfxBuild(SFX_B2B, 0);
+    g_sfx_all_clear = sfxBuild(SFX_ALL_CLEAR, 0);
+    g_sfx_transition = sfxBuild(SFX_TRANSITION, 0);
+    g_sfx_garbage_warn = sfxBuild(SFX_GARBAGE_WARN, 0);
+    g_sfx_loaded = true;
+}
+
+fun unloadSfx() >> void {
+    if !g_sfx_loaded {return;}
+    if IsSoundValid(g_sfx_menu_move) {UnloadSound(g_sfx_menu_move);}
+    if IsSoundValid(g_sfx_menu_confirm) {UnloadSound(g_sfx_menu_confirm);}
+    if IsSoundValid(g_sfx_menu_back) {UnloadSound(g_sfx_menu_back);}
+    if IsSoundValid(g_sfx_hard_drop) {UnloadSound(g_sfx_hard_drop);}
+    if IsSoundValid(g_sfx_lock) {UnloadSound(g_sfx_lock);}
+    if IsSoundValid(g_sfx_clear_1) {UnloadSound(g_sfx_clear_1);}
+    if IsSoundValid(g_sfx_clear_2) {UnloadSound(g_sfx_clear_2);}
+    if IsSoundValid(g_sfx_clear_3) {UnloadSound(g_sfx_clear_3);}
+    if IsSoundValid(g_sfx_clear_4) {UnloadSound(g_sfx_clear_4);}
+    if IsSoundValid(g_sfx_combo) {UnloadSound(g_sfx_combo);}
+    if IsSoundValid(g_sfx_b2b) {UnloadSound(g_sfx_b2b);}
+    if IsSoundValid(g_sfx_all_clear) {UnloadSound(g_sfx_all_clear);}
+    if IsSoundValid(g_sfx_transition) {UnloadSound(g_sfx_transition);}
+    if IsSoundValid(g_sfx_garbage_warn) {UnloadSound(g_sfx_garbage_warn);}
+    g_sfx_loaded = false;
+}
+
+fun playSfxMenuMove() >> void {sfxPlay(g_sfx_menu_move, 0.62, 1.0);}
+fun playSfxMenuConfirm() >> void {sfxPlay(g_sfx_menu_confirm, 0.76, 1.0);}
+fun playSfxMenuBack() >> void {sfxPlay(g_sfx_menu_back, 0.64, 1.0);}
+fun playSfxTransition() >> void {sfxPlay(g_sfx_transition, 0.50, 1.0);}
+fun playSfxLock() >> void {sfxPlay(g_sfx_lock, 0.54, 1.0);}
+
+fun playSfxGarbageWarn(amount: i32) >> void {
+    f32 a = amount as f32;
+    if a > 8.0 {a = 8.0;}
+    f32 pitch = 1.10 - a * 0.030;
+    if pitch < 0.85 {pitch = 0.85;}
+    f32 vol = 0.55 + a * 0.040;
+    if vol > 0.95 {vol = 0.95;}
+    sfxPlay(g_sfx_garbage_warn, vol, pitch);
+}
+
+fun playSfxHardDrop(distance: i32) >> void {
+    f32 p = 0.94 + (distance as f32) * 0.006;
+    if p > 1.10 {p = 1.10;}
+    sfxPlay(g_sfx_hard_drop, 0.78, p);
+}
+
+fun playSfxLineClear(lines: i32, combo: i32, difficult: bool, all_clear: bool) >> void {
+    if all_clear {
+        sfxPlay(g_sfx_all_clear, 0.88, 1.0);
+        return;
+    }
+    if lines <= 0 {
+        playSfxLock();
+        return;
+    }
+    if lines == 1 {sfxPlay(g_sfx_clear_1, 0.70, 1.0);}
+    else if lines == 2 {sfxPlay(g_sfx_clear_2, 0.74, 1.0);}
+    else if lines == 3 {sfxPlay(g_sfx_clear_3, 0.78, 1.0);}
+    else {sfxPlay(g_sfx_clear_4, 0.86, 1.0);}
+    if combo > 0 {
+        f32 pitch = 0.96 + (combo as f32) * 0.045;
+        if pitch > 1.55 {pitch = 1.55;}
+        sfxPlay(g_sfx_combo, 0.36 + (combo as f32) * 0.018, pitch);
+    }
+    if difficult {sfxPlay(g_sfx_b2b, 0.36, 1.0);}
+}

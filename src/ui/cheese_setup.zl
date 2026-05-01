@@ -1,0 +1,517 @@
+module zltris;
+use raylib
+use zltris.ui
+
+#define CHEESE_ACTION_NONE 0
+#define CHEESE_ACTION_START 1
+#define CHEESE_ACTION_BACK 2
+
+#define CHEESE_ROW_BOARD_WIDTH 0
+#define CHEESE_ROW_BOARD_HEIGHT 1
+#define CHEESE_ROW_EXTENDED_SKYLINE 2
+#define CHEESE_ROW_TARGET_LINES 3
+#define CHEESE_ROW_MESSINESS 4
+#define CHEESE_ROW_HOLES_PER_ROW 5
+#define CHEESE_ROW_START 6
+#define CHEESE_ROW_BACK 7
+#define CHEESE_ROW_COUNT 8
+#define CHEESE_VISIBLE_ROWS 6
+
+struct CheeseSetupState {
+    selected_row i32,
+    scroll f32,
+    mouse_last_x f32,
+    mouse_last_y f32,
+    keyboard_nav_lock bool,
+}
+
+CheeseSetupState g_cheese_setup = {0};
+
+fun cheeseActionNone() >> i32 { return CHEESE_ACTION_NONE; }
+fun cheeseActionStart() >> i32 { return CHEESE_ACTION_START; }
+fun cheeseActionBack() >> i32 { return CHEESE_ACTION_BACK; }
+
+fun cheeseClampf(v: f32, min_v: f32, max_v: f32) >> f32 {
+    if v < min_v {return min_v;}
+    if v > max_v {return max_v;}
+    return v;
+}
+
+fun cheeseHeightCap() >> i32 {
+    if g_cheese_extended_skyline {return 22;}
+    return 40;
+}
+
+fun cheeseMaxTargetLines() >> i32 {
+    i32 m = g_cheese_board_height - 1;
+    if m < 1 {m = 1;}
+    return m;
+}
+
+fun cheeseInit() >> void {
+    g_cheese_setup.selected_row = CHEESE_ROW_BOARD_WIDTH;
+    g_cheese_setup.scroll = 0.0;
+    g_cheese_setup.mouse_last_x = 0.0;
+    g_cheese_setup.mouse_last_y = 0.0;
+    g_cheese_setup.keyboard_nav_lock = false;
+    if g_cheese_board_width < 4 {g_cheese_board_width = 4;}
+    if g_cheese_board_width > 20 {g_cheese_board_width = 20;}
+    if g_cheese_board_height < 4 {g_cheese_board_height = 4;}
+    i32 hcap = cheeseHeightCap();
+    if g_cheese_board_height > hcap {g_cheese_board_height = hcap;}
+    if g_cheese_target_lines < 1 {g_cheese_target_lines = 1;}
+    i32 max_lines = cheeseMaxTargetLines();
+    if g_cheese_target_lines > max_lines {g_cheese_target_lines = max_lines;}
+    if g_cheese_holes_per_row < 1 {g_cheese_holes_per_row = 1;}
+    i32 max_holes = g_cheese_board_width - 1;
+    if max_holes < 1 {max_holes = 1;}
+    if max_holes > 4 {max_holes = 4;}
+    if g_cheese_holes_per_row > max_holes {g_cheese_holes_per_row = max_holes;}
+    if g_cheese_garbage_messiness < 0.0 {g_cheese_garbage_messiness = 0.0;}
+    if g_cheese_garbage_messiness > 100.0 {g_cheese_garbage_messiness = 100.0;}
+}
+
+fun cheeseRowY(row: i32) >> i64 {
+    f32 scroll_off = g_cheese_setup.scroll * 78.0;
+    i32 base = 246 + row * 78 - (scroll_off as i32);
+    return base as i64;
+}
+
+fun cheeseMaxScroll() >> i32 {
+    i32 m = CHEESE_ROW_COUNT - CHEESE_VISIBLE_ROWS;
+    if m < 0 {m = 0;}
+    return m;
+}
+
+fun cheeseEnsureSelectedVisible() >> void {
+    i32 max_scroll = cheeseMaxScroll();
+    if g_cheese_setup.scroll < 0.0 {g_cheese_setup.scroll = 0.0;}
+    if g_cheese_setup.scroll > (max_scroll as f32) {g_cheese_setup.scroll = max_scroll as f32;}
+    i32 row = g_cheese_setup.selected_row;
+    i32 cur = g_cheese_setup.scroll as i32;
+    if row < cur {g_cheese_setup.scroll = row as f32;}
+    if row >= cur + CHEESE_VISIBLE_ROWS {
+        g_cheese_setup.scroll = (row - CHEESE_VISIBLE_ROWS + 1) as f32;
+    }
+    if g_cheese_setup.scroll < 0.0 {g_cheese_setup.scroll = 0.0;}
+    if g_cheese_setup.scroll > (max_scroll as f32) {g_cheese_setup.scroll = max_scroll as f32;}
+}
+
+fun cheeseRowBodyHit(mouse: Vector2, row: i32) >> bool {
+    if !pointInBaseRect(mouse.x, mouse.y, 112, 246, 424, CHEESE_VISIBLE_ROWS * 78) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 118, cheeseRowY(row), 412, 62);
+}
+
+fun cheeseSliderRow(row: i32) >> bool {
+    return row == CHEESE_ROW_BOARD_WIDTH || row == CHEESE_ROW_BOARD_HEIGHT || row == CHEESE_ROW_TARGET_LINES || row == CHEESE_ROW_MESSINESS || row == CHEESE_ROW_HOLES_PER_ROW;
+}
+
+fun cheeseToggleRow(row: i32) >> bool {
+    return row == CHEESE_ROW_EXTENDED_SKYLINE;
+}
+
+fun cheeseSliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
+    return cheeseClampf((value - min_v) / (max_v - min_v), 0.0, 1.0);
+}
+
+fun cheeseSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
+    f32 left = uiX(136) as f32;
+    f32 width = uiS(372) as f32;
+    f32 t = cheeseClampf((px - left) / width, 0.0, 1.0);
+    return min_v + (max_v - min_v) * t;
+}
+
+fun cheeseSliderTrackHit(mouse: Vector2, row: i32) >> bool {
+    return pointInBaseRect(mouse.x, mouse.y, 136, cheeseRowY(row) + 40, 372, 10);
+}
+
+fun cheeseMaxHolesPerRow() >> i32 {
+    i32 max_holes = g_cheese_board_width - 1;
+    if max_holes < 1 {max_holes = 1;}
+    if max_holes > 4 {max_holes = 4;}
+    return max_holes;
+}
+
+fun cheeseMoveRow(delta: i32) >> void {
+    i32 cur = g_cheese_setup.selected_row;
+    cur = cur + delta;
+    if cur < 0 {cur = CHEESE_ROW_COUNT - 1;}
+    if cur >= CHEESE_ROW_COUNT {cur = 0;}
+    g_cheese_setup.selected_row = cur;
+    cheeseEnsureSelectedVisible();
+}
+
+fun cheeseValueText(row: i32) >> ptr<u8> {
+    if row == CHEESE_ROW_BOARD_WIDTH {return "${g_cheese_board_width}";}
+    if row == CHEESE_ROW_BOARD_HEIGHT {return "${g_cheese_board_height}";}
+    if row == CHEESE_ROW_EXTENDED_SKYLINE {
+        if g_cheese_extended_skyline {return "ON";}
+        return "OFF";
+    }
+    if row == CHEESE_ROW_TARGET_LINES {return "${g_cheese_target_lines}";}
+    if row == CHEESE_ROW_MESSINESS {return "${g_cheese_garbage_messiness as i32}%";}
+    if row == CHEESE_ROW_HOLES_PER_ROW {return "${g_cheese_holes_per_row}";}
+    if row == CHEESE_ROW_START {return "START";}
+    return "BACK";
+}
+
+fun cheeseLabelText(row: i32) >> ptr<u8> {
+    if row == CHEESE_ROW_BOARD_WIDTH {return "Board Width";}
+    if row == CHEESE_ROW_BOARD_HEIGHT {return "Board Height";}
+    if row == CHEESE_ROW_EXTENDED_SKYLINE {return "Extended Skyline";}
+    if row == CHEESE_ROW_TARGET_LINES {return "Target Lines";}
+    if row == CHEESE_ROW_MESSINESS {return "Garbage Messiness";}
+    if row == CHEESE_ROW_HOLES_PER_ROW {return "Holes per Row";}
+    if row == CHEESE_ROW_START {return "Start Cheese";}
+    return "Back";
+}
+
+fun cheeseRowNorm(row: i32) >> f32 {
+    if row == CHEESE_ROW_BOARD_WIDTH {
+        f32 num = (g_cheese_board_width as f32) - 4.0;
+        return num / 16.0;
+    }
+    if row == CHEESE_ROW_BOARD_HEIGHT {
+        f32 num = (g_cheese_board_height as f32) - 4.0;
+        f32 range = (cheeseHeightCap() - 4) as f32;
+        if range <= 0.0 {return 0.0;}
+        return num / range;
+    }
+    if row == CHEESE_ROW_TARGET_LINES {
+        f32 num = (g_cheese_target_lines as f32) - 1.0;
+        f32 range = (cheeseMaxTargetLines() - 1) as f32;
+        if range <= 0.0 {return 0.0;}
+        return num / range;
+    }
+    if row == CHEESE_ROW_MESSINESS {
+        return g_cheese_garbage_messiness / 100.0;
+    }
+    if row == CHEESE_ROW_HOLES_PER_ROW {
+        i32 max_holes = cheeseMaxHolesPerRow();
+        f32 denom = (max_holes - 1) as f32;
+        if denom <= 0.0 {return 0.0;}
+        f32 num = (g_cheese_holes_per_row as f32) - 1.0;
+        return num / denom;
+    }
+    return 0.0;
+}
+
+fun cheeseSetFromNorm(row: i32, raw_norm: f32) >> void {
+    f32 norm = cheeseClampf(raw_norm, 0.0, 1.0);
+    if row == CHEESE_ROW_BOARD_WIDTH {
+        f32 fv = 4.0 + norm * 16.0 + 0.5;
+        i32 v = fv as i32;
+        if v < 4 {v = 4;}
+        if v > 20 {v = 20;}
+        g_cheese_board_width = v;
+        i32 max_holes = cheeseMaxHolesPerRow();
+        if g_cheese_holes_per_row > max_holes {g_cheese_holes_per_row = max_holes;}
+        return;
+    }
+    if row == CHEESE_ROW_BOARD_HEIGHT {
+        i32 cap = cheeseHeightCap();
+        f32 range = (cap - 4) as f32;
+        f32 fv = 4.0 + norm * range + 0.5;
+        i32 v = fv as i32;
+        if v < 4 {v = 4;}
+        if v > cap {v = cap;}
+        g_cheese_board_height = v;
+        i32 max_lines = cheeseMaxTargetLines();
+        if g_cheese_target_lines > max_lines {g_cheese_target_lines = max_lines;}
+        return;
+    }
+    if row == CHEESE_ROW_TARGET_LINES {
+        i32 max_lines = cheeseMaxTargetLines();
+        f32 range = (max_lines - 1) as f32;
+        f32 fv = 1.0 + norm * range + 0.5;
+        i32 v = fv as i32;
+        if v < 1 {v = 1;}
+        if v > max_lines {v = max_lines;}
+        g_cheese_target_lines = v;
+        return;
+    }
+    if row == CHEESE_ROW_MESSINESS {
+        f32 fv = norm * 100.0 + 0.5;
+        i32 m = fv as i32;
+        if m < 0 {m = 0;}
+        if m > 100 {m = 100;}
+        g_cheese_garbage_messiness = m as f32;
+        return;
+    }
+    if row == CHEESE_ROW_HOLES_PER_ROW {
+        i32 max_holes = cheeseMaxHolesPerRow();
+        f32 range = (max_holes - 1) as f32;
+        f32 fv = 1.0 + norm * range + 0.5;
+        i32 v = fv as i32;
+        if v < 1 {v = 1;}
+        if v > max_holes {v = max_holes;}
+        g_cheese_holes_per_row = v;
+        return;
+    }
+}
+
+fun cheeseNudge(row: i32, dir: i32) >> void {
+    if row == CHEESE_ROW_BOARD_WIDTH {
+        i32 v = g_cheese_board_width + dir;
+        if v < 4 {v = 4;}
+        if v > 20 {v = 20;}
+        g_cheese_board_width = v;
+        i32 max_holes = cheeseMaxHolesPerRow();
+        if g_cheese_holes_per_row > max_holes {g_cheese_holes_per_row = max_holes;}
+        return;
+    }
+    if row == CHEESE_ROW_BOARD_HEIGHT {
+        i32 cap = cheeseHeightCap();
+        i32 v = g_cheese_board_height + dir;
+        if v < 4 {v = 4;}
+        if v > cap {v = cap;}
+        g_cheese_board_height = v;
+        i32 max_lines = cheeseMaxTargetLines();
+        if g_cheese_target_lines > max_lines {g_cheese_target_lines = max_lines;}
+        return;
+    }
+    if row == CHEESE_ROW_TARGET_LINES {
+        i32 max_lines = cheeseMaxTargetLines();
+        i32 v = g_cheese_target_lines + dir;
+        if v < 1 {v = 1;}
+        if v > max_lines {v = max_lines;}
+        g_cheese_target_lines = v;
+        return;
+    }
+    if row == CHEESE_ROW_EXTENDED_SKYLINE {
+        g_cheese_extended_skyline = toggled(g_cheese_extended_skyline);
+        i32 cap = cheeseHeightCap();
+        if g_cheese_board_height > cap {g_cheese_board_height = cap;}
+        i32 max_lines = cheeseMaxTargetLines();
+        if g_cheese_target_lines > max_lines {g_cheese_target_lines = max_lines;}
+        return;
+    }
+    if row == CHEESE_ROW_MESSINESS {
+        i32 cur = g_cheese_garbage_messiness as i32;
+        i32 v = cur + dir;
+        if v < 0 {v = 0;}
+        if v > 100 {v = 100;}
+        g_cheese_garbage_messiness = v as f32;
+        return;
+    }
+    if row == CHEESE_ROW_HOLES_PER_ROW {
+        i32 max_holes = cheeseMaxHolesPerRow();
+        i32 v = g_cheese_holes_per_row + dir;
+        if v < 1 {v = 1;}
+        if v > max_holes {v = max_holes;}
+        g_cheese_holes_per_row = v;
+        return;
+    }
+}
+
+fun cheeseDrawSelectionGlow(theme: Theme, y: i64) >> void {
+    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, 0.20));
+    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, 0.86));
+}
+
+fun cheeseMeasureTextWidth(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    Vector2 m = MeasureTextExSize(font, text, uiS(size) as f32, 0.0);
+    return (m.x / uiScale()) as i64;
+}
+
+fun drawCheeseSliderRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = cheeseRowY(row);
+    bool selected = g_cheese_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        cheeseDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+
+    drawTextColor(font, cheeseLabelText(row), 136, y + 14, 15, theme.text_main);
+    ptr<u8> value_text = cheeseValueText(row);
+    i64 value_w = cheeseMeasureTextWidth(font, value_text, 14);
+    i64 value_x = 530 - 18 - value_w;
+    drawTextColor(font, value_text, value_x, y + 14, 14, theme.panel_stroke);
+
+    i64 sx = 136;
+    i64 sy = y + 40;
+    i64 sw = 372;
+    i64 sh = 10;
+    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, 0.92));
+    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, 0.46));
+    f32 norm_v = cheeseRowNorm(row);
+    f32 fill_w_f = (sw as f32) * norm_v;
+    i64 fill_w = fill_w_f as i64;
+    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, 0.78));
+    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, alphaColor(theme.text_main, 0.98));
+}
+
+fun drawCheeseToggleRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = cheeseRowY(row);
+    bool selected = g_cheese_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        cheeseDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, cheeseLabelText(row), 136, y + 20, 15, theme.text_main);
+    drawCheckboxText(font, g_cheese_extended_skyline, 470, y + 20, 15, theme.panel_stroke);
+}
+
+fun drawCheeseButtonRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = cheeseRowY(row);
+    bool selected = g_cheese_setup.selected_row == row;
+
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        cheeseDrawSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextCenteredInRect(font, cheeseLabelText(row), 118, y + 2, 412, 58, 15, theme.text_main);
+}
+
+fun drawCheesePreviewPanel(font: Font, theme: Theme) >> void {
+    drawRetroPanel(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
+
+    drawTextColor(font, "PREVIEW", 620, 132, 24, theme.text_main);
+    drawTextColor(font, "${g_cheese_board_width} x ${g_cheese_board_height}", 620, 168, 12, theme.text_muted);
+
+    i64 area_x = 620;
+    i64 area_y = 200;
+    i64 area_w = 240;
+    i64 area_h = 460;
+
+    fillRect(area_x, area_y, area_w, area_h, alphaColor(theme.panel_bg, 0.55));
+    strokeRect(area_x, area_y, area_w, area_h, alphaColor(theme.text_muted, 0.40));
+
+    i32 bw = g_cheese_board_width;
+    i32 bh = g_cheese_board_height;
+    if bw < 1 {bw = 1;}
+    if bh < 1 {bh = 1;}
+
+    i64 cell_by_w = (area_w - 16) / (bw as i64);
+    i64 cell_by_h = (area_h - 16) / (bh as i64);
+    i64 cell = cell_by_w;
+    if cell_by_h < cell {cell = cell_by_h;}
+    if cell < 2 {cell = 2;}
+    if cell > 22 {cell = 22;}
+
+    i64 grid_w = cell * (bw as i64);
+    i64 grid_h = cell * (bh as i64);
+    i64 gx = area_x + (area_w - grid_w) / 2;
+    i64 gy = area_y + (area_h - grid_h) / 2;
+
+    fillRect(gx, gy, grid_w, grid_h, alphaColor(theme.board_bg, 0.94));
+
+    for i32 cy = 0; cy < bh; cy++ {
+        for i32 cx = 0; cx < bw; cx++ {
+            i64 px = gx + (cx as i64) * cell;
+            i64 py = gy + (cy as i64) * cell;
+            strokeRect(px, py, cell, cell, alphaColor(theme.board_grid, 0.78));
+        }
+    }
+
+    i32 garbage_lines = g_cheese_target_lines;
+    if garbage_lines > bh {garbage_lines = bh;}
+    if garbage_lines < 0 {garbage_lines = 0;}
+    if garbage_lines > 0 {
+        i64 gar_h = (garbage_lines as i64) * cell;
+        i64 gar_y = gy + grid_h - gar_h;
+        fillRect(gx, gar_y, grid_w, gar_h, alphaColor(garbageCellColor(theme), 0.66));
+    }
+
+    strokeRect(gx, gy, grid_w, grid_h, alphaColor(theme.panel_stroke, 0.90));
+
+    i64 info_y = 690;
+    drawTextColor(font, "RULES", 620, info_y, 14, theme.text_main);
+    drawTextColor(font, "Lines ${g_cheese_target_lines}", 620, info_y + 24, 11, theme.text_muted);
+    drawTextColor(font, "Holes/row ${g_cheese_holes_per_row}", 620, info_y + 42, 11, theme.text_muted);
+    drawTextColor(font, "Messiness ${g_cheese_garbage_messiness as i32}%", 620, info_y + 60, 11, theme.text_muted);
+    drawTextColor(font, "Goal: clear all garbage", 620, info_y + 80, 11, theme.text_muted);
+}
+
+fun drawCheeseSetup(font: Font, theme: Theme) >> void {
+    drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
+
+    drawRetroPanel(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
+    drawTextColor(font, "CHEESE", 118, 132, 24, theme.text_main);
+    drawTextColor(font, "Race to clear stacked garbage", 118, 168, 11, theme.text_muted);
+
+    i64 list_h_base = 18 + CHEESE_VISIBLE_ROWS * 78;
+    i32 list_x = uiX(112);
+    i32 list_y = uiY(232);
+    i32 list_w = uiS(424);
+    i32 list_h = uiS(list_h_base);
+    BeginScissorMode(list_x, list_y, list_w, list_h);
+
+    for i32 row = 0; row < CHEESE_ROW_COUNT; row++ {
+        i64 y = cheeseRowY(row);
+        if y < 178 || y > 780 {continue;}
+        if cheeseSliderRow(row) {
+            drawCheeseSliderRow(font, theme, row);
+        } else if cheeseToggleRow(row) {
+            drawCheeseToggleRow(font, theme, row);
+        } else {
+            drawCheeseButtonRow(font, theme, row);
+        }
+    }
+
+    EndScissorMode();
+
+    fillRect(112, 232, 424, 18, alphaColor(theme.bg_outer, 0.75));
+    fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75));
+
+    drawCheesePreviewPanel(font, theme);
+
+    drawTextColor(font, "UP/DOWN select  LEFT/RIGHT adjust", 118, 792, 11, theme.text_muted);
+    drawTextColor(font, "Drag sliders  ENTER apply  ESC back", 118, 814, 11, theme.text_muted);
+}
+
+fun updateCheeseSetup() >> i32 {
+    Vector2 mouse = GetMousePosition();
+    bool mouse_moved = absf(mouse.x - g_cheese_setup.mouse_last_x) > 0.5 || absf(mouse.y - g_cheese_setup.mouse_last_y) > 0.5;
+    if mouse_moved {g_cheese_setup.keyboard_nav_lock = false;}
+    g_cheese_setup.mouse_last_x = mouse.x;
+    g_cheese_setup.mouse_last_y = mouse.y;
+
+    if IsKeyPressed(KEY_ESCAPE) {return CHEESE_ACTION_BACK;}
+    if IsKeyPressed(KEY_UP) {cheeseMoveRow(-1); g_cheese_setup.keyboard_nav_lock = true;}
+    if IsKeyPressed(KEY_DOWN) {cheeseMoveRow(1); g_cheese_setup.keyboard_nav_lock = true;}
+    if IsKeyPressed(KEY_LEFT) {cheeseNudge(g_cheese_setup.selected_row, -1);}
+    if IsKeyPressed(KEY_RIGHT) {cheeseNudge(g_cheese_setup.selected_row, 1);}
+
+    f32 wheel = GetMouseWheelMove();
+    if wheel > 0.0 {g_cheese_setup.scroll -= 1.0;}
+    if wheel < 0.0 {g_cheese_setup.scroll += 1.0;}
+    i32 max_scroll = cheeseMaxScroll();
+    if g_cheese_setup.scroll < 0.0 {g_cheese_setup.scroll = 0.0;}
+    if g_cheese_setup.scroll > (max_scroll as f32) {g_cheese_setup.scroll = max_scroll as f32;}
+
+    for i32 row = 0; row < CHEESE_ROW_COUNT; row++ {
+        if cheeseRowBodyHit(mouse, row) {
+            if !g_cheese_setup.keyboard_nav_lock {g_cheese_setup.selected_row = row;}
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                g_cheese_setup.keyboard_nav_lock = false;
+                g_cheese_setup.selected_row = row;
+                if row == CHEESE_ROW_START {return CHEESE_ACTION_START;}
+                if row == CHEESE_ROW_BACK {return CHEESE_ACTION_BACK;}
+                if cheeseToggleRow(row) {cheeseNudge(row, 1);}
+            }
+            if cheeseSliderRow(row) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && cheeseSliderTrackHit(mouse, row) {
+                cheeseSetFromNorm(row, cheeseSliderValueFromMouse(mouse.x, 0.0, 1.0));
+            }
+        }
+    }
+
+    cheeseEnsureSelectedVisible();
+
+    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+        return CHEESE_ACTION_START;
+    }
+
+    return CHEESE_ACTION_NONE;
+}

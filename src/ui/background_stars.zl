@@ -1,0 +1,655 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+#define LOGMODE false
+#define AI_LOG_FILE_PATH "ai_debug.log"
+
+#define BG_STAR_COUNT 150
+
+#define BG_VISUAL_STARS 0
+#define BG_VISUAL_BARS 1
+#define BG_BARS_LAYOUT_CLASSIC 0
+#define BG_BARS_LAYOUT_MIRROR 1
+#define STAR_MODE_NONE 0
+#define STAR_MODE_DROPS 1
+#define STAR_MODE_MUSIC 2
+#define STAR_MUSIC_STYLE_WAVE 1
+#define STAR_MUSIC_STYLE_AGGRO 2
+
+#define BG_BAR_RENDER_MAX 96
+
+#define THEME_COMPETITIVE_INDEX 5
+
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_peak_values = {0.0};
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_peak_hold = {0.0};
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_live_values = {0.0};
+
+fun initBackgroundStars() >> void {
+    for i32 i = 0; i < BG_STAR_COUNT; i++ {
+        i32 mix_a = (i * 73 + (i * i * 29) + 157);
+        i32 mix_b = (i * 181 + (i * i * 47) + 89);
+        i32 mix_c = (i * 97 + (i * i * 13) + 271);
+
+        g_star_x[i] = 24 + (mix_a % (UI_BASE_W - 48));
+        g_star_y[i] = mix_b % (UI_BASE_H + 220);
+        g_star_size[i] = 3 + (mix_c % 7);
+        g_star_style[i] = (mix_b / 3) % 4;
+        g_star_phase[i] = (mix_a % 1000) as f32 / 1000.0;
+        g_star_speed[i] = 0.035 + ((mix_c % 1000) as f32) / 12000.0;
+    }
+}
+
+fun initAiLogFile() >> void {
+    if !LOGMODE {return;}
+    i32 fd = openForWrite(AI_LOG_FILE_PATH);
+    if fd < 0 {return;}
+    writeLineFd(fd, "[zltris] ai log start");
+    close(fd);
+}
+
+fun aiLog(text: ptr<u8>) >> void {
+    if !LOGMODE {return;}
+    i32 fd = openForAppend(AI_LOG_FILE_PATH);
+    if fd < 0 {return;}
+    writeLineFd(fd, text);
+    close(fd);
+}
+
+fun updateBackgroundStarReaction(dt: f32) >> void {
+    if g_bg_star_react_mode == STAR_MODE_NONE {
+        g_rt.star_soft_glow = 0.0;
+        g_rt.star_hard_burst = 0.0;
+        g_rt.star_hard_target = 0.0;
+        g_rt.star_pps_meter = 0.0;
+        return;
+    }
+
+    if g_bg_star_react_mode == STAR_MODE_MUSIC {
+        f32 norm = starMusicIntensityNorm();
+        f32 proximity = currentMusicBeatProximity();
+
+        f32 interval = currentMusicBeatInterval();
+        f32 phase = currentMusicBeatPhase();
+        f32 tempo_factor = clamp01((0.72 - interval) / 0.54);
+
+        f32 style_attack_mul = 1.0;
+        f32 style_decay_mul = 1.0;
+        f32 style_burst_mul = 1.0;
+        f32 style_shape_mul = 1.0;
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {
+            style_attack_mul = 0.74;
+            style_decay_mul = 1.32;
+            style_burst_mul = 0.70;
+            style_shape_mul = 0.78;
+        } else if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {
+            style_attack_mul = 1.42;
+            style_decay_mul = 0.92;
+            style_burst_mul = 1.45;
+            style_shape_mul = 1.24;
+        }
+
+        f32 post_beat = 0.0;
+        if phase <= 0.62 {post_beat = 1.0 - phase / 0.62;}
+
+        f32 pre_beat = 0.0;
+        if phase >= 0.82 {pre_beat = (phase - 0.82) / 0.18;}
+
+        f32 offbeat = 0.0;
+        f32 offbeat_dist = absf(phase - 0.5);
+        if offbeat_dist < 0.16 {
+            offbeat = (1.0 - offbeat_dist / 0.16) * (0.10 + tempo_factor * 0.26);
+        }
+
+        f32 shape = post_beat * (0.55 + norm * 0.35) + pre_beat * (0.22 + norm * 0.20) + offbeat;
+        shape *= style_shape_mul;
+
+        f32 soft_target = proximity * (0.22 + norm * 0.52) + shape;
+        f32 soft_cap = 0.74 + norm * 0.32;
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {soft_cap -= 0.06;}
+        if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {soft_cap += 0.10;}
+        if soft_target > soft_cap {soft_target = soft_cap;}
+
+        f32 attack = (4.4 + norm * 5.2 + tempo_factor * 8.5) * style_attack_mul * g_star_music_attack_speed;
+        f32 decay = (1.4 + (1.0 - tempo_factor) * 2.7 + (1.0 - norm) * 1.6) * style_decay_mul * g_star_music_decay_speed;
+        f32 soft_mix = clamp01(dt * decay);
+        if soft_target > g_rt.star_soft_glow {soft_mix = clamp01(dt * attack);}
+        g_rt.star_soft_glow += (soft_target - g_rt.star_soft_glow) * soft_mix;
+
+        if g_rt.star_soft_glow > soft_cap * 0.90 {
+            g_rt.star_soft_glow -= dt * ((1.6 + norm * 2.4) * g_star_music_decay_speed);
+            if g_rt.star_soft_glow < 0.0 {g_rt.star_soft_glow = 0.0;}
+        }
+
+        f32 loudness = g_star_music_hit_strength;
+        if loudness < 0.0 {loudness = 0.0;}
+        if loudness > 1.0 {loudness = 1.0;}
+        f32 burst_gain = (0.26 + norm * 0.82 + tempo_factor * 0.76) * style_burst_mul;
+        burst_gain *= 0.34 + loudness * 1.06;
+        if g_star_music_hits_frame > 0 {
+            g_rt.star_hard_target += (g_star_music_hits_frame as f32) * burst_gain;
+            f32 hard_cap = 1.00 + norm * 0.42;
+            if g_star_music_style == STAR_MUSIC_STYLE_WAVE {hard_cap -= 0.12;}
+            if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {hard_cap += 0.28;}
+            hard_cap *= 0.62 + loudness * 0.60;
+            if g_rt.star_hard_target > hard_cap {g_rt.star_hard_target = hard_cap;}
+        }
+
+        g_rt.star_hard_target -= dt * ((1.0 + (1.0 - tempo_factor) * 1.3 + norm * 0.9) * style_decay_mul * g_star_music_decay_speed);
+        if g_rt.star_hard_target < 0.0 {g_rt.star_hard_target = 0.0;}
+
+        f32 rise = clamp01(dt * ((5.2 + norm * 9.0 + tempo_factor * 6.0) * style_attack_mul * g_star_music_attack_speed));
+        f32 fall = clamp01(dt * ((2.4 + norm * 3.5 + (1.0 - tempo_factor) * 2.5) * style_decay_mul * g_star_music_decay_speed));
+        if g_rt.star_hard_burst < g_rt.star_hard_target {
+            g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * rise;
+        } else {
+            g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * fall;
+        }
+
+        g_rt.star_hard_burst *= 0.997;
+        g_rt.star_pps_meter = proximity;
+        return;
+    }
+
+    f32 norm = starIntensityNorm();
+    f32 pulse_weight = 0.05 + norm * norm * 0.95;
+
+    if (IsKeyDown(KEY_DOWN)) {
+        g_rt.star_soft_glow += dt * (1.10 + norm * 1.90);
+        f32 soft_cap = 0.46 + norm * 0.34;
+        if g_rt.star_soft_glow > soft_cap {g_rt.star_soft_glow = soft_cap;}
+    } else {
+        g_rt.star_soft_glow -= dt * (1.40 - norm * 0.20);
+        if g_rt.star_soft_glow < 0.0 {g_rt.star_soft_glow = 0.0;}
+    }
+
+    g_rt.star_pps_meter -= dt * g_star_peak_target_dps;
+    if g_rt.star_pps_meter < 0.0 {g_rt.star_pps_meter = 0.0;}
+
+    g_rt.star_hard_target -= dt * (1.6 + norm * 1.2);
+    if g_rt.star_hard_target < 0.0 {g_rt.star_hard_target = 0.0;}
+
+    f32 rise = clamp01(dt * (3.0 + norm * 20.0));
+    f32 fall = clamp01(dt * (2.7 + norm * 7.5));
+    if (g_rt.star_hard_burst < g_rt.star_hard_target) {
+        g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * rise;
+    } else {
+        g_rt.star_hard_burst += (g_rt.star_hard_target - g_rt.star_hard_burst) * fall;
+    }
+
+    g_rt.star_hard_burst *= (0.995 + pulse_weight * 0.005);
+}
+
+fun drawStarArms(cx: i64, cy: i64, size: i64, style: i32, color: u32) >> void {
+    if (style == 0) {
+        DrawLine(uiX(cx - size), uiY(cy), uiX(cx + size), uiY(cy), toColor(color));
+        DrawLine(uiX(cx), uiY(cy - size), uiX(cx), uiY(cy + size), toColor(color));
+        return;
+    }
+    if (style == 1) {
+        i64 d = (size * 7) / 10;
+        DrawLine(uiX(cx - d), uiY(cy - d), uiX(cx + d), uiY(cy + d), toColor(color));
+        DrawLine(uiX(cx - d), uiY(cy + d), uiX(cx + d), uiY(cy - d), toColor(color));
+        return;
+    }
+    if (style == 2) {
+        i64 dx = size;
+        i64 dy = size / 3;
+        DrawLine(uiX(cx - dx), uiY(cy - dy), uiX(cx + dx), uiY(cy + dy), toColor(color));
+        DrawLine(uiX(cx - dy), uiY(cy + dx), uiX(cx + dy), uiY(cy - dx), toColor(color));
+        return;
+    }
+    i64 dx = size / 3;
+    i64 dy = size;
+    DrawLine(uiX(cx - dx), uiY(cy - dy), uiX(cx + dx), uiY(cy + dy), toColor(color));
+    DrawLine(uiX(cx - dy), uiY(cy + dx), uiX(cx + dy), uiY(cy - dx), toColor(color));
+}
+
+fun drawBackgroundStars(theme: Theme) >> void {
+    if g_bg_stars_amount <= 0 {return;}
+
+    f32 t = GetTime() as f32;
+    bool rhythm_indicator_only = isRhythmMode();
+    f32 rhythm_flash = rhythmIndicatorLevel();
+    i64 span_y = UI_BASE_H + 160;
+    i64 left = visibleBaseLeft();
+    i64 right = visibleBaseRight();
+    i64 span_x = right - left;
+    if span_x < 1 {span_x = 1;}
+
+    i32 count = g_bg_stars_amount;
+    if count > BG_STAR_COUNT {count = BG_STAR_COUNT;}
+
+    f32 react_boost = 0.0;
+    f32 norm = starIntensityNorm();
+    f32 spread_mul = starSpreadMul();
+    if (g_bg_star_react_mode == STAR_MODE_DROPS) {
+        f32 pps_norm = clamp01(g_rt.star_pps_meter);
+        f32 pulse_weight = 0.05 + norm * norm * 0.95;
+        f32 base_boost = 0.06 + pps_norm * 0.72 + g_rt.star_soft_glow * 0.50;
+        f32 pulse_boost = g_rt.star_hard_burst * (0.25 + norm * 1.35) * pulse_weight;
+        react_boost = base_boost + pulse_boost;
+        if react_boost > 2.0 {react_boost = 2.0;}
+    } else if g_bg_star_react_mode == STAR_MODE_MUSIC {
+        norm = starMusicIntensityNorm();
+        spread_mul = 1.0 + norm * 0.22;
+        f32 base_boost = 0.04 + g_rt.star_soft_glow * (0.55 + norm * 0.35);
+        f32 pulse_boost = g_rt.star_hard_burst * (0.45 + norm * 1.20);
+        react_boost = (base_boost + pulse_boost) * (0.55 + norm * 0.45);
+        f32 music_cap = 1.25;
+        if g_star_music_style == STAR_MUSIC_STYLE_WAVE {music_cap = 1.05;}
+        if g_star_music_style == STAR_MUSIC_STYLE_AGGRO {music_cap = 1.55;}
+        if react_boost > music_cap {react_boost = music_cap;}
+    }
+
+    if rhythm_indicator_only {
+        react_boost = 0.0;
+        norm = 0.0;
+        spread_mul = 1.0;
+    }
+
+    for i32 i = 0; i < count; i++ {
+        f32 speed = g_star_speed[i] * 0.70;
+        f32 loop = fractf(g_star_phase[i] + t * speed);
+        i64 y = -80 + ((((loop * (span_y as f32)) as i64) + (g_star_y[i])) % span_y);
+
+        i64 base_x = left + ((span_x as f32) * ((g_star_x[i] as f32) / (UI_BASE_W as f32))) as i64;
+
+        f32 drift_loop = fractf(g_star_phase[i] * 1.7 + t * (0.08 + speed * 0.5));
+        f32 drift = drift_loop;
+        if drift_loop > 0.5 {drift = 1.0 - drift_loop;}
+        i64 x = base_x + (((drift * 2.0) - 0.5) * 18.0) as i64;
+
+        i64 s = g_star_size[i];
+        f32 tw = fractf(t * (0.7 + g_star_speed[i] * 2.0) + g_star_phase[i]);
+        if tw > 0.5 {tw = 1.0 - tw;}
+        f32 alpha = 0.10 + tw * 0.34;
+        if !rhythm_indicator_only && (g_bg_star_react_mode == STAR_MODE_DROPS) {
+            alpha += react_boost * (0.55 + norm * 0.55);
+            if alpha > 1.00 {alpha = 1.00;}
+        } else if !rhythm_indicator_only && g_bg_star_react_mode == STAR_MODE_MUSIC {
+            alpha += react_boost * (0.22 + norm * 0.38);
+            if alpha > 0.92 {alpha = 0.92;}
+        }
+        if rhythm_indicator_only {
+            alpha = 0.08 + tw * 0.12 + rhythm_flash * 0.84;
+            if alpha > 1.00 {alpha = 1.00;}
+        }
+
+        i64 glow_radius = ((s * 5) as f32 * spread_mul) as i64;
+        if g_bg_star_react_mode == STAR_MODE_DROPS {glow_radius += (react_boost * ((10.0 + norm * 6.0) * spread_mul)) as i64;}
+        if g_bg_star_react_mode == STAR_MODE_MUSIC {glow_radius += (react_boost * ((12.0 + norm * 8.0) * spread_mul)) as i64;}
+        if rhythm_indicator_only {
+            glow_radius = ((s * 4) as f32) as i64 + (rhythm_flash * 18.0) as i64;
+        }
+
+        u32 star_color = theme.star_color;
+        f32 star_alpha_mul = 1.0;
+        if g_game.theme_index == THEME_COMPETITIVE_INDEX {
+            f32 cycle = fractf(g_star_phase[i] * 1.93 + t * (0.055 + g_star_speed[i] * 0.24));
+            f32 scaled = cycle * 7.0;
+            i32 p0 = scaled as i32;
+            f32 blend = scaled - (p0 as f32);
+            i32 p1 = (p0 + 1) % 7;
+            u32 c0 = competitiveStarPalette(theme, p0 + i + g_star_style[i]);
+            u32 c1 = competitiveStarPalette(theme, p1 + i + g_star_style[i]);
+            star_color = colorLerpRgb(c0, c1, blend);
+            star_alpha_mul = 1.28;
+            glow_radius += 1;
+        }
+
+        u32 outer = alphaColor(star_color, alpha * 0.34 * star_alpha_mul);
+        u32 inner = alphaColor(star_color, alpha * 0.78 * star_alpha_mul);
+        DrawCircleGradient(uiX(x), uiY(y), uiS(glow_radius) as f32, toColor(outer), toColor(alphaColor(theme.bg_outer, 0.0)));
+        DrawCircleGradient(uiX(x), uiY(y), uiS((glow_radius * 2) / 3) as f32, toColor(inner), toColor(alphaColor(theme.bg_outer, 0.0)));
+        drawStarArms(x, y, s, g_star_style[i], alphaColor(star_color, alpha * star_alpha_mul));
+        f32 core_alpha = (alpha * 0.84 + react_boost * (0.24 + norm * 0.10)) * star_alpha_mul;
+        if rhythm_indicator_only {
+            core_alpha = (0.20 + rhythm_flash * 0.80 + tw * 0.10) * star_alpha_mul;
+        }
+        if core_alpha > 1.0 {core_alpha = 1.0;}
+        fillRect(x - 1, y - 1, 3, 3, alphaColor(theme.star_core, core_alpha));
+    }
+}
+
+fun bgBarsSampleEnergy(slot: i32, count: i32, source_count: i32) >> f32 {
+    if count <= 0 || source_count <= 0 {return 0.0;}
+
+    f32 src_pos = (((slot as f32) + 0.5) * (source_count as f32) / (count as f32)) - 0.5;
+    i32 s0 = src_pos as i32;
+    if s0 < 0 {s0 = 0;}
+    if s0 >= source_count {s0 = source_count - 1;}
+    i32 s1 = s0 + 1;
+    if s1 >= source_count {s1 = source_count - 1;}
+
+    f32 blend = src_pos - (s0 as f32);
+    blend = clamp01(blend);
+
+    f32 v0 = starMusicBarValue(s0);
+    f32 v1 = starMusicBarValue(s1);
+    f32 base = v0 + (v1 - v0) * blend;
+
+    i32 sl = s0 - 1;
+    if sl < 0 {sl = 0;}
+    i32 sr = s1 + 1;
+    if sr >= source_count {sr = source_count - 1;}
+
+    f32 smooth = starMusicBarValue(sl) * 0.12 + base * 0.76 + starMusicBarValue(sr) * 0.12;
+    return clamp01(smooth);
+}
+
+fun bgBarsPeakFor(slot: i32, value: f32, dt: f32) >> f32 {
+    if slot < 0 || slot >= BG_BAR_RENDER_MAX {return value;}
+
+    f32 peak = g_bg_bar_peak_values[slot];
+    f32 hold = g_bg_bar_peak_hold[slot];
+
+    if value >= peak {
+        peak = value;
+        hold = 0.05 + value * 0.12;
+    } else {
+        hold -= dt;
+        if hold < 0.0 {
+            hold = 0.0;
+            peak -= dt * (0.30 + peak * 2.80);
+        }
+        if peak < value {peak = value;}
+        if peak < 0.0 {peak = 0.0;}
+    }
+
+    g_bg_bar_peak_values[slot] = peak;
+    g_bg_bar_peak_hold[slot] = hold;
+    return peak;
+}
+
+fun bgBarsAnimateEnergy(slot: i32, target: f32, dt: f32, intensity: f32) >> f32 {
+    if slot < 0 || slot >= BG_BAR_RENDER_MAX {return target;}
+
+    f32 cur = g_bg_bar_live_values[slot];
+    f32 rise = clamp01(dt * (8.0 + intensity * 22.0));
+    f32 fall = clamp01(dt * (1.6 + intensity * 4.0));
+
+    if target > cur {
+        cur += (target - cur) * rise;
+    } else {
+        cur += (target - cur) * fall;
+    }
+
+    if cur < 0.0005 {cur = 0.0;}
+    cur = clamp01(cur);
+    g_bg_bar_live_values[slot] = cur;
+    return cur;
+}
+
+fun bgBarPieceColor(theme: Theme, index: i32, t: f32, beat_phase: f32) >> u32 {
+    f32 wave = fractf((index as f32) * 0.143 + t * 0.08 + beat_phase * 0.5);
+    f32 scaled = wave * 7.0;
+    i32 p0 = scaled as i32;
+    if p0 < 0 {p0 = 0;}
+    if p0 > 6 {p0 = 6;}
+    i32 p1 = (p0 + 1) % 7;
+    f32 blend = scaled - (p0 as f32);
+    blend = clamp01(blend);
+    u32 c0 = pieceColor(theme, p0);
+    u32 c1 = pieceColor(theme, p1);
+    return colorLerpRgb(c0, c1, blend);
+}
+
+fun drawBackgroundMusicBars(theme: Theme) >> void {
+    i32 count = g_bg_bars_amount;
+    if count < 8 {count = 8;}
+    if count > BG_BAR_RENDER_MAX {count = BG_BAR_RENDER_MAX;}
+
+    i32 source_count = starMusicBarCount();
+    if source_count < 1 {source_count = 1;}
+
+    i64 left = visibleBaseLeft();
+    i64 right = visibleBaseRight();
+    i64 span_x = right - left;
+    if span_x < count {span_x = count;}
+
+    i64 bottom = UI_BASE_H - 18;
+    i64 center = UI_BASE_H / 2;
+
+    f32 height_limit = clampf(g_bg_bars_height_limit, 0.35, 0.95);
+    f32 max_hf = (UI_BASE_H as f32) * height_limit;
+    if max_hf < 110.0 {max_hf = 110.0;}
+
+    f32 intensity = clampf(g_bg_bars_intensity, 0.2, 2.0);
+    f32 opacity = clampf(g_bg_bars_opacity, 0.2, 1.0);
+    f32 glow = clampf(g_bg_bars_glow, 0.0, 2.0);
+    i32 layout = g_bg_bars_layout;
+    if layout < BG_BARS_LAYOUT_CLASSIC {layout = BG_BARS_LAYOUT_CLASSIC;}
+    if layout > BG_BARS_LAYOUT_MIRROR {layout = BG_BARS_LAYOUT_MIRROR;}
+
+    f32 beat = currentMusicBeatProximity();
+    f32 hit = g_star_music_hit_strength;
+    if hit < 0.0 {hit = 0.0;}
+    if hit > 1.0 {hit = 1.0;}
+    f32 beat_push = beat * 0.16 + hit * 0.36;
+
+    f32 beat_phase = currentMusicBeatPhase();
+
+    f32 dt = GetFrameTime();
+    if dt < 0.004 {dt = 0.004;}
+    if dt > 0.060 {dt = 0.060;}
+
+    f32 t = GetTime() as f32;
+
+    for i32 i = count; i < BG_BAR_RENDER_MAX; i++ {
+        g_bg_bar_peak_values[i] *= 0.90;
+        if g_bg_bar_peak_values[i] < 0.001 {g_bg_bar_peak_values[i] = 0.0;}
+        g_bg_bar_peak_hold[i] = 0.0;
+        g_bg_bar_live_values[i] *= 0.85;
+        if g_bg_bar_live_values[i] < 0.0005 {g_bg_bar_live_values[i] = 0.0;}
+    }
+
+    f32 lane_wf = (span_x as f32) / (count as f32);
+    if lane_wf < 2.0 {lane_wf = 2.0;}
+
+    f32 avg_energy = 0.0;
+
+    for i32 i = 0; i < count; i++ {
+        f32 fx0 = (left as f32) + lane_wf * (i as f32);
+        f32 fx1 = fx0 + lane_wf;
+        i64 x = fx0 + 1;
+        i64 bar_w = fx1 - fx0 - 2;
+        if bar_w < 1 {bar_w = 1;}
+
+        f32 lane_t = 0.0;
+        if count > 1 {lane_t = (i as f32) / ((count - 1) as f32);}
+        f32 bass_bias = 1.0 - lane_t;
+        f32 center_dist = absf(lane_t - 0.5) * 2.0;
+        if center_dist > 1.0 {center_dist = 1.0;}
+        f32 center_bias = 1.0 - center_dist;
+        center_bias = center_bias * center_bias;
+
+        f32 phase_seed = ((i * 73 + i * i * 29 + 157) % 1000) as f32 / 1000.0;
+
+        f32 target = bgBarsSampleEnergy(i, count, source_count);
+        target = target * (0.58 + bass_bias * 0.22);
+        target += beat_push * (0.05 + center_bias * 0.35);
+
+        f32 wobble = fractf(phase_seed + t * (1.4 + lane_t * 0.9));
+        if wobble > 0.5 {wobble = 1.0 - wobble;}
+        target += wobble * 0.04 * intensity;
+
+        target = clamp01(target);
+        target = target * 0.55 + target * target * 0.45;
+
+        f32 energy = bgBarsAnimateEnergy(i, target, dt, intensity);
+        if energy < 0.002 {energy = 0.0;}
+
+        avg_energy += energy;
+
+        f32 peak = bgBarsPeakFor(i, energy, dt);
+
+        f32 alpha = opacity * (0.10 + energy * 0.68);
+        if alpha > 1.0 {alpha = 1.0;}
+
+        u32 bar_piece_color = bgBarPieceColor(theme, i, t, beat_phase);
+        u32 bar_base = colorLerpRgb(theme.panel_stroke, bar_piece_color, 0.40 + energy * 0.50);
+        u32 bar_top = colorLerpRgb(bar_piece_color, theme.star_core, energy * 0.55);
+        u32 cap_color = colorLerpRgb(bar_piece_color, theme.text_main, 0.30 + peak * 0.40);
+
+        i64 body_h = (max_hf * energy) as i64;
+        i64 peak_h = (max_hf * peak) as i64;
+        if body_h < 1 {body_h = 0;}
+        if peak_h < 1 {peak_h = 1;}
+
+        i64 beat_widen = (hit * 3.0 * energy) as i64;
+
+        if layout == BG_BARS_LAYOUT_MIRROR {
+            if body_h <= 0 {continue;}
+
+            i64 half_h = body_h / 2;
+            if half_h < 1 {half_h = 1;}
+            i64 y_top = center - half_h;
+            i64 y_mid = center;
+            i64 draw_h = half_h;
+
+            i64 draw_w = bar_w + beat_widen;
+            i64 draw_x = x - beat_widen / 2;
+
+            if glow > 0.001 {
+                f32 glow_alpha = alpha * (0.16 + energy * 0.34) * glow;
+                if glow_alpha > 0.90 {glow_alpha = 0.90;}
+                for i32 pass = 0; pass < 3; pass++ {
+                    i64 pad = ((pass + 1) * 2) as i64 + draw_w / 4;
+                    if pad < 2 {pad = 2;}
+                    f32 pass_scale = 0.38 / ((pass + 1) as f32);
+                    fillRect(draw_x - pad, y_top - pad, draw_w + pad * 2, draw_h * 2 + pad * 2, alphaColor(bar_piece_color, glow_alpha * pass_scale));
+                }
+            }
+
+            DrawRectangleGradientV(uiX(draw_x), uiY(y_top), uiS(draw_w), uiS(draw_h), toColor(alphaColor(bar_top, alpha)), toColor(alphaColor(bar_base, alpha * 0.30)));
+            DrawRectangleGradientV(uiX(draw_x), uiY(y_mid), uiS(draw_w), uiS(draw_h), toColor(alphaColor(bar_base, alpha * 0.30)), toColor(alphaColor(bar_top, alpha)));
+
+            if energy > 0.20 {
+                f32 tip_glow_a = (energy - 0.20) * 1.6 * opacity;
+                if tip_glow_a > 0.72 {tip_glow_a = 0.72;}
+                i64 tip_r = 4 + (energy * 8.0) as i64;
+                DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y_top), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0)));
+                DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y_mid + draw_h), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0)));
+            }
+
+            i64 peak_half = peak_h / 2;
+            if peak_half < 1 {peak_half = 1;}
+            i64 cap_h = 2;
+            if draw_w >= 6 {cap_h = 3;}
+            i64 cap_top_y = center - peak_half - cap_h;
+            i64 cap_bottom_y = center + peak_half;
+            f32 cap_alpha = opacity * (0.34 + peak * 0.66);
+            if cap_alpha > 1.0 {cap_alpha = 1.0;}
+            fillRect(draw_x, cap_top_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+            fillRect(draw_x, cap_bottom_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+            continue;
+        }
+
+        if body_h <= 0 {continue;}
+        i64 y = bottom - body_h;
+
+        i64 draw_w = bar_w + beat_widen;
+        i64 draw_x = x - beat_widen / 2;
+
+        if glow > 0.001 {
+            f32 glow_alpha = alpha * (0.16 + energy * 0.32) * glow;
+            if glow_alpha > 0.90 {glow_alpha = 0.90;}
+            for i32 pass = 0; pass < 3; pass++ {
+                i64 pad = ((pass + 1) * 2) as i64 + draw_w / 4;
+                if pad < 2 {pad = 2;}
+                f32 pass_scale = 0.38 / ((pass + 1) as f32);
+                fillRect(draw_x - pad, y - pad, draw_w + pad * 2, body_h + pad * 2, alphaColor(bar_piece_color, glow_alpha * pass_scale));
+            }
+        }
+
+        DrawRectangleGradientV(uiX(draw_x), uiY(y), uiS(draw_w), uiS(body_h), toColor(alphaColor(bar_top, alpha)), toColor(alphaColor(bar_base, alpha * 0.25)));
+
+        if energy > 0.20 {
+            f32 tip_glow_a = (energy - 0.20) * 1.6 * opacity;
+            if tip_glow_a > 0.72 {tip_glow_a = 0.72;}
+            i64 tip_r = 4 + (energy * 8.0) as i64;
+            DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0)));
+        }
+
+        f32 ref_alpha = energy * opacity * 0.14;
+        if ref_alpha > 0.0 {
+            i64 ref_h = body_h / 3;
+            if ref_h > 40 {ref_h = 40;}
+            if ref_h > 1 {
+                DrawRectangleGradientV(uiX(draw_x), uiY(bottom), uiS(draw_w), uiS(ref_h), toColor(alphaColor(bar_base, ref_alpha)), toColor(alphaColor(bar_base, 0.0)));
+            }
+        }
+
+        i64 cap_h = 2;
+        if draw_w >= 6 {cap_h = 3;}
+        i64 cap_y = bottom - peak_h - cap_h;
+        f32 cap_alpha = opacity * (0.34 + peak * 0.66);
+        if cap_alpha > 1.0 {cap_alpha = 1.0;}
+        fillRect(draw_x, cap_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+    }
+
+    if count > 0 {avg_energy = avg_energy / (count as f32);}
+
+    if avg_energy > 0.02 {
+        i32 dot_count = 24 + (avg_energy * 40.0) as i32;
+        if dot_count > 80 {dot_count = 80;}
+        for i32 p = 0; p < dot_count; p++ {
+            i32 seed_a = p * 173 + p * p * 53 + 97;
+            i32 seed_b = p * 211 + p * p * 37 + 151;
+            i32 seed_c = p * 131 + p * p * 67 + 229;
+            f32 px_phase = (seed_a % 1000) as f32 / 1000.0;
+            f32 py_phase = (seed_b % 1000) as f32 / 1000.0;
+            f32 speed = 0.08 + (seed_c % 300) as f32 / 1000.0;
+
+            f32 px_t = fractf(px_phase + t * speed * 0.3);
+            f32 py_t = fractf(py_phase + t * speed * 0.5);
+
+            i64 dot_x = left + (px_t * (span_x as f32)) as i64;
+
+            i64 dot_y = 0;
+            if layout == BG_BARS_LAYOUT_MIRROR {
+                dot_y = ((UI_BASE_H as f32) * py_t) as i64;
+            } else {
+                dot_y = ((UI_BASE_H as f32) * py_t) as i64;
+            }
+
+            f32 flicker = fractf(px_phase * 2.3 + t * (1.2 + speed));
+            if flicker > 0.5 {flicker = 1.0 - flicker;}
+            flicker = flicker * 2.0;
+
+            f32 energy_boost = 0.3 + avg_energy * 1.4;
+            if energy_boost > 1.0 {energy_boost = 1.0;}
+            f32 dot_alpha = opacity * energy_boost * flicker * (0.5 + hit * 0.6);
+            if dot_alpha > 0.70 {dot_alpha = 0.70;}
+            if dot_alpha < 0.02 {continue;}
+
+            u32 dot_color = bgBarPieceColor(theme, p * 3, t, beat_phase);
+            i64 dot_r = 5 + (flicker * 8.0) as i64 + (avg_energy * 6.0) as i64;
+            DrawCircleGradient(uiX(dot_x), uiY(dot_y), uiS(dot_r) as f32, toColor(alphaColor(dot_color, dot_alpha)), toColor(alphaColor(dot_color, 0.0)));
+
+            i64 core_r = 1 + (flicker * 2.0) as i64;
+            f32 core_alpha = dot_alpha * 1.4;
+            if core_alpha > 0.85 {core_alpha = 0.85;}
+            DrawCircleGradient(uiX(dot_x), uiY(dot_y), uiS(core_r) as f32, toColor(alphaColor(dot_color, core_alpha)), toColor(alphaColor(dot_color, dot_alpha * 0.3)));
+        }
+    }
+}
+
+fun drawBackgroundVisual(theme: Theme) >> void {
+    if g_bg_visual_mode == BG_VISUAL_BARS {
+        drawBackgroundMusicBars(theme);
+        return;
+    }
+    drawBackgroundStars(theme);
+}

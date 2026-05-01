@@ -1,0 +1,339 @@
+module zltris;
+use raylib
+use zltris.theme
+use zltris.ui
+
+#define PREVIEW_COUNT 5
+
+struct PreviewSlotRect {
+    x i64,
+    y i64,
+    w i64,
+    h i64,
+    piece_size i64,
+}
+
+struct PreviewStripLayout {
+    base_x i64,
+    top_y i64,
+    step_y i64,
+    x_offset i64,
+    w i64,
+    h i64,
+    piece_size i64,
+    big_x_offset i64,
+    big_y_delta i64,
+    big_w i64,
+    big_h i64,
+    big_piece_size i64,
+}
+
+struct SidebarSplitPanels {
+    player_x i64,
+    next_x i64,
+    bot_x i64,
+}
+
+fun sidebarSplitPanels() >> SidebarSplitPanels {
+    SidebarSplitPanels panels = SidebarSplitPanels{
+        player_x = -214,
+        next_x = currentCenterSidebarX(),
+        bot_x = vsBotBotPanelX(),
+    };
+    if isVersusMode() {
+        panels.player_x = vsBotPlayerLeftPanelX();
+        panels.next_x = currentCenterSidebarX();
+    }
+    return panels;
+}
+
+fun slot(self: PreviewStripLayout, index: i32, big_first: bool) >> PreviewSlotRect {
+    PreviewSlotRect rect = PreviewSlotRect{
+        x = self.base_x + self.x_offset,
+        y = self.top_y + index * self.step_y,
+        w = self.w,
+        h = self.h,
+        piece_size = self.piece_size,
+    };
+    if index == 0 && big_first {
+        rect.x = self.base_x + self.big_x_offset;
+        rect.y += self.big_y_delta;
+        rect.w = self.big_w;
+        rect.h = self.big_h;
+        rect.piece_size = self.big_piece_size;
+    }
+    return rect;
+}
+
+fun splitPreviewLayout(panel_x: i64) >> PreviewStripLayout {
+    return PreviewStripLayout{
+        base_x = panel_x,
+        top_y = 186,
+        step_y = 88,
+        x_offset = 35,
+        w = 108,
+        h = 72,
+        piece_size = 13,
+        big_x_offset = 26,
+        big_y_delta = -10,
+        big_w = 126,
+        big_h = 92,
+        big_piece_size = 18,
+    };
+}
+
+fun compactPreviewLayout(sidebar_x: i64) >> PreviewStripLayout {
+    return PreviewStripLayout{
+        base_x = sidebar_x,
+        top_y = 360,
+        step_y = 82,
+        x_offset = 20,
+        w = 88,
+        h = 70,
+        piece_size = 12,
+        big_x_offset = 12,
+        big_y_delta = -7,
+        big_w = 104,
+        big_h = 82,
+        big_piece_size = 16,
+    };
+}
+
+fun drawPreviewSlotFill(theme: Theme, rect: PreviewSlotRect) >> void {
+    fillRect(rect.x, rect.y, rect.w, rect.h, alphaColor(theme.board_bg, 0.86));
+}
+
+fun drawPreviewSlotStroke(theme: Theme, rect: PreviewSlotRect) >> void {
+    strokeRect(rect.x, rect.y, rect.w, rect.h, alphaColor(theme.panel_stroke, 0.55));
+}
+
+fun drawPreviewPiece(theme: Theme, rect: PreviewSlotRect, piece: i32) >> void {
+    if piece >= 0 {drawMiniPieceCentered(theme, piece, rect.x, rect.y, rect.w, rect.h, rect.piece_size);}
+}
+
+fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        SidebarSplitPanels panels = sidebarSplitPanels();
+        i64 left_panel_x = panels.player_x;
+        i64 right_panel_x = panels.next_x;
+
+        drawRetroPanel(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92), alphaColor(theme.panel_stroke, 0.78), theme.text_main);
+
+        drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", left_panel_x + 20, 230, 14, theme.text_main);
+        drawRetroPanel(left_panel_x + 36, 256, 112, 112, alphaColor(theme.board_bg, 0.92), alphaColor(theme.panel_stroke, 0.78), alphaColor(theme.text_main, 0.7));
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, left_panel_x + 36, 256, 112, 112, 16);}
+
+        drawTextColor(font, "SCORE\n${g_ui_score_display as i32}", left_panel_x + 20, 404, 16, theme.text_main);
+        if isCheeseMode() {
+            drawTextColor(font, "GARBAGE\n${playerGarbageRowsRemaining()}", left_panel_x + 20, 468, 16, theme.text_main);
+        } else {
+            drawTextColor(font, "LINES\n${g_ui_lines_display as i32}", left_panel_x + 20, 468, 16, theme.text_main);
+        }
+        drawTextColor(font, "PPS: ${((g_ui_pps_display * 100.0) as i32) as f32 / 100.0}", left_panel_x + 20, 532, 16, theme.text_main);
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, "APM: ${((g_ui_apm_display * 10.0) as i32) as f32 / 10.0}", left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, "COMBO x${g_rt.combo}", left_panel_x + 20, 570, 14, theme.panel_stroke);}
+        if g_rt.back_to_back_count > 0 {drawTextColor(font, "B2B x${g_rt.back_to_back_count}", left_panel_x + 20, 590, 11, theme.panel_stroke);}
+        if isFortyLinesMode() || isCheeseMode() {drawTextColor(font, "TIME\n${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", left_panel_x + 20, 610, 14, theme.panel_stroke);}
+        if isBlitzMode() {drawTextColor(font, "LEFT\n${((blitzTimeLeft() * 100.0) as i32) / 6000}:${(((blitzTimeLeft() * 100.0) as i32) / 100) % 60}.${((blitzTimeLeft() * 100.0) as i32) % 100}", left_panel_x + 20, 610, 14, theme.panel_stroke);}
+
+        drawRetroPanel(right_panel_x, 120, 178, 510, theme.panel_bg, theme.panel_stroke, theme.text_main);
+        drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
+        PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            PreviewSlotRect rect = right_preview.slot(i, g_big_first_bag_preview);
+            drawPreviewSlotFill(theme, rect);
+            drawPreviewSlotStroke(theme, rect);
+            drawPreviewPiece(theme, rect, g_queue[i]);
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = panels.bot_x;
+
+            drawRetroPanel(bot_panel_x, 120, 178, 510, theme.panel_bg, theme.panel_stroke, theme.text_main);
+            drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
+            PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                PreviewSlotRect rect = bot_preview.slot(i, g_big_first_bag_preview);
+                drawPreviewSlotFill(theme, rect);
+                drawPreviewSlotStroke(theme, rect);
+                drawPreviewPiece(theme, rect, g_bot_queue[i]);
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    drawRetroPanel(sidebar_x, 82, 178, 756, theme.panel_bg, theme.panel_stroke, theme.text_main);
+
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() || isCheeseMode() {drawTextColor(font, "TIME ${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, "LEFT ${((blitzTimeLeft() * 100.0) as i32) / 6000}:${(((blitzTimeLeft() * 100.0) as i32) / 100) % 60}.${((blitzTimeLeft() * 100.0) as i32) % 100}", sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    drawRetroPanel(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9), alphaColor(theme.panel_stroke, 0.8), alphaColor(theme.text_main, 0.7));
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
+    if g_rt.combo > 0 {drawTextColor(font, "COMBO x${g_rt.combo}", sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, "B2B x${g_rt.back_to_back_count}", sidebar_x + 20, 320, 10, theme.panel_stroke);}
+
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
+    PreviewStripLayout compact_preview = compactPreviewLayout(sidebar_x);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        PreviewSlotRect rect = compact_preview.slot(i, g_big_first_bag_preview);
+        drawPreviewSlotFill(theme, rect);
+        drawPreviewSlotStroke(theme, rect);
+        drawPreviewPiece(theme, rect, g_queue[i]);
+    }
+
+    drawTextColor(font, "SCORE\n${g_ui_score_display as i32}", sidebar_x + 7, 796, 16, theme.text_main);
+    if isCheeseMode() {
+        drawTextColor(font, "GARB\n${playerGarbageRowsRemaining()}", sidebar_x + 95, 796, 16, theme.text_main);
+    } else {
+        drawTextColor(font, "LINES\n${g_ui_lines_display as i32}", sidebar_x + 95, 796, 16, theme.text_main);
+    }
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, "APM ${((g_ui_apm_display * 10.0) as i32) as f32 / 10.0}", sidebar_x + 20, 772, 11, theme.panel_stroke);}
+}
+
+fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        SidebarSplitPanels panels = sidebarSplitPanels();
+        i64 left_panel_x = panels.player_x;
+        i64 right_panel_x = panels.next_x;
+
+        fillRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
+        fillRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
+
+        fillRect(right_panel_x, 120, 178, 510, theme.panel_bg);
+        PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            drawPreviewSlotFill(theme, right_preview.slot(i, false));
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = panels.bot_x;
+            fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
+            PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                drawPreviewSlotFill(theme, bot_preview.slot(i, false));
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
+    fillRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    PreviewStripLayout compact_preview = compactPreviewLayout(sidebar_x);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        drawPreviewSlotFill(theme, compact_preview.slot(i, false));
+    }
+}
+
+fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        SidebarSplitPanels panels = sidebarSplitPanels();
+        i64 left_panel_x = panels.player_x;
+        i64 right_panel_x = panels.next_x;
+
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, left_panel_x + 36, 256, 112, 112, 16);}
+
+        PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            drawPreviewPiece(theme, right_preview.slot(i, g_big_first_bag_preview), g_queue[i]);
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = panels.bot_x;
+            PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                drawPreviewPiece(theme, bot_preview.slot(i, g_big_first_bag_preview), g_bot_queue[i]);
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
+    PreviewStripLayout compact_preview = compactPreviewLayout(sidebar_x);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        drawPreviewPiece(theme, compact_preview.slot(i, g_big_first_bag_preview), g_queue[i]);
+    }
+}
+
+fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        SidebarSplitPanels panels = sidebarSplitPanels();
+        i64 left_panel_x = panels.player_x;
+        i64 right_panel_x = panels.next_x;
+
+        drawRetroPanelStroke(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78), theme.text_main);
+
+        drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", left_panel_x + 20, 230, 14, theme.text_main);
+        drawRetroPanelStroke(left_panel_x + 36, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78), alphaColor(theme.text_main, 0.7));
+
+        drawTextColor(font, "SCORE\n${g_ui_score_display as i32}", left_panel_x + 20, 404, 16, theme.text_main);
+        if isCheeseMode() {
+            drawTextColor(font, "GARBAGE\n${playerGarbageRowsRemaining()}", left_panel_x + 20, 468, 16, theme.text_main);
+        } else {
+            drawTextColor(font, "LINES\n${g_ui_lines_display as i32}", left_panel_x + 20, 468, 16, theme.text_main);
+        }
+        drawTextColor(font, "PPS: ${((g_ui_pps_display * 100.0) as i32) as f32 / 100.0}", left_panel_x + 20, 532, 16, theme.text_main);
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, "APM: ${((g_ui_apm_display * 10.0) as i32) as f32 / 10.0}", left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, "COMBO x${g_rt.combo}", left_panel_x + 20, 570, 14, theme.panel_stroke);}
+        if g_rt.back_to_back_count > 0 {drawTextColor(font, "B2B x${g_rt.back_to_back_count}", left_panel_x + 20, 590, 11, theme.panel_stroke);}
+        if isFortyLinesMode() || isCheeseMode() {drawTextColor(font, "TIME\n${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", left_panel_x + 20, 610, 14, theme.panel_stroke);}
+        if isBlitzMode() {drawTextColor(font, "LEFT\n${((blitzTimeLeft() * 100.0) as i32) / 6000}:${(((blitzTimeLeft() * 100.0) as i32) / 100) % 60}.${((blitzTimeLeft() * 100.0) as i32) % 100}", left_panel_x + 20, 610, 14, theme.panel_stroke);}
+
+        drawRetroPanelStroke(right_panel_x, 120, 178, 510, theme.panel_stroke, theme.text_main);
+        drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
+        PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            drawPreviewSlotStroke(theme, right_preview.slot(i, g_big_first_bag_preview));
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = panels.bot_x;
+
+            drawRetroPanelStroke(bot_panel_x, 120, 178, 510, theme.panel_stroke, theme.text_main);
+            drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
+            PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                drawPreviewSlotStroke(theme, bot_preview.slot(i, g_big_first_bag_preview));
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    drawRetroPanelStroke(sidebar_x, 82, 178, 756, theme.panel_stroke, theme.text_main);
+
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() || isCheeseMode() {drawTextColor(font, "TIME ${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, "LEFT ${((blitzTimeLeft() * 100.0) as i32) / 6000}:${(((blitzTimeLeft() * 100.0) as i32) / 100) % 60}.${((blitzTimeLeft() * 100.0) as i32) % 100}", sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    drawRetroPanelStroke(sidebar_x + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8), alphaColor(theme.text_main, 0.7));
+    if g_rt.combo > 0 {drawTextColor(font, "COMBO x${g_rt.combo}", sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, "B2B x${g_rt.back_to_back_count}", sidebar_x + 20, 320, 10, theme.panel_stroke);}
+
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
+    PreviewStripLayout compact_preview = compactPreviewLayout(sidebar_x);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        drawPreviewSlotStroke(theme, compact_preview.slot(i, g_big_first_bag_preview));
+    }
+
+    drawTextColor(font, "SCORE\n${g_ui_score_display as i32}", sidebar_x + 7, 796, 16, theme.text_main);
+    if isCheeseMode() {
+        drawTextColor(font, "GARB\n${playerGarbageRowsRemaining()}", sidebar_x + 95, 796, 16, theme.text_main);
+    } else {
+        drawTextColor(font, "LINES\n${g_ui_lines_display as i32}", sidebar_x + 95, 796, 16, theme.text_main);
+    }
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, "APM ${((g_ui_apm_display * 10.0) as i32) as f32 / 10.0}", sidebar_x + 20, 772, 11, theme.panel_stroke);}
+}

@@ -1,0 +1,281 @@
+module zltris;
+use raylib
+use zltris.theme
+use zltris.ui
+
+#define ROUND_RUNNING 0
+#define ROUND_COUNTDOWN 1
+#define ROUND_FINISHED 2
+
+fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
+    fillRect(28, 76, 504, 674, alphaColor(theme.bg_outer, 0.95));
+    strokeRect(28, 76, 504, 674, theme.panel_stroke);
+
+    drawTextColor(font, "COLOR DEBUG (F3)", 52, 104, 19, theme.text_main);
+    drawTextColor(font, "theme: ${themeName(g_game.theme_index)} idx:${g_game.theme_index}", 52, 136, 14, theme.text_muted);
+
+    for i32 i = 0; i < 7; i++ {
+        u32 c = pieceColor(theme, i);
+        i64 y = 176 + i * 68;
+        fillRect(52, y, 42, 42, c);
+        strokeRect(52, y, 42, 42, alphaColor(c, 0.45));
+        drawTextColor(
+            font,
+            "kind ${i} 0x${c} rgb(${colorR(c)},${colorG(c)},${colorB(c)})",
+            108,
+            y + 13,
+            12,
+            theme.text_main
+        );
+    }
+
+    drawTextColor(
+        font,
+        "current kind ${g_piece_kind}  color 0x${pieceColor(theme, g_piece_kind)}",
+        52,
+        654,
+        14,
+        theme.panel_stroke
+    );
+    ??drawTextColor(font, "If swatch is purple but piece is cyan, bug is in draw path.", 52, 684, 12, theme.text_muted);
+    ??drawTextColor(font, "If swatch itself is cyan, bug is in theme/color path.", 52, 706, 12, theme.text_muted);
+}
+
+fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
+    if !modeUsesRoundState() {return;}
+
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+
+    if (g_play.round_state == ROUND_COUNTDOWN) {
+        ptr<u8> text = "3";
+        i64 size = 86;
+        i64 box_w = 196;
+        i64 box_h = 196;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        f32 seg = g_rt.countdown_timer - 3.0;
+
+        if (g_rt.countdown_timer <= 3.0 && g_rt.countdown_timer > 2.0) {
+            text = "2";
+            seg = g_rt.countdown_timer - 2.0;
+        } else if (g_rt.countdown_timer <= 2.0 && g_rt.countdown_timer > 1.0) {
+            text = "1";
+            seg = g_rt.countdown_timer - 1.0;
+        } else if (g_rt.countdown_timer <= 1.0) {
+            text = "BUILD";
+            size = 46;
+            box_w = 272;
+            box_h = 152;
+            box_x = boardCenteredBoxX(board_left, box_w);
+            box_y = boardCenteredBoxY(board_top, box_h);
+            seg = g_rt.countdown_timer;
+        }
+
+        if seg < 0.0 {seg = 0.0;}
+        if seg > 1.0 {seg = 1.0;}
+        f32 fade = 0.18 + seg * 0.82;
+
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.86));
+        strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.90));
+        drawTextCenteredInRect(font, text, box_x, box_y, box_w, box_h, size, alphaColor(theme.text_main, fade));
+        return;
+    }
+
+    if (g_play.round_state == ROUND_FINISHED) {
+        i64 box_w = 284;
+        i64 box_h = 178;
+        if isRhythmMode() {box_h = 226;}
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        drawRetroPanel(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.88), theme.panel_stroke, theme.text_main);
+        if (isFortyLinesMode()) {
+            drawTextColor(font, "40 DONE", box_x + 58, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, "TIME ${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", box_x + 44, box_y + 70, 14, theme.panel_stroke);
+        }
+        if (isCheeseMode()) {
+            drawTextColor(font, "CHEESE", box_x + 70, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, "TIME ${((g_rt.mode_timer * 100.0) as i32) / 6000}:${(((g_rt.mode_timer * 100.0) as i32) / 100) % 60}.${((g_rt.mode_timer * 100.0) as i32) % 100}", box_x + 44, box_y + 70, 14, theme.panel_stroke);
+            drawTextColor(font, "${g_play.lines} lines", box_x + 44, box_y + 92, 12, theme.text_muted);
+        }
+        if (isBlitzMode()) {
+            drawTextColor(font, "BLITZ END", box_x + 42, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, "SCORE ${g_play.score}", box_x + 44, box_y + 70, 14, theme.panel_stroke);
+        }
+        if (isRhythmMode()) {
+            drawTextColor(font, "RHYTHM END", box_x + 28, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, "SCORE ${g_rhythm_score}", box_x + 44, box_y + 68, 13, theme.panel_stroke);
+            drawTextColor(font, "MISSED ${g_rhythm_missed_beats}", box_x + 44, box_y + 98, 13, theme.panel_stroke);
+            drawTextColor(font, "AVG ${(rhythmAverageAccuracyMs() as i32)} ms", box_x + 44, box_y + 128, 13, theme.panel_stroke);
+        }
+        i64 retry_y = box_y + 110;
+        if isRhythmMode() {retry_y = box_y + 186;}
+        drawTextColor(font, "R retry  ESC menu", box_x + 44, retry_y, 12, theme.text_muted);
+    }
+}
+
+fun drawRhythmBoardPulse(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if !isRhythmMode() {return;}
+    if g_play.round_state != ROUND_RUNNING {return;}
+
+    f32 pulse = rhythmPulseAlpha();
+    f32 marker = rhythmIndicatorLevel();
+    f32 strength = pulse;
+    if marker > strength {strength = marker;}
+    if strength <= 0.0 {return;}
+
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 outer_x = board_left - 12;
+    i64 outer_y = board_top - 12;
+    i64 outer_w = board_w + 24;
+    i64 outer_h = board_h + 24;
+
+    u32 glow = alphaColor(theme.text_main, 0.12 + strength * 0.56);
+    u32 pulse_stroke = alphaColor(theme.panel_stroke, 0.18 + strength * 0.74);
+    strokeRect(outer_x, outer_y, outer_w, outer_h, glow);
+    strokeRect(outer_x + 1, outer_y + 1, outer_w - 2, outer_h - 2, pulse_stroke);
+
+    i64 edge_thickness = (2.0 + marker * 2.0) as i64;
+    if edge_thickness < 2 {edge_thickness = 2;}
+    u32 beat_edge = alphaColor(theme.text_main, 0.22 + marker * 0.76);
+    fillRect(outer_x, outer_y, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y + outer_h - edge_thickness, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y, edge_thickness, outer_h, beat_edge);
+    fillRect(outer_x + outer_w - edge_thickness, outer_y, edge_thickness, outer_h, beat_edge);
+
+    u32 inner_tint = alphaColor(theme.panel_stroke, marker * 0.10);
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, inner_tint);
+
+    u32 hot = alphaColor(theme.text_main, marker * marker * 0.88);
+    strokeRect(outer_x - 2, outer_y - 2, outer_w + 4, outer_h + 4, hot);
+}
+
+fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
+    if !isRhythmMode() {return;}
+
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+
+    i64 panel_w = board_w;
+    i64 panel_h = 68;
+    i64 panel_x = board_left;
+    i64 panel_y = board_top + board_h + 16;
+
+    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84));
+    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.86));
+    drawTextColor(font, "RHYTHM", panel_x + 10, panel_y + 8, 10, theme.text_muted);
+
+    i64 lane_x = panel_x + 10;
+    i64 lane_w = panel_w - 20;
+    i64 lane_y = panel_y + 44;
+    fillRect(lane_x, lane_y - 1, lane_w, 2, alphaColor(theme.text_muted, 0.44));
+
+    f32 speed = g_rhythm_music_speed;
+    if speed < 0.75 {speed = 0.75;}
+    if speed > 1.50 {speed = 1.50;}
+    f32 stretch = 1.0 / speed;
+    f32 left_window = 0.36 * stretch;
+    f32 right_window = 1.64 * stretch;
+    f32 total_window = left_window + right_window;
+    i64 hit_x = lane_x + (((lane_w as f32) * (left_window / total_window)) as i64);
+
+    f32 marker = rhythmIndicatorLevel();
+    bool beat_active = g_play.round_state == ROUND_RUNNING && g_rhythm_target_index >= 0 && g_rhythm_target_index < g_rhythm_target_count;
+    bool beat_required = false;
+    if beat_active {beat_required = g_rhythm_target_times[g_rhythm_target_index] > g_rhythm_ignore_until_time;}
+    bool beat_pending = beat_active && beat_required && g_rhythm_target_index != g_rhythm_last_scored_target_index;
+
+    f32 pending = 0.0;
+    if beat_pending {
+        pending = 0.74;
+    } else {
+        pending = 0.06 + marker * 0.18;
+    }
+
+    if beat_pending {
+        f32 dt_next = g_rhythm_target_times[g_rhythm_target_index] - rhythmClockTime();
+        if dt_next < -left_window {dt_next = -left_window;}
+        if dt_next > right_window {dt_next = right_window;}
+        f32 x01_next = (dt_next + left_window) / total_window;
+        if x01_next < 0.0 {x01_next = 0.0;}
+        if x01_next > 1.0 {x01_next = 1.0;}
+        i64 next_x = lane_x + ((lane_w as f32 * x01_next) as i64);
+
+        i64 seg_l = hit_x;
+        i64 seg_r = next_x;
+        if seg_l > seg_r {
+            i64 tmp = seg_l;
+            seg_l = seg_r;
+            seg_r = tmp;
+        }
+        i64 seg_w = seg_r - seg_l + 1;
+        if seg_w < 2 {seg_w = 2;}
+
+        fillRect(seg_l, lane_y - 4, seg_w, 8, alphaColor(theme.panel_stroke, 0.46));
+        fillRect(seg_l, lane_y - 2, seg_w, 4, alphaColor(theme.text_main, 0.66));
+    }
+
+    u32 line_col = alphaColor(theme.text_main, 0.38 + marker * 0.36 + pending * 0.22);
+    fillRect(hit_x - 1, lane_y - 22, 3, 44, line_col);
+    u32 line_glow = alphaColor(theme.panel_stroke, pending * 0.66);
+    fillRect(hit_x - 4, lane_y - 24, 9, 48, line_glow);
+    fillRect(hit_x - 7, lane_y - 21, 15, 42, alphaColor(theme.panel_stroke, pending * 0.32));
+    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, 0.52 + marker * 0.44 + pending * 0.10));
+
+    if beat_pending {
+        f32 t = GetTime() as f32;
+        for i32 i = 0; i < 14; i++ {
+            f32 phase = t * (0.86 + (i as f32) * 0.04) + (i as f32) * 0.37;
+            f32 frac = phase - (phase as i32) as f32;
+            if frac < 0.0 {frac += 1.0;}
+            i32 side = 1;
+            if i % 2 == 0 {side = -1;}
+            i64 band = 6 + ((i % 4) as i64) * 4;
+            i64 drift = ((phase * 11.0) as i32 % 5) as i64;
+            i64 px = hit_x + side * band + side * drift;
+            i64 py = lane_y + 18 - (frac * 56.0) as i64;
+            i64 pr = 2 + (i % 3);
+            f32 a = pending * (0.24 + (1.0 - frac) * 0.66);
+            u32 pc = alphaColor(theme.text_main, a);
+            DrawCircle(uiX(px), uiY(py), uiS(pr) as f32, toColor(pc));
+            DrawCircleLines(uiX(px), uiY(py), uiS(pr + 1) as f32, toColor(alphaColor(theme.panel_stroke, a * 0.58)));
+        }
+    }
+
+    if g_rhythm_target_count <= 0 {
+        drawTextColor(font, "no beat map", panel_x + 10, panel_y + 52, 10, theme.text_muted);
+        return;
+    }
+
+    f32 now = rhythmClockTime();
+    i32 start = g_rhythm_target_index - 24;
+    if start < 0 {start = 0;}
+    i32 end = g_rhythm_target_index + 96;
+    if end > g_rhythm_target_count {end = g_rhythm_target_count;}
+
+    for i32 i = start; i < end; i++ {
+        f32 dt = g_rhythm_target_times[i] - now;
+        if dt < -left_window || dt > right_window {continue;}
+
+        f32 x01 = (dt + left_window) / total_window;
+        if x01 < 0.0 {x01 = 0.0;}
+        if x01 > 1.0 {x01 = 1.0;}
+        i64 cx = lane_x + ((lane_w as f32 * x01) as i64);
+
+        f32 near = 1.0 - absf(dt) / (0.40 + right_window * 0.26);
+        if near < 0.0 {near = 0.0;}
+        i64 r = 3 + (near * 3.0) as i64;
+
+        u32 dot_col = alphaColor(theme.panel_stroke, 0.30 + near * 0.48);
+        if i == g_rhythm_target_index {
+            dot_col = alphaColor(theme.text_main, 0.56 + marker * 0.40);
+            r += 1;
+        }
+
+        DrawCircle(uiX(cx), uiY(lane_y), uiS(r) as f32, toColor(dot_col));
+        DrawCircleLines(uiX(cx), uiY(lane_y), uiS(r + 1) as f32, toColor(alphaColor(theme.board_bg, 0.80)));
+    }
+}
