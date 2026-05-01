@@ -13,6 +13,13 @@ out vec4 finalColor;
 
 uniform sampler2D texture0;
 uniform vec4 colDiffuse;
+uniform vec2 uResolution;
+
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 
 void main() {
     vec2 uv = vec2(fragTexCoord.x, 1.0 - fragTexCoord.y);
@@ -21,23 +28,15 @@ void main() {
     float brightness = dot(src, vec3(0.299, 0.587, 0.114));
     float gameMask = step(0.01, brightness);
     vec2 p = vNdc;
-    p.x *= vPixel.x / vPixel.y; 
-    vec3 bg = vec3(0.02, 0.0, 0.05); 
-    float t = vTime * 0.5; 
-    for(float i = 1.0; i < 4.0; i++) {
-        vec2 uv2 = p * (i * 0.8);
-        float a = atan(uv2.y, uv2.x);
-        float r = length(uv2);
-        vec2 st = vec2(a / 6.28 + t * 0.1, 1.0 / r + t);
-        float stars = texture(texture0, fract(st)).r; 
-        stars = pow(stars, 10.0) * smoothstep(0.1, 0.5, r);
-        bg += stars * vec3(0.6, 0.4, 0.9) * (1.0 / i);
-    }
+    p.x *= uResolution.x / max(uResolution.y, 1.0);
+    vec3 bg = vec3(0.02, 0.0, 0.05);
+    float t = vTime * 0.5;
     vec3 gameColor = src;
-    gameColor += vec3(0.1, 0.0, 0.2) * (1.0 - brightness); 
+    gameColor += vec3(0.1, 0.0, 0.2) * (1.0 - brightness);
     float glass = sin(vNdc.y * 2.0 + vNdc.x + vTime) * 0.05;
     gameColor += glass * vec3(0.5, 0.2, 0.8) * gameMask;
-    vec3 finalOut = mix(bg, gameColor, gameMask);
+    //vec3 finalOut = mix(bg, gameColor, gameMask);
+    vec3 finalOut = gameColor;
     float vignette = smoothstep(1.8, 0.5, length(vNdc));
     finalOut *= vignette;
     finalColor = vec4(finalOut, 1.0) * fragColor * colDiffuse;

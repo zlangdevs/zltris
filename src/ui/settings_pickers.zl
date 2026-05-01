@@ -1,0 +1,108 @@
+module zltris.settings;
+use std.fs
+use zltris.sound
+
+#define CUSTOM_SHADER_NAME_MAX 96
+#define CUSTOM_SHADER_LIST_MAX 64
+#define MUSIC_MODE_CUSTOM 1
+
+fun cstrLen(s: ptr<u8>) >> i32 {
+    i32 n = 0;
+    for (s[n] != 0) {n += 1;}
+    return n;
+}
+
+fun cstrEq(a: ptr<u8>, b: ptr<u8>) >> bool {
+    i32 i = 0;
+    for true {
+        if a[i] != b[i] {return false;}
+        if a[i] == 0 {return true;}
+        i += 1;
+    }
+    return true;
+}
+
+fun copyFixed(dst: ptr<u8>, src: ptr<u8>, cap: i32) >> void {
+    i32 i = 0;
+    for (i < cap - 1 && src[i] != 0) {
+        dst[i] = src[i];
+        i += 1;
+    }
+    dst[i] = 0;
+}
+
+fun endsWithFrag(name: ptr<u8>) >> bool {
+    i32 len = cstrLen(name);
+    if len < 5 {return false;}
+    if name[len - 5] != ('.' as u8) {return false;}
+    if name[len - 4] != ('f' as u8) {return false;}
+    if name[len - 3] != ('r' as u8) {return false;}
+    if name[len - 2] != ('a' as u8) {return false;}
+    if name[len - 1] != ('g' as u8) {return false;}
+    return true;
+}
+
+fun pickerNamePtr(index: i32) >> ptr<u8> {
+    if index < 0 || index >= CUSTOM_SHADER_LIST_MAX {return &g_settings.picker_names[0];}
+    return &g_settings.picker_names[index * CUSTOM_SHADER_NAME_MAX];
+}
+
+fun clearPickerList() >> void {
+    g_settings.picker_count = 0;
+    g_settings.picker_selected = 0;
+    g_settings.picker_scroll = 0.0;
+    for i32 i = 0; i < CUSTOM_SHADER_LIST_MAX * CUSTOM_SHADER_NAME_MAX; i++ {g_settings.picker_names[i] = 0 as u8;}
+}
+
+fun addPickerName(name: ptr<u8>) >> void {
+    if g_settings.picker_count >= CUSTOM_SHADER_LIST_MAX {return;}
+    ptr<u8> dst = pickerNamePtr(g_settings.picker_count);
+    copyFixed(dst, name, CUSTOM_SHADER_NAME_MAX);
+    g_settings.picker_count += 1;
+}
+
+fun openShaderPicker(current_name: ptr<u8>) >> void {
+    clearPickerList();
+
+    ptr<void> dir = openDir("assets/shaders");
+    if dir != (0 as ptr<void>) {
+        for true {
+            ptr<DirEntry> ent = readDirEntry(dir);
+            if ent == (0 as ptr<DirEntry>) {break;}
+            ptr<u8> name = &ent.d_name[0];
+            if name[0] == ('.' as u8) {continue;}
+            if cstrEq(name, "default") {continue;}
+            if !endsWithFrag(name) {continue;}
+            addPickerName(name);
+        }
+        closeDir(dir);
+    }
+
+    for i32 i = 0; i < g_settings.picker_count; i++ {
+        if cstrEq(pickerNamePtr(i), current_name) {
+            g_settings.picker_selected = i;
+            break;
+        }
+    }
+    g_settings.picker_open = true;
+}
+
+fun closeShaderPicker() >> void {
+    g_settings.picker_open = false;
+}
+
+fun musicModeLabel(mode: i32) >> ptr<u8> {
+    if mode == MUSIC_MODE_CUSTOM {return "Custom";}
+    return "Builtin";
+}
+
+fun openSongPicker() >> void {
+    g_settings.song_picker_open = true;
+    g_settings.song_picker_scroll = 0.0;
+    g_settings.song_picker_selected = 0;
+}
+
+fun closeSongPicker() >> void {
+    g_settings.song_picker_open = false;
+    buildDisabledBufFromFlags();
+}
