@@ -1,0 +1,76 @@
+module zltris;
+use raylib
+use std.io
+use std.fs
+use std.string
+use zltris.ai
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.sound
+use zltris.theme
+
+#define WINDOW_W 960
+#define WINDOW_H 920
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+
+#define SCREEN_MENU 0
+
+#define MODE_FREE_PLAY 0
+
+fun main() >> i32 {
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(WINDOW_W, WINDOW_H, "zltris");
+    SetExitKey(KEY_NULL);
+    SetWindowMinSize(420, 620);
+    SetTargetFPS(60);
+    setScaleBase(UI_BASE_W, UI_BASE_H);
+
+    Font ui_font = LoadFontEx("assets/fonts/PressStart2P.ttf", 48, 0 as ptr<i32>, 0);
+    bool custom_font_loaded = IsFontValid(ui_font);
+    if (custom_font_loaded) {
+        SetTextureFilter(ui_font.texture, TEXTURE_FILTER_POINT);
+        printf("[zltris] loaded font: assets/fonts/PressStart2P.ttf\n");
+    } else {
+        ui_font = GetFontDefault();
+        SetTextureFilter(ui_font.texture, TEXTURE_FILTER_POINT);
+        printf("[zltris] failed to load custom font, using default\n");
+    }
+
+    g_game.theme_index = 0;
+    initAiLogFile();
+    loadSettingsFile();
+    if g_fullscreen_mode {
+        if !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+            ToggleBorderlessWindowed();
+        }
+        i32 mon = GetCurrentMonitor();
+        SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
+    }
+    loadPostEffects();
+    loadBotDuelsFile();
+    applyChampionAiTuning();
+    clampSettings();
+    loadStarMusic();
+    startGameMode(MODE_FREE_PLAY);
+    initBotSetupDefaults();
+    initBackgroundStars();
+    g_game = g_game.with_screen(SCREEN_MENU);
+    g_game = g_game.with_settings_return_screen(SCREEN_MENU);
+    menuInit();
+    settingsInit();
+
+    for (true) {
+        if WindowShouldClose() || shouldQuitApp() {break;}
+        updateApp();
+        drawApp(ui_font);
+    }
+
+    aiWorkerShutdown();
+    if custom_font_loaded {UnloadFont(ui_font);}
+    unloadPostEffects();
+    unloadStarMusic();
+    CloseWindow();
+    return 0;
+}

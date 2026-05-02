@@ -1,0 +1,172 @@
+module zltris.ui;
+use raylib
+use zltris.scale
+
+Shader g_ui_gradient_shader = {0};
+bool g_ui_gradient_shader_ready = false;
+i32 g_ui_gradient_loc_resolution = -1;
+i32 g_ui_gradient_loc_dir = -1;
+i32 g_ui_gradient_loc_color_a = -1;
+i32 g_ui_gradient_loc_color_b = -1;
+
+fun uiColorToVec4(color: u32, out: ptr<f32>) >> void {
+    out[0] = ((color & 255) as f32) / (255.0 as f32);
+    out[1] = (((color >> 8) & 255) as f32) / (255.0 as f32);
+    out[2] = (((color >> 16) & 255) as f32) / (255.0 as f32);
+    out[3] = (((color >> 24) & 255) as f32) / (255.0 as f32);
+}
+
+fun ensureUiGradientShader() >> bool {
+    if g_ui_gradient_shader_ready {return true;}
+
+    ptr<u8> frag = "#version 330\nuniform vec2 u_resolution;\nuniform vec2 u_dir;\nuniform vec4 u_color_a;\nuniform vec4 u_color_b;\nout vec4 finalColor;\nvoid main() {\n    vec2 uv = vec2(gl_FragCoord.x / u_resolution.x, 1.0 - (gl_FragCoord.y / u_resolution.y));\n    float t = dot(uv - vec2(0.5, 0.5), u_dir) + 0.5;\n    t = clamp(t, 0.0, 1.0);\n    finalColor = mix(u_color_a, u_color_b, t);\n}\n";
+
+    g_ui_gradient_shader = LoadShaderFromMemory(0 as ptr<u8>, frag);
+    if !IsShaderValid(g_ui_gradient_shader) {return false;}
+
+    g_ui_gradient_loc_resolution = GetShaderLocation(g_ui_gradient_shader, "u_resolution");
+    g_ui_gradient_loc_dir = GetShaderLocation(g_ui_gradient_shader, "u_dir");
+    g_ui_gradient_loc_color_a = GetShaderLocation(g_ui_gradient_shader, "u_color_a");
+    g_ui_gradient_loc_color_b = GetShaderLocation(g_ui_gradient_shader, "u_color_b");
+    if g_ui_gradient_loc_resolution < 0 || g_ui_gradient_loc_dir < 0 || g_ui_gradient_loc_color_a < 0 || g_ui_gradient_loc_color_b < 0 {
+        UnloadShader(g_ui_gradient_shader);
+        g_ui_gradient_shader = Shader{0};
+        return false;
+    }
+
+    g_ui_gradient_shader_ready = true;
+    return true;
+}
+
+fun toColor(color_rgba: u32) >> Color {
+    return Color{
+        r = (color_rgba & 255) as u8,
+        g = ((color_rgba >> 8) & 255) as u8,
+        b = ((color_rgba >> 16) & 255) as u8,
+        a = ((color_rgba >> 24) & 255) as u8,
+    };
+}
+
+fun alphaColor(base: u32, alpha: f32) >> u32 {
+    i32 a = ((base >> 24) & 255) as i32;
+    i32 scaled = ((a as f32) * alpha) as i32;
+    if scaled < 0 {scaled = 0;}
+    if scaled > 255 {scaled = 255;}
+    return (base & 0x00FFFFFF) | ((scaled as u32) << 24);
+}
+
+fun colorLerpUi(a: u32, b: u32, t: f32) >> u32 {
+    f32 k = clamp01(t);
+    i32 ar = (a & 255) as i32;
+    i32 ag = ((a >> 8) & 255) as i32;
+    i32 ab = ((a >> 16) & 255) as i32;
+    i32 aa = ((a >> 24) & 255) as i32;
+    i32 br = (b & 255) as i32;
+    i32 bg = ((b >> 8) & 255) as i32;
+    i32 bb = ((b >> 16) & 255) as i32;
+    i32 ba = ((b >> 24) & 255) as i32;
+    i32 rr = (ar as f32 + ((br - ar) as f32) * k + 0.5 as f32) as i32;
+    i32 rg = (ag as f32 + ((bg - ag) as f32) * k + 0.5 as f32) as i32;
+    i32 rb = (ab as f32 + ((bb - ab) as f32) * k + 0.5 as f32) as i32;
+    i32 ra = (aa as f32 + ((ba - aa) as f32) * k + 0.5 as f32) as i32;
+    return (rr as u32) | ((rg as u32) << 8) | ((rb as u32) << 16) | ((ra as u32) << 24);
+}
+
+fun drawScreenThemeGradient(bg_inner: u32, bg_outer: u32, angle_deg: f32) >> void {
+    f32 a = angle_deg;
+    for (a < 0.0 as f32) {a += 360.0 as f32;}
+    for (a >= 360.0 as f32) {a -= 360.0 as f32;}
+
+    if a >= 89.5 as f32 && a <= 90.5 as f32 {
+        DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(bg_inner), toColor(bg_outer));
+        return;
+    }
+    if a >= 269.5 as f32 && a <= 270.5 as f32 {
+        DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(bg_outer), toColor(bg_inner));
+        return;
+    }
+    if a <= 0.5 as f32 || a >= 359.5 as f32 {
+        DrawRectangleGradientH(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(bg_inner), toColor(bg_outer));
+        return;
+    }
+    if a >= 179.5 as f32 && a <= 180.5 as f32 {
+        DrawRectangleGradientH(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(bg_outer), toColor(bg_inner));
+        return;
+    }
+
+    if !ensureUiGradientShader() {
+        DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(bg_inner), toColor(bg_outer));
+        return;
+    }
+
+    f64 rad = (a as f64) * (3.14159265 as f64) / (180.0 as f64);
+    arr<f32, 2> dir = {cos(rad) as f32, sin(rad) as f32};
+    arr<f32, 2> res = {GetScreenWidth() as f32, GetScreenHeight() as f32};
+    arr<f32, 4> col_a = {0.0 as f32};
+    arr<f32, 4> col_b = {0.0 as f32};
+    uiColorToVec4(bg_inner, &col_a[0]);
+    uiColorToVec4(bg_outer, &col_b[0]);
+
+    SetShaderValue(g_ui_gradient_shader, g_ui_gradient_loc_resolution, (&res[0]) as ptr<void>, SHADER_UNIFORM_VEC2 as i32);
+    SetShaderValue(g_ui_gradient_shader, g_ui_gradient_loc_dir, (&dir[0]) as ptr<void>, SHADER_UNIFORM_VEC2 as i32);
+    SetShaderValue(g_ui_gradient_shader, g_ui_gradient_loc_color_a, (&col_a[0]) as ptr<void>, SHADER_UNIFORM_VEC4 as i32);
+    SetShaderValue(g_ui_gradient_shader, g_ui_gradient_loc_color_b, (&col_b[0]) as ptr<void>, SHADER_UNIFORM_VEC4 as i32);
+
+    BeginShaderMode(g_ui_gradient_shader);
+    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(0xFFFFFFFF));
+    EndShaderMode();
+}
+
+fun fillRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangle(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
+    DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
+}
+
+fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
+    DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
+}
+
+fun absf(v: f32) >> f32 {
+    if v < 0.0 {return -v;}
+    return v;
+}
+
+fun clamp01(v: f32) >> f32 {
+    if v < 0.0 {return 0.0;}
+    if v > 1.0 {return 1.0;}
+    return v;
+}
+
+fun fractf(v: f32) >> f32 {
+    i32 whole = v as i32;
+    f32 f = v - (whole as f32);
+    if f < 0.0 {f += 1.0;}
+    return f;
+}
+
+fun visibleBaseLeft() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((0 - ox) as f32) / scale) as i64;
+}
+
+fun visibleBaseRight() >> i64 {
+    f32 scale = uiScale();
+    i32 ox = uiOffsetX(scale);
+    return (((GetScreenWidth() - ox) as f32) / scale) as i64;
+}
+
+fun pointInBaseRect(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bool {
+    i32 rx = uiX(x);
+    i32 ry = uiY(y);
+    i32 rw = uiS(w);
+    i32 rh = uiS(h);
+    if px < rx as f32 {return false;}
+    if py < ry as f32 {return false;}
+    if px > (rx + rw) as f32 {return false;}
+    if py > (ry + rh) as f32 {return false;}
+    return true;
+}

@@ -1,0 +1,365 @@
+module zltris.ai;
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define BOARD_CELLS 220
+
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_Z 6
+
+#define BOT_PLAN_MAX 128
+#define BOT_DIRTY_PROJ_SEARCH_MAX 384
+#define BOT_STATE_X_MIN -3
+#define BOT_STATE_Y_MIN -8
+#define BOT_STATE_X_COUNT 14
+#define BOT_STATE_Y_COUNT 30
+#define BOT_STATE_TABLE_SIZE 3360
+
+#define AI_TUNE_MOVE_BASE 135
+
+fun aiBotTempPieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
+        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
+    }
+    return true;
+}
+
+fun aiBotTempDropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> i32 {
+    i32 drop_y = y;
+    if !aiBotTempPieceFits(board, kind, rotation, x, drop_y) {return -9999;}
+    for (aiBotTempPieceFits(board, kind, rotation, x, drop_y + 1)) {drop_y += 1;}
+    return drop_y;
+}
+
+fun aiBotTempBoardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
+    if x < 0 || x >= BOARD_W {return true;}
+    if y >= BOARD_H {return true;}
+    if y < 0 {return false;}
+    return board[boardIndex(x, y)] != 0;
+}
+
+fun aiBotTempIsTSpin(board: ptr<i32>, kind: i32, x: i32, y: i32, last_rotate_success: bool) >> bool {
+    if kind != PIECE_T {return false;}
+    if !last_rotate_success {return false;}
+    i32 cx = x + 1;
+    i32 cy = y + 1;
+    i32 corners = 0;
+    if aiBotTempBoardCellBlocked(board, cx - 1, cy - 1) {corners += 1;}
+    if aiBotTempBoardCellBlocked(board, cx + 1, cy - 1) {corners += 1;}
+    if aiBotTempBoardCellBlocked(board, cx - 1, cy + 1) {corners += 1;}
+    if aiBotTempBoardCellBlocked(board, cx + 1, cy + 1) {corners += 1;}
+    return corners >= 3;
+}
+
+fun aiClearLinesTemp(board: ptr<i32>) >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if board[boardIndex(x, y)] == 0 {full = false;}
+        }
+        if full {
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];}
+            }
+            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
+            y += 1;
+        }
+    }
+    return cleared;
+}
+
+fun aiBoardIsEmptyTemp(board: ptr<i32>) >> bool {
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        if board[i] != 0 {return false;}
+    }
+    return true;
+}
+
+fun aiBotApplyRotateState(board: ptr<i32>, kind: i32, x: i32, y: i32, rotation: i32, dir: i32, out_x: ptr<i32>, out_y: ptr<i32>, out_rotation: ptr<i32>, out_kick_test: ptr<i32>) >> bool {
+    if kind == PIECE_O {return false;}
+
+    i32 from = normalizeRotation(rotation);
+    i32 to = normalizeRotation(rotation + dir);
+    if aiBotTempPieceFits(board, kind, to, x, y) {
+        out_x[0] = x;
+        out_y[0] = y;
+        out_rotation[0] = to;
+        out_kick_test[0] = 0;
+        return true;
+    }
+
+    for i32 test = 0; test < 5; test++ {
+        i32 dx = kickX(kind, from, to, test);
+        i32 dy = kickY(kind, from, to, test);
+        i32 next_x = x + dx;
+        i32 next_y = y - dy;
+        if aiBotTempPieceFits(board, kind, to, next_x, next_y) {
+            out_x[0] = next_x;
+            out_y[0] = next_y;
+            out_rotation[0] = to;
+            out_kick_test[0] = test;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fun aiBotStateTableIndex(x: i32, y: i32, rot: i32, rotate_flag: i32) >> i32 {
+    i32 xi = x - BOT_STATE_X_MIN;
+    i32 yi = y - BOT_STATE_Y_MIN;
+    if xi < 0 || xi >= BOT_STATE_X_COUNT {return -1;}
+    if yi < 0 || yi >= BOT_STATE_Y_COUNT {return -1;}
+    i32 flag = 0;
+    if rotate_flag != 0 {flag = 1;}
+    return ((((yi * BOT_STATE_X_COUNT) + xi) * 4) + normalizeRotation(rot)) * 2 + flag;
+}
+
+fun aiBotSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: i32, last_rotate: bool, out_board: ptr<i32>, out_final_y: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
+    i32 final_y = aiBotTempDropY(board, kind, rot, x, y);
+    if final_y < -1000 {return false;}
+
+    arr<i32, BOARD_CELLS> temp_board = {0};
+    for i32 bi = 0; bi < BOARD_CELLS; bi++ {temp_board[bi] = board[bi];}
+    for i32 mi = 0; mi < 4; mi++ {
+        i32 px = x + minoX(kind, rot, mi);
+        i32 py = final_y + minoY(kind, rot, mi);
+        if py >= 0 {temp_board[boardIndex(px, py)] = kind + 1;}
+    }
+
+    bool spin = aiBotTempIsTSpin(&temp_board[0], kind, x, final_y, last_rotate);
+    i32 lines = aiClearLinesTemp(&temp_board[0]);
+    bool all_clear = lines > 0 && aiBoardIsEmptyTemp(&temp_board[0]);
+    for i32 bi = 0; bi < BOARD_CELLS; bi++ {out_board[bi] = temp_board[bi];}
+
+    out_final_y[0] = final_y;
+    out_lines[0] = lines;
+    if spin {out_spin[0] = 1;} else {out_spin[0] = 0;}
+    if all_clear {out_all_clear[0] = 1;} else {out_all_clear[0] = 0;}
+    return true;
+}
+
+fun aiBotProjectDirtyNext(board: ptr<i32>, next_kind: i32, spawn_y: i32, out_rows: ptr<i32>, out_cover: ptr<i32>, out_access: ptr<i32>, out_holes: ptr<i32>, out_max_h: ptr<i32>, out_lines: ptr<i32>, out_score: ptr<i32>) >> void {
+    i32 base_max_h = 0;
+    i32 base_holes = 0;
+    i32 base_rows = 0;
+    i32 base_cover = 0;
+    aiBoardStackStats(board, &base_max_h, &base_holes, &base_rows, &base_cover);
+    i32 base_access = aiBoardGarbageAccessScore(board);
+
+    out_rows[0] = base_rows;
+    out_cover[0] = base_cover;
+    out_access[0] = base_access;
+    out_holes[0] = base_holes;
+    out_max_h[0] = base_max_h;
+    out_lines[0] = 0;
+    out_score[0] = -2147483647;
+
+    if next_kind < PIECE_I || next_kind > PIECE_Z {return;}
+
+    i32 best_rows = base_rows;
+    i32 best_cover = base_cover;
+    i32 best_access = base_access;
+    i32 best_holes = base_holes;
+    i32 best_max_h = base_max_h;
+    i32 best_lines = 0;
+    i32 best_steps = 0;
+    i32 best_score = -2147483647;
+    bool found = false;
+
+    i32 spawn_x = 3;
+    i32 spawn_rot = 0;
+    if !aiBotTempPieceFits(board, next_kind, spawn_rot, spawn_x, spawn_y) {return;}
+
+    for i32 i = 0; i < BOT_DIRTY_PROJ_SEARCH_MAX; i++ {
+        g_ai_dirty_xs[i] = 0;
+        g_ai_dirty_ys[i] = 0;
+        g_ai_dirty_rots[i] = 0;
+        g_ai_dirty_rotate_flags[i] = 0;
+        g_ai_dirty_depths[i] = 0;
+    }
+    for i32 i = 0; i < BOT_STATE_TABLE_SIZE; i++ {
+        g_ai_dirty_visited[i] = 0;
+        g_ai_dirty_landing_states[i] = 0;
+        g_ai_dirty_landing_steps[i] = 0;
+    }
+
+    i32 count = 1;
+    i32 head = 0;
+    g_ai_dirty_xs[0] = spawn_x;
+    g_ai_dirty_ys[0] = spawn_y;
+    g_ai_dirty_rots[0] = spawn_rot;
+    g_ai_dirty_rotate_flags[0] = 0;
+    g_ai_dirty_depths[0] = 0;
+    i32 root_slot = aiBotStateTableIndex(g_ai_dirty_xs[0], g_ai_dirty_ys[0], g_ai_dirty_rots[0], g_ai_dirty_rotate_flags[0]);
+    if root_slot < 0 {return;}
+    g_ai_dirty_visited[root_slot] = 1;
+
+    for (head < count) {
+        i32 next_x = g_ai_dirty_xs[head] - 1;
+        if aiBotTempPieceFits(board, next_kind, g_ai_dirty_rots[head], next_x, g_ai_dirty_ys[head]) {
+            i32 slot = aiBotStateTableIndex(next_x, g_ai_dirty_ys[head], g_ai_dirty_rots[head], g_ai_dirty_rotate_flags[head]);
+            if slot >= 0 && g_ai_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
+                i32 idx = count;
+                g_ai_dirty_visited[slot] = idx + 1;
+                g_ai_dirty_xs[idx] = next_x;
+                g_ai_dirty_ys[idx] = g_ai_dirty_ys[head];
+                g_ai_dirty_rots[idx] = g_ai_dirty_rots[head];
+                g_ai_dirty_rotate_flags[idx] = g_ai_dirty_rotate_flags[head];
+                g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
+                count += 1;
+            }
+        }
+
+        next_x = g_ai_dirty_xs[head] + 1;
+        if aiBotTempPieceFits(board, next_kind, g_ai_dirty_rots[head], next_x, g_ai_dirty_ys[head]) {
+            i32 slot = aiBotStateTableIndex(next_x, g_ai_dirty_ys[head], g_ai_dirty_rots[head], g_ai_dirty_rotate_flags[head]);
+            if slot >= 0 && g_ai_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
+                i32 idx = count;
+                g_ai_dirty_visited[slot] = idx + 1;
+                g_ai_dirty_xs[idx] = next_x;
+                g_ai_dirty_ys[idx] = g_ai_dirty_ys[head];
+                g_ai_dirty_rots[idx] = g_ai_dirty_rots[head];
+                g_ai_dirty_rotate_flags[idx] = g_ai_dirty_rotate_flags[head];
+                g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
+                count += 1;
+            }
+        }
+
+        i32 next_y = g_ai_dirty_ys[head] + 1;
+        if aiBotTempPieceFits(board, next_kind, g_ai_dirty_rots[head], g_ai_dirty_xs[head], next_y) {
+            i32 slot = aiBotStateTableIndex(g_ai_dirty_xs[head], next_y, g_ai_dirty_rots[head], g_ai_dirty_rotate_flags[head]);
+            if slot >= 0 && g_ai_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
+                i32 idx = count;
+                g_ai_dirty_visited[slot] = idx + 1;
+                g_ai_dirty_xs[idx] = g_ai_dirty_xs[head];
+                g_ai_dirty_ys[idx] = next_y;
+                g_ai_dirty_rots[idx] = g_ai_dirty_rots[head];
+                g_ai_dirty_rotate_flags[idx] = g_ai_dirty_rotate_flags[head];
+                g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
+                count += 1;
+            }
+        }
+
+        i32 rx = 0;
+        i32 ry = 0;
+        i32 rrot = 0;
+        i32 rkick = -1;
+        if aiBotApplyRotateState(board, next_kind, g_ai_dirty_xs[head], g_ai_dirty_ys[head], g_ai_dirty_rots[head], 1, &rx, &ry, &rrot, &rkick) {
+            i32 slot = aiBotStateTableIndex(rx, ry, rrot, 1);
+            if slot >= 0 && g_ai_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
+                i32 idx = count;
+                g_ai_dirty_visited[slot] = idx + 1;
+                g_ai_dirty_xs[idx] = rx;
+                g_ai_dirty_ys[idx] = ry;
+                g_ai_dirty_rots[idx] = normalizeRotation(rrot);
+                g_ai_dirty_rotate_flags[idx] = 1;
+                g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
+                count += 1;
+            }
+        }
+
+        if aiBotApplyRotateState(board, next_kind, g_ai_dirty_xs[head], g_ai_dirty_ys[head], g_ai_dirty_rots[head], -1, &rx, &ry, &rrot, &rkick) {
+            i32 slot = aiBotStateTableIndex(rx, ry, rrot, 1);
+            if slot >= 0 && g_ai_dirty_visited[slot] == 0 && count < BOT_DIRTY_PROJ_SEARCH_MAX {
+                i32 idx = count;
+                g_ai_dirty_visited[slot] = idx + 1;
+                g_ai_dirty_xs[idx] = rx;
+                g_ai_dirty_ys[idx] = ry;
+                g_ai_dirty_rots[idx] = normalizeRotation(rrot);
+                g_ai_dirty_rotate_flags[idx] = 1;
+                g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
+                count += 1;
+            }
+        }
+
+        head += 1;
+    }
+
+    for i32 state_idx = 0; state_idx < count; state_idx++ {
+        if g_ai_dirty_depths[state_idx] >= BOT_PLAN_MAX - 1 {continue;}
+        i32 final_y = aiBotTempDropY(board, next_kind, g_ai_dirty_rots[state_idx], g_ai_dirty_xs[state_idx], g_ai_dirty_ys[state_idx]);
+        if final_y < -1000 {continue;}
+
+        i32 slot = aiBotStateTableIndex(g_ai_dirty_xs[state_idx], final_y, g_ai_dirty_rots[state_idx], g_ai_dirty_rotate_flags[state_idx]);
+        if slot < 0 {continue;}
+
+        i32 steps = g_ai_dirty_depths[state_idx] + 1;
+        if g_ai_dirty_landing_states[slot] == 0 {
+            g_ai_dirty_landing_states[slot] = state_idx + 1;
+            g_ai_dirty_landing_steps[slot] = steps;
+        } else if steps < g_ai_dirty_landing_steps[slot] {
+            g_ai_dirty_landing_states[slot] = state_idx + 1;
+            g_ai_dirty_landing_steps[slot] = steps;
+        }
+    }
+
+    for i32 slot = 0; slot < BOT_STATE_TABLE_SIZE; slot++ {
+        if g_ai_dirty_landing_states[slot] == 0 {continue;}
+        i32 state_idx = g_ai_dirty_landing_states[slot] - 1;
+        if state_idx < 0 || state_idx >= count {continue;}
+
+        bool last_rotate = false;
+        if g_ai_dirty_rotate_flags[state_idx] != 0 {last_rotate = true;}
+
+        i32 final_y = 0;
+        i32 lines = 0;
+        i32 spin = 0;
+        i32 all_clear = 0;
+        arr<i32, BOARD_CELLS> tmp = {0};
+        if !aiBotSimulateDropPlacement(board, next_kind, g_ai_dirty_xs[state_idx], g_ai_dirty_ys[state_idx], g_ai_dirty_rots[state_idx], last_rotate, &tmp[0], &final_y, &lines, &spin, &all_clear) {continue;}
+
+        i32 cand_max_h = 0;
+        i32 cand_holes = 0;
+        i32 cand_rows = 0;
+        i32 cand_cover = 0;
+        aiBoardStackStats(&tmp[0], &cand_max_h, &cand_holes, &cand_rows, &cand_cover);
+        i32 cand_access = aiBoardGarbageAccessScore(&tmp[0]);
+
+        i32 steps = g_ai_dirty_landing_steps[slot];
+        i32 cand_score = evaluateBoardStructural(&tmp[0]);
+        cand_score += lines * aiTune(AI_TUNE_MOVE_BASE + 6);
+        cand_score -= cand_access * aiTune(AI_TUNE_MOVE_BASE + 8);
+        cand_score -= cand_cover * (aiTune(AI_TUNE_MOVE_BASE + 7) / 2);
+        cand_score -= cand_rows * (aiTune(AI_TUNE_MOVE_BASE + 7) / 3);
+        cand_score -= cand_holes * (aiTune(AI_TUNE_MOVE_BASE + 9) / 4);
+        cand_score -= cand_max_h * (aiTune(AI_TUNE_MOVE_BASE + 10) / 4);
+        cand_score -= steps * aiTune(AI_TUNE_MOVE_BASE + 18);
+
+        bool better = false;
+        if !found {
+            better = true;
+        } else {
+            better = aiBotDirtyCandidateBetter(base_rows, base_cover, base_access, base_holes, base_max_h, cand_rows, cand_cover, cand_access, cand_holes, cand_max_h, lines, steps, cand_score, best_rows, best_cover, best_access, best_holes, best_max_h, best_lines, best_steps, best_score);
+        }
+
+        if better {
+            found = true;
+            best_rows = cand_rows;
+            best_cover = cand_cover;
+            best_access = cand_access;
+            best_holes = cand_holes;
+            best_max_h = cand_max_h;
+            best_lines = lines;
+            best_steps = steps;
+            best_score = cand_score;
+        }
+    }
+
+    if found {
+        out_rows[0] = best_rows;
+        out_cover[0] = best_cover;
+        out_access[0] = best_access;
+        out_holes[0] = best_holes;
+        out_max_h[0] = best_max_h;
+        out_lines[0] = best_lines;
+        out_score[0] = best_score;
+    }
+}
