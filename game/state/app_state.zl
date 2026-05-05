@@ -31,6 +31,9 @@ use zltris.theme
 #define BG_STAR_COUNT 150
 #define RHYTHM_TARGET_MAX 8192
 
+#define BG_VISUAL_STARS 0
+#define BG_BARS_LAYOUT_CLASSIC 0
+#define BG_BARS_LAYOUT_MIRROR 1
 #define STAR_MODE_DROPS 1
 #define SHADER_MODE_NONE 0
 #define CUSTOM_SHADER_NAME_MAX 96
@@ -299,6 +302,13 @@ i32 g_bg_stars_amount = 50;
 i32 g_bg_star_react_mode = STAR_MODE_DROPS;
 f32 g_star_peak_target_dps = 1.5;
 f32 g_star_intensity = 0.4;
+i32 g_bg_visual_mode = BG_VISUAL_STARS;
+i32 g_bg_bars_amount = 38;
+f32 g_bg_bars_intensity = 1.0;
+f32 g_bg_bars_height_limit = 0.78;
+f32 g_bg_bars_opacity = 0.72;
+f32 g_bg_bars_glow = 0.85;
+i32 g_bg_bars_layout = BG_BARS_LAYOUT_CLASSIC;
 i32 g_board_bounciness = 50;
 i32 g_post_shader_mode = SHADER_MODE_NONE;
 f32 g_crt_curvature = 0.70;

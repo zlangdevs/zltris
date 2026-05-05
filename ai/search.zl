@@ -21,8 +21,8 @@ module zltris.ai;
 
 fun aiBotTempPieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
     for i32 i = 0; i < 4; i++ {
-        i32 mx = x + minoX(kind, rotation, i);
-        i32 my = y + minoY(kind, rotation, i);
+        i32 mx = x + aiMinoX(kind, rotation, i);
+        i32 my = y + aiMinoY(kind, rotation, i);
         if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
         if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
     }
@@ -129,8 +129,8 @@ fun aiBotSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: 
     arr<i32, BOARD_CELLS> temp_board = {0};
     for i32 bi = 0; bi < BOARD_CELLS; bi++ {temp_board[bi] = board[bi];}
     for i32 mi = 0; mi < 4; mi++ {
-        i32 px = x + minoX(kind, rot, mi);
-        i32 py = final_y + minoY(kind, rot, mi);
+        i32 px = x + aiMinoX(kind, rot, mi);
+        i32 py = final_y + aiMinoY(kind, rot, mi);
         if py >= 0 {temp_board[boardIndex(px, py)] = kind + 1;}
     }
 

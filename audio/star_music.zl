@@ -18,6 +18,10 @@ use zltris.aubio
 #define STAR_MUSIC_MODE_BUILTIN 0
 #define STAR_MUSIC_MODE_CUSTOM 1
 #define STAR_MUSIC_CUSTOM_DIR "assets/songs"
+#define STAR_MUSIC_BAR_MAX 96
+#define STAR_MUSIC_ENV_MAX_FRAMES 16384
+#define STAR_MUSIC_BAR_ENV_CELLS 1572864
+#define STAR_MUSIC_ENV_BASE_DT 0.0333333
 
 struct StarMusicAnalyzeRequest {
     request_id i32,
@@ -55,6 +59,11 @@ arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength_raw = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_accent = {0.0};
 i32 g_star_music_style_applied = STAR_MUSIC_STYLE_PULSE;
+i32 g_star_music_bar_band_count = STAR_MUSIC_BAR_MAX;
+i32 g_star_music_bar_env_frame_count = 0;
+f32 g_star_music_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
+arr<f32, STAR_MUSIC_BAR_ENV_CELLS> g_star_music_bar_env = {0.0};
+arr<f32, STAR_MUSIC_BAR_MAX> g_star_music_bar_values = {0.0};
 arr<u8, 20480> g_star_music_track_path_buf = {0};
 arr<i32, 64> g_star_music_track_number = {0};
 i32 g_star_music_track_count = 0;
@@ -79,6 +88,12 @@ bool g_star_music_analyze_has_result = false;
 StarMusicAnalyzeResult g_star_music_analyze_result = {0};
 i32 g_star_music_analyze_next_request = 1;
 i32 g_star_music_analyze_expected_request = 0;
+bool g_star_music_analyze_has_bar_env = false;
+i32 g_star_music_analyze_bar_env_request_id = 0;
+i32 g_star_music_analyze_bar_env_track_index = -1;
+i32 g_star_music_analyze_bar_env_frame_count = 0;
+f32 g_star_music_analyze_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
+arr<f32, STAR_MUSIC_BAR_ENV_CELLS> g_star_music_analyze_bar_env = {0.0};
 
 fun trackPathPtr(slot: i32) >> ptr<u8> {
     return &g_star_music_track_path_buf[slot * STAR_MUSIC_PATH_MAX];
@@ -172,6 +187,186 @@ fun styleLerpSpeed() >> f32 {
     if styleIsWave() {return 0.015 as f32;}
     if styleIsAggro() {return 0.06 as f32;}
     return 0.03 as f32;
+}
+
+fun barEnvCellIndex(frame: i32, band: i32) >> i32 {
+    return frame * STAR_MUSIC_BAR_MAX + band;
+}
+
+fun clearStarMusicBarValues() >> void {
+    for i32 i = 0; i < STAR_MUSIC_BAR_MAX; i++ {
+        g_star_music_bar_values[i] = 0.0 as f32;
+    }
+}
+
+fun starMusicBarCount() >> i32 {
+    return g_star_music_bar_band_count;
+}
+
+fun starMusicBarValue(index: i32) >> f32 {
+    if index < 0 || index >= g_star_music_bar_band_count {return 0.0 as f32;}
+    return g_star_music_bar_values[index];
+}
+
+fun updateStarMusicBarsForTime() >> void {
+    if g_star_music_bar_env_frame_count <= 0 {
+        for i32 i = 0; i < STAR_MUSIC_BAR_MAX; i++ {
+            g_star_music_bar_values[i] *= 0.90 as f32;
+            if g_star_music_bar_values[i] < 0.0005 as f32 {g_star_music_bar_values[i] = 0.0 as f32;}
+        }
+        return;
+    }
+
+    f32 dt = g_star_music_bar_env_frame_dt;
+    if dt < 0.005 as f32 {dt = STAR_MUSIC_ENV_BASE_DT;}
+
+    f32 frame_pos = g_star_music_time / dt;
+    i32 f0 = frame_pos as i32;
+    if f0 < 0 {f0 = 0;}
+    if f0 >= g_star_music_bar_env_frame_count {f0 = g_star_music_bar_env_frame_count - 1;}
+    i32 f1 = f0 + 1;
+    if f1 >= g_star_music_bar_env_frame_count {f1 = g_star_music_bar_env_frame_count - 1;}
+
+    f32 blend = frame_pos - (f0 as f32);
+    if blend < 0.0 as f32 {blend = 0.0 as f32;}
+    if blend > 1.0 as f32 {blend = 1.0 as f32;}
+
+    f32 beat = currentMusicBeatProximity();
+    f32 hit = g_star_music_hit_strength;
+    if hit < 0.0 as f32 {hit = 0.0 as f32;}
+    if hit > 1.0 as f32 {hit = 1.0 as f32;}
+    f32 punch = beat * (0.08 as f32) + hit * (0.20 as f32);
+
+    f32 attack = 0.44 as f32 + g_star_music_attack_speed * (0.12 as f32);
+    f32 release = 0.11 as f32 + g_star_music_decay_speed * (0.06 as f32);
+    if attack > 0.96 as f32 {attack = 0.96 as f32;}
+    if release > 0.92 as f32 {release = 0.92 as f32;}
+
+    for i32 b = 0; b < STAR_MUSIC_BAR_MAX; b++ {
+        f32 v0 = g_star_music_bar_env[barEnvCellIndex(f0, b)];
+        f32 v1 = g_star_music_bar_env[barEnvCellIndex(f1, b)];
+        f32 target = v0 + (v1 - v0) * blend;
+
+        f32 bass_bias = 1.0 as f32 - (b as f32) / ((STAR_MUSIC_BAR_MAX - 1) as f32);
+        target += punch * ((0.02 as f32) + bass_bias * (0.08 as f32));
+        if target > 1.0 as f32 {target = 1.0 as f32;}
+        if target < 0.0 as f32 {target = 0.0 as f32;}
+
+        f32 cur = g_star_music_bar_values[b];
+        if target > cur {
+            cur += (target - cur) * attack;
+        } else {
+            cur += (target - cur) * release;
+        }
+        if cur < 0.0 as f32 {cur = 0.0 as f32;}
+        g_star_music_bar_values[b] = cur;
+    }
+}
+
+fun postProcessBarEnvelope(out_bar_env: ptr<f32>, frame_count: i32, band_count: i32) >> void {
+    if frame_count <= 0 || band_count <= 0 {return;}
+
+    arr<f32, STAR_MUSIC_BAR_MAX> band_max = {0.0};
+    arr<f32, STAR_MUSIC_BAR_MAX> band_mean = {0.0};
+    arr<f32, STAR_MUSIC_BAR_MAX> band_prev = {0.0};
+    arr<f32, STAR_MUSIC_BAR_MAX> row_tmp = {0.0};
+
+    for i32 b = 0; b < band_count; b++ {
+        band_max[b] = 0.0001 as f32;
+    }
+
+    for i32 frame = 0; frame < frame_count; frame++ {
+        for i32 b = 0; b < band_count; b++ {
+            f32 v = out_bar_env[barEnvCellIndex(frame, b)];
+            if v > band_max[b] {band_max[b] = v;}
+            band_mean[b] += v;
+        }
+    }
+
+    for i32 b = 0; b < band_count; b++ {
+        band_mean[b] = band_mean[b] / (frame_count as f32);
+        if band_mean[b] < 0.0001 as f32 {band_mean[b] = 0.0001 as f32;}
+    }
+
+    for i32 frame = 0; frame < frame_count; frame++ {
+        f32 frame_energy = 0.0 as f32;
+        for i32 b = 0; b < band_count; b++ {
+            i32 idx = barEnvCellIndex(frame, b);
+            f32 v = out_bar_env[idx];
+
+            f32 by_peak = v / (band_max[b] + 0.0001 as f32);
+            f32 by_mean = v / (band_mean[b] * (2.20 as f32) + 0.0001 as f32);
+            if by_mean > 1.0 as f32 {by_mean = 1.0 as f32;}
+
+            f32 t = 0.0 as f32;
+            if band_count > 1 {t = (b as f32) / ((band_count - 1) as f32);}
+            f32 tilt = (1.04 as f32) - t * (0.22 as f32);
+
+            f32 shaped = by_peak * (0.62 as f32) + by_mean * (0.38 as f32);
+            shaped *= tilt;
+            if shaped < 0.0 as f32 {shaped = 0.0 as f32;}
+
+            out_bar_env[idx] = shaped;
+            frame_energy += shaped;
+        }
+
+        frame_energy = frame_energy / (band_count as f32);
+        f32 noise_floor = frame_energy * (0.18 as f32) + (0.010 as f32);
+
+        for i32 b = 0; b < band_count; b++ {
+            i32 idx = barEnvCellIndex(frame, b);
+            f32 v = out_bar_env[idx] - noise_floor;
+            if v < 0.0 as f32 {v = 0.0 as f32;}
+            out_bar_env[idx] = sndClamp01(v * (1.22 as f32));
+        }
+    }
+
+    for i32 frame = 0; frame < frame_count; frame++ {
+        for i32 b = 0; b < band_count; b++ {
+            i32 left = b - 1;
+            if left < 0 {left = 0;}
+            i32 right = b + 1;
+            if right >= band_count {right = band_count - 1;}
+
+            f32 vl = out_bar_env[barEnvCellIndex(frame, left)];
+            f32 vc = out_bar_env[barEnvCellIndex(frame, b)];
+            f32 vr = out_bar_env[barEnvCellIndex(frame, right)];
+            row_tmp[b] = vl * (0.18 as f32) + vc * (0.64 as f32) + vr * (0.18 as f32);
+        }
+
+        for i32 b = 0; b < band_count; b++ {
+            out_bar_env[barEnvCellIndex(frame, b)] = row_tmp[b];
+        }
+    }
+
+    for i32 b = 0; b < band_count; b++ {
+        band_prev[b] = 0.0 as f32;
+    }
+    for i32 frame = 0; frame < frame_count; frame++ {
+        for i32 b = 0; b < band_count; b++ {
+            i32 idx = barEnvCellIndex(frame, b);
+            f32 target = out_bar_env[idx];
+            f32 cur = band_prev[b];
+            if target > cur {
+                cur += (target - cur) * (0.72 as f32);
+            } else {
+                cur += (target - cur) * (0.22 as f32);
+            }
+            cur = sndClamp01(cur);
+            band_prev[b] = cur;
+            out_bar_env[idx] = cur;
+        }
+    }
+
+    for i32 frame = 0; frame < frame_count; frame++ {
+        for i32 b = 0; b < band_count; b++ {
+            i32 idx = barEnvCellIndex(frame, b);
+            f32 v = out_bar_env[idx];
+            if v < 0.0 as f32 {v = 0.0 as f32;}
+            v = pow(v as f64, 0.86 as f64) as f32;
+            out_bar_env[idx] = sndClamp01(v);
+        }
+    }
 }
 
 fun applyStyleStrengthCurveToBeats() >> void {
@@ -527,11 +722,18 @@ fun starMusicAnalyzeThreadMain(arg: ptr<void>) >> ptr<void> {
         StarMusicAnalyzeResult result = {0};
         result.request_id = req.request_id;
         result.track_index = req.track_index;
-        analyzeMusicBeatsInto(&req.path[0], &result.beats[0], &result.strength_raw[0], &result.accent[0], &result.beat_count);
+        i32 bar_frames = 0;
+        f32 bar_dt = STAR_MUSIC_ENV_BASE_DT;
+        analyzeMusicBeatsInto(&req.path[0], &result.beats[0], &result.strength_raw[0], &result.accent[0], &result.beat_count, &g_star_music_analyze_bar_env[0], &bar_frames, &bar_dt);
 
         mutexLock(&g_star_music_analyze_mutex);
         g_star_music_analyze_result = result;
         g_star_music_analyze_has_result = true;
+        g_star_music_analyze_bar_env_request_id = req.request_id;
+        g_star_music_analyze_bar_env_track_index = req.track_index;
+        g_star_music_analyze_bar_env_frame_count = bar_frames;
+        g_star_music_analyze_bar_env_frame_dt = bar_dt;
+        g_star_music_analyze_has_bar_env = true;
         mutexUnlock(&g_star_music_analyze_mutex);
     }
 
@@ -587,6 +789,7 @@ fun starMusicQueueAnalyzeTrack(path: ptr<u8>, track_index: i32) >> void {
     g_star_music_analyze_request = req;
     g_star_music_analyze_has_request = true;
     g_star_music_analyze_has_result = false;
+    g_star_music_analyze_has_bar_env = false;
     condSignal(&g_star_music_analyze_cond);
     mutexUnlock(&g_star_music_analyze_mutex);
 
@@ -598,12 +801,25 @@ fun starMusicTryApplyAnalyzeResult() >> void {
 
     bool has = false;
     StarMusicAnalyzeResult result = {0};
+    bool has_env = false;
+    i32 env_request_id = 0;
+    i32 env_track_index = -1;
+    i32 env_frame_count = 0;
+    f32 env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
 
     mutexLock(&g_star_music_analyze_mutex);
     if g_star_music_analyze_has_result {
         has = true;
         result = g_star_music_analyze_result;
         g_star_music_analyze_has_result = false;
+    }
+    if g_star_music_analyze_has_bar_env {
+        has_env = true;
+        env_request_id = g_star_music_analyze_bar_env_request_id;
+        env_track_index = g_star_music_analyze_bar_env_track_index;
+        env_frame_count = g_star_music_analyze_bar_env_frame_count;
+        env_frame_dt = g_star_music_analyze_bar_env_frame_dt;
+        g_star_music_analyze_has_bar_env = false;
     }
     mutexUnlock(&g_star_music_analyze_mutex);
 
@@ -624,7 +840,25 @@ fun starMusicTryApplyAnalyzeResult() >> void {
         g_star_music_beat_strength_raw[i] = result.strength_raw[i];
         g_star_music_beat_accent[i] = result.accent[i];
     }
+
+    g_star_music_bar_env_frame_count = 0;
+    g_star_music_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
+    if has_env && env_request_id == result.request_id && env_track_index == result.track_index {
+        i32 frames = env_frame_count;
+        if frames < 0 {frames = 0;}
+        if frames > STAR_MUSIC_ENV_MAX_FRAMES {frames = STAR_MUSIC_ENV_MAX_FRAMES;}
+        g_star_music_bar_env_frame_count = frames;
+        g_star_music_bar_env_frame_dt = env_frame_dt;
+        if g_star_music_bar_env_frame_dt < 0.005 as f32 {g_star_music_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;}
+
+        i32 cells = frames * STAR_MUSIC_BAR_MAX;
+        for i32 i = 0; i < cells; i++ {
+            g_star_music_bar_env[i] = g_star_music_analyze_bar_env[i];
+        }
+    }
+
     applyStyleStrengthCurveToBeats();
+    clearStarMusicBarValues();
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
 
@@ -661,6 +895,9 @@ fun loadStarMusicTrack(index: i32) >> void {
     g_star_music_beat_index = 0;
     g_star_music_attack_speed = 1.0;
     g_star_music_decay_speed = 1.0;
+    g_star_music_bar_env_frame_count = 0;
+    g_star_music_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
+    clearStarMusicBarValues();
     g_music_track_ended = false;
 
     SetMusicVolume(g_star_music, g_music_volume);
@@ -676,8 +913,13 @@ fun starMusicIntensityNorm() >> f32 {
     return sqrt(n as f64) as f32;
 }
 
-fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: ptr<f32>, out_accent: ptr<f32>, out_count: ptr<i32>) >> void {
+fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: ptr<f32>, out_accent: ptr<f32>, out_count: ptr<i32>, out_bar_env: ptr<f32>, out_bar_frame_count: ptr<i32>, out_bar_frame_dt: ptr<f32>) >> void {
     out_count[0] = 0;
+    out_bar_frame_count[0] = 0;
+    out_bar_frame_dt[0] = STAR_MUSIC_ENV_BASE_DT;
+    for i32 i = 0; i < STAR_MUSIC_BAR_ENV_CELLS; i++ {
+        out_bar_env[i] = 0.0 as f32;
+    }
 
     Wave wave = LoadWave(path);
     if wave.frameCount == 0 || wave.sampleRate == 0 || wave.channels == 0 {
@@ -715,6 +957,20 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         return;
     }
 
+    ptr<_aubio_fft_t> fft = new_aubio_fft(STAR_MUSIC_HOP_SIZE);
+    ptr<cvec_t> fft_out = new_cvec(STAR_MUSIC_HOP_SIZE);
+    if fft == (0 as ptr<_aubio_fft_t>) || fft_out == (0 as ptr<cvec_t>) {
+        if fft != (0 as ptr<_aubio_fft_t>) {del_aubio_fft(fft);}
+        if fft_out != (0 as ptr<cvec_t>) {del_cvec(fft_out);}
+        del_fvec(out);
+        del_fvec(in);
+        del_aubio_tempo(tempo);
+        UnloadWaveSamples(samples);
+        UnloadWave(wave);
+        printf("[zltris] aubio fft alloc failed\n");
+        return;
+    }
+
     i32 frame_count = wave.frameCount as i32;
     i32 cursor = 0;
     f32 last_beat = -1.0 as f32;
@@ -737,6 +993,51 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
     if low_alpha < (0.001 as f32) {low_alpha = 0.001 as f32;}
     if low_alpha > (0.95 as f32) {low_alpha = 0.95 as f32;}
     arr<f32, STAR_MUSIC_MAX_BEATS> beat_bass_energy = {0.0};
+
+    i32 band_count = STAR_MUSIC_BAR_MAX;
+    i32 fft_bins = STAR_MUSIC_HOP_SIZE / 2;
+    f32 nyquist = (samplerate as f32) * (0.5 as f32);
+    f32 min_freq = 30.0 as f32;
+    f32 max_freq = nyquist * (0.92 as f32);
+    if max_freq > 12000.0 as f32 {max_freq = 12000.0 as f32;}
+    if max_freq <= min_freq {max_freq = min_freq + 10.0 as f32;}
+    f32 freq_ratio = max_freq / min_freq;
+    if freq_ratio < 1.001 as f32 {freq_ratio = 1.001 as f32;}
+
+    arr<i32, STAR_MUSIC_BAR_MAX> band_lo = {0};
+    arr<i32, STAR_MUSIC_BAR_MAX> band_hi = {0};
+    for i32 b = 0; b < band_count; b++ {
+        f32 t0 = (b as f32) / (band_count as f32);
+        f32 t1 = ((b + 1) as f32) / (band_count as f32);
+        f32 f0 = min_freq * (pow(freq_ratio as f64, t0 as f64) as f32);
+        f32 f1 = min_freq * (pow(freq_ratio as f64, t1 as f64) as f32);
+        i32 bin0 = ((f0 / (samplerate as f32)) * (STAR_MUSIC_HOP_SIZE as f32)) as i32;
+        i32 bin1 = ((f1 / (samplerate as f32)) * (STAR_MUSIC_HOP_SIZE as f32)) as i32;
+        if bin0 < 1 {bin0 = 1;}
+        if bin1 <= bin0 {bin1 = bin0 + 1;}
+        if bin1 > fft_bins {bin1 = fft_bins;}
+        if bin0 >= fft_bins {bin0 = fft_bins - 1;}
+        if bin1 <= bin0 {bin1 = bin0 + 1;}
+        if bin1 > fft_bins {bin1 = fft_bins;}
+        band_lo[b] = bin0;
+        band_hi[b] = bin1;
+    }
+
+    f32 env_dt = STAR_MUSIC_ENV_BASE_DT;
+    f32 duration = (frame_count as f32) / (samplerate as f32);
+    if duration > 0.0 as f32 {
+        f32 ideal_frames = duration / env_dt;
+        if ideal_frames > (STAR_MUSIC_ENV_MAX_FRAMES as f32) {
+            env_dt = duration / ((STAR_MUSIC_ENV_MAX_FRAMES - 1) as f32);
+        }
+    }
+    if env_dt < 0.010 as f32 {env_dt = 0.010 as f32;}
+    out_bar_frame_dt[0] = env_dt;
+
+    arr<f32, STAR_MUSIC_BAR_MAX> env_accum = {0.0};
+    i32 env_accum_hops = 0;
+    f32 next_env_t = env_dt;
+    i32 env_frame = 0;
 
     for (cursor < frame_count) {
         i32 remaining = frame_count - cursor;
@@ -781,6 +1082,34 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         f32 accent = accent_full * (0.25 as f32) + accent_bass * (0.75 as f32);
         if accent < 0.0 as f32 {accent = 0.0 as f32;}
 
+        aubio_fft_do(fft, in, fft_out);
+        for i32 b = 0; b < band_count; b++ {
+            f32 sum_bins = 0.0 as f32;
+            i32 bin_count = band_hi[b] - band_lo[b];
+            if bin_count <= 0 {bin_count = 1;}
+            for i32 k = band_lo[b]; k < band_hi[b]; k++ {
+                sum_bins += cvec_norm_get_sample(fft_out, k);
+            }
+            f32 mag = sum_bins / (bin_count as f32);
+            f32 shaped = (log(((1.0 as f64) + (mag as f64) * (22.0 as f64))) as f32) / (log(23.0 as f64) as f32);
+            if shaped < 0.0 as f32 {shaped = 0.0 as f32;}
+            env_accum[b] += shaped;
+        }
+        env_accum_hops += 1;
+
+        f32 hop_t = ((cursor + read) as f32) / (samplerate as f32);
+        if env_accum_hops > 0 && hop_t >= next_env_t && env_frame < STAR_MUSIC_ENV_MAX_FRAMES {
+            for i32 b = 0; b < band_count; b++ {
+                out_bar_env[barEnvCellIndex(env_frame, b)] = env_accum[b] / (env_accum_hops as f32);
+                env_accum[b] = 0.0 as f32;
+            }
+            env_accum_hops = 0;
+            env_frame += 1;
+            for (next_env_t <= hop_t) {
+                next_env_t += env_dt;
+            }
+        }
+
         aubio_tempo_do(tempo, in, out);
 
         f32 beat_flag = fvec_get_sample(out, 0);
@@ -813,8 +1142,22 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         cursor += read;
     }
 
+    if env_accum_hops > 0 && env_frame < STAR_MUSIC_ENV_MAX_FRAMES {
+        for i32 b = 0; b < band_count; b++ {
+            out_bar_env[barEnvCellIndex(env_frame, b)] = env_accum[b] / (env_accum_hops as f32);
+        }
+        env_frame += 1;
+    }
+    out_bar_frame_count[0] = env_frame;
+
+    if env_frame > 0 {
+        postProcessBarEnvelope(out_bar_env, env_frame, band_count);
+    }
+
     del_fvec(out);
     del_fvec(in);
+    del_cvec(fft_out);
+    del_aubio_fft(fft);
     del_aubio_tempo(tempo);
     UnloadWaveSamples(samples);
     UnloadWave(wave);
@@ -845,12 +1188,7 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         if bass_share_norm > 1.0 as f32 {bass_share_norm = 1.0 as f32;}
 
         f32 accent_norm = sndClamp01((out_accent[i] - (1.0 as f32)) / (2.5 as f32));
-        f32 strength = bass_norm * (0.35 as f32)
-                     + bass_rel * (0.25 as f32)
-                     + accent_norm * (0.20 as f32)
-                     + bass_share_norm * (0.10 as f32)
-                     + loud_norm * (0.06 as f32)
-                     + rel_norm * (0.04 as f32);
+        f32 strength = bass_norm * (0.35 as f32) + bass_rel * (0.25 as f32) + accent_norm * (0.20 as f32) + bass_share_norm * (0.10 as f32) + loud_norm * (0.06 as f32) + rel_norm * (0.04 as f32);
         if strength < 0.0 as f32 {strength = 0.0 as f32;}
         if strength > 1.0 as f32 {strength = 1.0 as f32;}
         out_strength_raw[i] = strength;
@@ -862,7 +1200,8 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
     g_star_music_beat_index = 0;
     g_star_music_hits_total = 0;
     g_star_music_hit_strength = 0.0;
-    analyzeMusicBeatsInto(path, &g_star_music_beats[0], &g_star_music_beat_strength_raw[0], &g_star_music_beat_accent[0], &g_star_music_beat_count);
+    analyzeMusicBeatsInto(path, &g_star_music_beats[0], &g_star_music_beat_strength_raw[0], &g_star_music_beat_accent[0], &g_star_music_beat_count, &g_star_music_bar_env[0], &g_star_music_bar_env_frame_count, &g_star_music_bar_env_frame_dt);
+    clearStarMusicBarValues();
     applyStyleStrengthCurveToBeats();
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
@@ -875,6 +1214,9 @@ fun loadStarMusic() >> void {
     g_star_music_beat_index = 0;
     g_star_music_attack_speed = 1.0;
     g_star_music_decay_speed = 1.0;
+    g_star_music_bar_env_frame_count = 0;
+    g_star_music_bar_env_frame_dt = STAR_MUSIC_ENV_BASE_DT;
+    clearStarMusicBarValues();
     g_music_track_ended = false;
 
     if !IsAudioDeviceReady() {InitAudioDevice();}
@@ -902,7 +1244,10 @@ fun updateStarMusicPlayback() >> void {
     if g_star_music_style_applied != g_star_music_style {
         applyStyleStrengthCurveToBeats();
     }
-    if !g_star_music_loaded {return;}
+    if !g_star_music_loaded {
+        updateStarMusicBarsForTime();
+        return;
+    }
 
     UpdateMusicStream(g_star_music);
     SetMusicVolume(g_star_music, g_music_volume);
@@ -924,14 +1269,21 @@ fun updateStarMusicPlayback() >> void {
         g_music_track_ended = true;
         if g_music_lock_single_track {
             StopMusicStream(g_star_music);
+            g_star_music_bar_env_frame_count = 0;
+            updateStarMusicBarsForTime();
             return;
         }
         i32 next_track = nextEnabledTrackFrom(g_star_music_track_index);
         loadStarMusicTrack(next_track);
+        updateStarMusicBarsForTime();
         return;
     }
 
-    if g_music_lock_single_track && g_music_track_ended {return;}
+    if g_music_lock_single_track && g_music_track_ended {
+        g_star_music_bar_env_frame_count = 0;
+        updateStarMusicBarsForTime();
+        return;
+    }
 
     if !IsMusicStreamPlaying(g_star_music) {PlayMusicStream(g_star_music);}
 
@@ -963,6 +1315,8 @@ fun updateStarMusicPlayback() >> void {
         if g_star_music_decay_speed < 0.55 as f32 {g_star_music_decay_speed = 0.55 as f32;}
         if g_star_music_decay_speed > 2.10 as f32 {g_star_music_decay_speed = 2.10 as f32;}
     }
+
+    updateStarMusicBarsForTime();
 }
 
 fun currentMusicBeatProximity() >> f32 {

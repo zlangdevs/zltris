@@ -20,6 +20,7 @@ use zltris.scale
 #define PIECE_J 3
 #define PIECE_L 4
 #define PIECE_S 5
+#define MINO_COORD_TABLE_SIZE 112
 
 #define CHALLENGE_KICK_SRS 0
 #define CHALLENGE_KICK_NONE 1
@@ -99,6 +100,36 @@ fun normalizeRotation(rotation: i32) >> i32 {
     i32 res = rotation % 4;
     if res < 0 {res += 4;}
     return res;
+}
+
+arr<i32, MINO_COORD_TABLE_SIZE> g_mino_x_table = {
+    0, 1, 2, 3, 2, 2, 2, 2, 0, 1, 2, 3, 1, 1, 1, 1,
+    1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2,
+    1, 0, 1, 2, 1, 1, 2, 1, 0, 1, 2, 1, 1, 0, 1, 1,
+    0, 0, 1, 2, 1, 2, 1, 1, 0, 1, 2, 2, 1, 1, 0, 1,
+    2, 0, 1, 2, 1, 1, 1, 2, 0, 1, 2, 0, 0, 1, 1, 1,
+    1, 2, 0, 1, 1, 1, 2, 2, 1, 2, 0, 1, 0, 0, 1, 1,
+    0, 1, 1, 2, 2, 1, 2, 1, 0, 1, 1, 2, 1, 0, 1, 0
+};
+
+arr<i32, MINO_COORD_TABLE_SIZE> g_mino_y_table = {
+    1, 1, 1, 1, 0, 1, 2, 3, 2, 2, 2, 2, 0, 1, 2, 3,
+    0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1,
+    0, 1, 1, 1, 0, 1, 1, 2, 1, 1, 1, 2, 0, 1, 1, 2,
+    0, 1, 1, 1, 0, 0, 1, 2, 1, 1, 1, 2, 0, 1, 2, 2,
+    0, 1, 1, 1, 0, 1, 2, 2, 1, 1, 1, 2, 0, 0, 1, 2,
+    0, 0, 1, 1, 0, 1, 1, 2, 1, 1, 2, 2, 0, 1, 1, 2,
+    0, 0, 1, 1, 0, 1, 1, 2, 1, 1, 2, 2, 0, 1, 1, 2
+};
+
+fun minoTableKind(kind: i32) >> i32 {
+    if kind < PIECE_I {return PIECE_S + 1;}
+    if kind > PIECE_S {return PIECE_S + 1;}
+    return kind;
+}
+
+fun minoTableIndex(kind: i32, rotation: i32, idx: i32) >> i32 {
+    return minoTableKind(kind) * 16 + normalizeRotation(rotation) * 4 + idx;
 }
 
 fun boardWidth() >> i32 {
@@ -199,214 +230,11 @@ fun boardSet(x: i32, y: i32, value: i32) >> void {
 }
 
 fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
-    i32 rot = normalizeRotation(rotation);
-
-    if (kind == PIECE_I) {
-        if rot == 0 {return idx;}
-        if rot == 1 {return 2;}
-        if rot == 2 {return idx;}
-        return 1;
-    }
-
-    if (kind == PIECE_O) {
-        if idx == 0 || idx == 2 {return 1;}
-        return 2;
-    }
-
-    if (kind == PIECE_T) {
-        if (rot == 0) {
-            if idx == 0 {return 1;}
-            return idx - 1;
-        }
-        if (rot == 1) {
-            if idx == 2 {return 2;}
-            return 1;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 1;}
-            return idx;
-        }
-        if idx == 1 {return 0;}
-        return 1;
-    }
-
-    if (kind == PIECE_J) {
-        if (rot == 0) {
-            if idx == 0 {return 0;}
-            return idx - 1;
-        }
-        if (rot == 1) {
-            if idx == 0 || idx == 2 || idx == 3 {return 1;}
-            return 2;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 2;}
-            return idx;
-        }
-        if idx == 2 {return 0;}
-        return 1;
-    }
-
-    if (kind == PIECE_L) {
-        if (rot == 0) {
-            if idx == 0 {return 2;}
-            return idx - 1;
-        }
-        if (rot == 1) {
-            if idx == 3 {return 2;}
-            return 1;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 0;}
-            return idx;
-        }
-        if idx == 0 {return 0;}
-        return 1;
-    }
-
-    if (kind == PIECE_S) {
-        if (rot == 0) {
-            if idx == 0 || idx == 3 {return 1;}
-            if idx == 1 {return 2;}
-            return 0;
-        }
-        if (rot == 1) {
-            if idx == 0 || idx == 1 {return 1;}
-            return 2;
-        }
-        if (rot == 2) {
-            if idx == 0 || idx == 3 {return 1;}
-            if idx == 1 {return 2;}
-            return 0;
-        }
-        if idx == 0 || idx == 1 {return 0;}
-        return 1;
-    }
-
-    if (rot == 0) {
-        if idx == 0 {return 0;}
-        if idx == 1 || idx == 2 {return 1;}
-        return 2;
-    }
-    if (rot == 1) {
-        if idx == 0 || idx == 2 {return 2;}
-        return 1;
-    }
-    if (rot == 2) {
-        if idx == 0 {return 0;}
-        if idx == 1 || idx == 2 {return 1;}
-        return 2;
-    }
-    if idx == 0 || idx == 2 {return 1;}
-    return 0;
+    return g_mino_x_table[minoTableIndex(kind, rotation, idx)];
 }
 
 fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
-    i32 rot = normalizeRotation(rotation);
-
-    if (kind == PIECE_I) {
-        if rot == 0 {return 1;}
-        if rot == 1 {return idx;}
-        if rot == 2 {return 2;}
-        return idx;
-    }
-
-    if (kind == PIECE_O) {
-        if idx < 2 {return 0;}
-        return 1;
-    }
-
-    if (kind == PIECE_T) {
-        if (rot == 0) {
-            if idx == 0 {return 0;}
-            return 1;
-        }
-        if (rot == 1) {
-            if idx == 3 {return 2;}
-            if idx == 2 {return 1;}
-            return idx;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 2;}
-            return 1;
-        }
-        if idx == 0 {return 0;}
-        if idx == 3 {return 2;}
-        return 1;
-    }
-
-    if (kind == PIECE_J) {
-        if (rot == 0) {
-            if idx == 0 {return 0;}
-            return 1;
-        }
-        if (rot == 1) {
-            if idx == 0 || idx == 1 {return 0;}
-            if idx == 2 {return 1;}
-            return 2;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 2;}
-            return 1;
-        }
-        if idx == 0 {return 0;}
-        if idx == 1 {return 1;}
-        return 2;
-    }
-
-    if (kind == PIECE_L) {
-        if (rot == 0) {
-            if idx == 0 {return 0;}
-            return 1;
-        }
-        if (rot == 1) {
-            if idx == 3 {return 2;}
-            return idx;
-        }
-        if (rot == 2) {
-            if idx == 3 {return 2;}
-            return 1;
-        }
-        if idx < 2 {return 0;}
-        if idx == 2 {return 1;}
-        return 2;
-    }
-
-    if (kind == PIECE_S) {
-        if (rot == 0) {
-            if idx < 2 {return 0;}
-            return 1;
-        }
-        if (rot == 1) {
-            if idx == 0 {return 0;}
-            if idx == 3 {return 2;}
-            return 1;
-        }
-        if (rot == 2) {
-            if idx < 2 {return 1;}
-            return 2;
-        }
-        if idx == 0 {return 0;}
-        if idx == 3 {return 2;}
-        return 1;
-    }
-
-    if (rot == 0) {
-        if idx < 2 {return 0;}
-        return 1;
-    }
-    if (rot == 1) {
-        if idx == 0 {return 0;}
-        if idx == 3 {return 2;}
-        return 1;
-    }
-    if (rot == 2) {
-        if idx < 2 {return 1;}
-        return 2;
-    }
-    if idx == 0 {return 0;}
-    if idx == 3 {return 2;}
-    return 1;
+    return g_mino_y_table[minoTableIndex(kind, rotation, idx)];
 }
 
 fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {

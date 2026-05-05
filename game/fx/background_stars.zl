@@ -17,13 +17,23 @@ use zltris.theme
 
 #define BG_STAR_COUNT 150
 
+#define BG_VISUAL_STARS 0
+#define BG_VISUAL_BARS 1
+#define BG_BARS_LAYOUT_CLASSIC 0
+#define BG_BARS_LAYOUT_MIRROR 1
 #define STAR_MODE_NONE 0
 #define STAR_MODE_DROPS 1
 #define STAR_MODE_MUSIC 2
 #define STAR_MUSIC_STYLE_WAVE 1
 #define STAR_MUSIC_STYLE_AGGRO 2
 
+#define BG_BAR_RENDER_MAX 96
+
 #define THEME_COMPETITIVE_INDEX 5
+
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_peak_values = {0.0};
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_peak_hold = {0.0};
+arr<f32, BG_BAR_RENDER_MAX> g_bg_bar_live_values = {0.0};
 
 fun initBackgroundStars() >> void {
     for i32 i = 0; i < BG_STAR_COUNT; i++ {
@@ -311,3 +321,336 @@ fun drawBackgroundStars(theme: Theme) >> void {
         fillRect(x - 1, y - 1, 3, 3, alphaColor(theme.star_core, core_alpha));
     }
 }
+
+fun bgBarsSampleEnergy(slot: i32, count: i32, source_count: i32) >> f32 {
+    if count <= 0 || source_count <= 0 {return 0.0 as f32;}
+
+    f32 src_pos = (((slot as f32) + (0.5 as f32)) * (source_count as f32) / (count as f32)) - (0.5 as f32);
+    i32 s0 = src_pos as i32;
+    if s0 < 0 {s0 = 0;}
+    if s0 >= source_count {s0 = source_count - 1;}
+    i32 s1 = s0 + 1;
+    if s1 >= source_count {s1 = source_count - 1;}
+
+    f32 blend = src_pos - (s0 as f32);
+    blend = clamp01(blend);
+
+    f32 v0 = starMusicBarValue(s0);
+    f32 v1 = starMusicBarValue(s1);
+    f32 base = v0 + (v1 - v0) * blend;
+
+    i32 sl = s0 - 1;
+    if sl < 0 {sl = 0;}
+    i32 sr = s1 + 1;
+    if sr >= source_count {sr = source_count - 1;}
+
+    f32 smooth = starMusicBarValue(sl) * (0.12 as f32) + base * (0.76 as f32) + starMusicBarValue(sr) * (0.12 as f32);
+    return clamp01(smooth);
+}
+
+fun bgBarsPeakFor(slot: i32, value: f32, dt: f32) >> f32 {
+    if slot < 0 || slot >= BG_BAR_RENDER_MAX {return value;}
+
+    f32 peak = g_bg_bar_peak_values[slot];
+    f32 hold = g_bg_bar_peak_hold[slot];
+
+    if value >= peak {
+        peak = value;
+        hold = (0.05 as f32) + value * (0.12 as f32);
+    } else {
+        hold -= dt;
+        if hold < 0.0 as f32 {
+            hold = 0.0 as f32;
+            peak -= dt * ((0.30 as f32) + peak * (2.80 as f32));
+        }
+        if peak < value {peak = value;}
+        if peak < 0.0 as f32 {peak = 0.0 as f32;}
+    }
+
+    g_bg_bar_peak_values[slot] = peak;
+    g_bg_bar_peak_hold[slot] = hold;
+    return peak;
+}
+
+fun bgBarsAnimateEnergy(slot: i32, target: f32, dt: f32, intensity: f32) >> f32 {
+    if slot < 0 || slot >= BG_BAR_RENDER_MAX {return target;}
+
+    f32 cur = g_bg_bar_live_values[slot];
+    f32 rise = clamp01(dt * ((8.0 as f32) + intensity * (22.0 as f32)));
+    f32 fall = clamp01(dt * ((1.6 as f32) + intensity * (4.0 as f32)));
+
+    if target > cur {
+        cur += (target - cur) * rise;
+    } else {
+        cur += (target - cur) * fall;
+    }
+
+    if cur < 0.0005 as f32 {cur = 0.0 as f32;}
+    cur = clamp01(cur);
+    g_bg_bar_live_values[slot] = cur;
+    return cur;
+}
+
+fun bgBarPieceColor(theme: Theme, index: i32, t: f32, beat_phase: f32) >> u32 {
+    f32 wave = fractf((index as f32) * 0.143 + t * 0.08 + beat_phase * 0.5);
+    f32 scaled = wave * 7.0 as f32;
+    i32 p0 = scaled as i32;
+    if p0 < 0 {p0 = 0;}
+    if p0 > 6 {p0 = 6;}
+    i32 p1 = (p0 + 1) % 7;
+    f32 blend = scaled - (p0 as f32);
+    blend = clamp01(blend);
+    u32 c0 = pieceColor(theme, p0);
+    u32 c1 = pieceColor(theme, p1);
+    return colorLerpRgb(c0, c1, blend);
+}
+
+fun drawBackgroundMusicBars(theme: Theme) >> void {
+    i32 count = g_bg_bars_amount;
+    if count < 8 {count = 8;}
+    if count > BG_BAR_RENDER_MAX {count = BG_BAR_RENDER_MAX;}
+
+    i32 source_count = starMusicBarCount();
+    if source_count < 1 {source_count = 1;}
+
+    i64 left = visibleBaseLeft();
+    i64 right = visibleBaseRight();
+    i64 span_x = right - left;
+    if span_x < (count as i64) {span_x = count as i64;}
+
+    i64 bottom = UI_BASE_H - 18;
+    i64 center = UI_BASE_H / 2;
+
+    f32 height_limit = clampf(g_bg_bars_height_limit, 0.35, 0.95);
+    f32 max_hf = (UI_BASE_H as f32) * height_limit;
+    if max_hf < 110.0 as f32 {max_hf = 110.0 as f32;}
+
+    f32 intensity = clampf(g_bg_bars_intensity, 0.2, 2.0);
+    f32 opacity = clampf(g_bg_bars_opacity, 0.2, 1.0);
+    f32 glow = clampf(g_bg_bars_glow, 0.0, 2.0);
+    i32 layout = g_bg_bars_layout;
+    if layout < BG_BARS_LAYOUT_CLASSIC {layout = BG_BARS_LAYOUT_CLASSIC;}
+    if layout > BG_BARS_LAYOUT_MIRROR {layout = BG_BARS_LAYOUT_MIRROR;}
+
+    f32 beat = currentMusicBeatProximity();
+    f32 hit = g_star_music_hit_strength;
+    if hit < 0.0 as f32 {hit = 0.0 as f32;}
+    if hit > 1.0 as f32 {hit = 1.0 as f32;}
+    f32 beat_push = beat * (0.16 as f32) + hit * (0.36 as f32);
+
+    f32 beat_phase = currentMusicBeatPhase();
+
+    f32 dt = GetFrameTime();
+    if dt < 0.004 as f32 {dt = 0.004 as f32;}
+    if dt > 0.060 as f32 {dt = 0.060 as f32;}
+
+    f32 t = GetTime() as f32;
+
+    for i32 i = count; i < BG_BAR_RENDER_MAX; i++ {
+        g_bg_bar_peak_values[i] *= 0.90 as f32;
+        if g_bg_bar_peak_values[i] < 0.001 as f32 {g_bg_bar_peak_values[i] = 0.0 as f32;}
+        g_bg_bar_peak_hold[i] = 0.0 as f32;
+        g_bg_bar_live_values[i] *= 0.85 as f32;
+        if g_bg_bar_live_values[i] < 0.0005 as f32 {g_bg_bar_live_values[i] = 0.0 as f32;}
+    }
+
+    f32 lane_wf = (span_x as f32) / (count as f32);
+    if lane_wf < 2.0 as f32 {lane_wf = 2.0 as f32;}
+
+    f32 avg_energy = 0.0 as f32;
+
+    for i32 i = 0; i < count; i++ {
+        f32 fx0 = (left as f32) + lane_wf * (i as f32);
+        f32 fx1 = fx0 + lane_wf;
+        i64 x = (fx0 as i64) + 1;
+        i64 bar_w = (fx1 as i64) - (fx0 as i64) - 2;
+        if bar_w < 1 {bar_w = 1;}
+
+        f32 lane_t = 0.0 as f32;
+        if count > 1 {lane_t = (i as f32) / ((count - 1) as f32);}
+        f32 bass_bias = (1.0 as f32) - lane_t;
+        f32 center_dist = absf(lane_t - (0.5 as f32)) * (2.0 as f32);
+        if center_dist > 1.0 as f32 {center_dist = 1.0 as f32;}
+        f32 center_bias = 1.0 as f32 - center_dist;
+        center_bias = center_bias * center_bias;
+
+        f32 phase_seed = ((i * 73 + i * i * 29 + 157) % 1000) as f32 / 1000.0 as f32;
+
+        f32 target = bgBarsSampleEnergy(i, count, source_count);
+        target = target * (0.58 as f32 + bass_bias * (0.22 as f32));
+        target += beat_push * ((0.05 as f32) + center_bias * (0.35 as f32));
+
+        f32 wobble = fractf(phase_seed + t * (1.4 as f32 + lane_t * 0.9 as f32));
+        if wobble > 0.5 as f32 {wobble = 1.0 as f32 - wobble;}
+        target += wobble * (0.04 as f32) * intensity;
+
+        target = clamp01(target);
+        target = target * (0.55 as f32) + target * target * (0.45 as f32);
+
+        f32 energy = bgBarsAnimateEnergy(i, target, dt, intensity);
+        if energy < 0.002 as f32 {energy = 0.0 as f32;}
+
+        avg_energy += energy;
+
+        f32 peak = bgBarsPeakFor(i, energy, dt);
+
+        f32 alpha = opacity * ((0.10 as f32) + energy * (0.68 as f32));
+        if alpha > 1.0 as f32 {alpha = 1.0 as f32;}
+
+        u32 bar_piece_color = bgBarPieceColor(theme, i, t, beat_phase);
+        u32 bar_base = colorLerpRgb(theme.panel_stroke, bar_piece_color, (0.40 as f32) + energy * (0.50 as f32));
+        u32 bar_top = colorLerpRgb(bar_piece_color, theme.star_core, energy * (0.55 as f32));
+        u32 cap_color = colorLerpRgb(bar_piece_color, theme.text_main, (0.30 as f32) + peak * (0.40 as f32));
+
+        i64 body_h = (max_hf * energy) as i64;
+        i64 peak_h = (max_hf * peak) as i64;
+        if body_h < 1 {body_h = 0;}
+        if peak_h < 1 {peak_h = 1;}
+
+        i64 beat_widen = (hit * (3.0 as f32) * energy) as i64;
+
+        if layout == BG_BARS_LAYOUT_MIRROR {
+            if body_h <= 0 {continue;}
+
+            i64 half_h = body_h / 2;
+            if half_h < 1 {half_h = 1;}
+            i64 y_top = center - half_h;
+            i64 y_mid = center;
+            i64 draw_h = half_h;
+
+            i64 draw_w = bar_w + beat_widen;
+            i64 draw_x = x - beat_widen / 2;
+
+            if glow > 0.001 as f32 {
+                f32 glow_alpha = alpha * ((0.16 as f32) + energy * (0.34 as f32)) * glow;
+                if glow_alpha > 0.90 as f32 {glow_alpha = 0.90 as f32;}
+                for i32 pass = 0; pass < 3; pass++ {
+                    i64 pad = ((pass + 1) * 2) as i64 + draw_w / 4;
+                    if pad < 2 {pad = 2;}
+                    f32 pass_scale = (0.38 as f32) / ((pass + 1) as f32);
+                    fillRect(draw_x - pad, y_top - pad, draw_w + pad * 2, draw_h * 2 + pad * 2, alphaColor(bar_piece_color, glow_alpha * pass_scale));
+                }
+            }
+
+            DrawRectangleGradientV(uiX(draw_x), uiY(y_top), uiS(draw_w), uiS(draw_h), toColor(alphaColor(bar_top, alpha)), toColor(alphaColor(bar_base, alpha * (0.30 as f32))));
+            DrawRectangleGradientV(uiX(draw_x), uiY(y_mid), uiS(draw_w), uiS(draw_h), toColor(alphaColor(bar_base, alpha * (0.30 as f32))), toColor(alphaColor(bar_top, alpha)));
+
+            if energy > 0.20 as f32 {
+                f32 tip_glow_a = (energy - 0.20 as f32) * (1.6 as f32) * opacity;
+                if tip_glow_a > 0.72 as f32 {tip_glow_a = 0.72 as f32;}
+                i64 tip_r = 4 + (energy * 8.0 as f32) as i64;
+                DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y_top), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0 as f32)));
+                DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y_mid + draw_h), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0 as f32)));
+            }
+
+            i64 peak_half = peak_h / 2;
+            if peak_half < 1 {peak_half = 1;}
+            i64 cap_h = 2;
+            if draw_w >= 6 {cap_h = 3;}
+            i64 cap_top_y = center - peak_half - cap_h;
+            i64 cap_bottom_y = center + peak_half;
+            f32 cap_alpha = opacity * ((0.34 as f32) + peak * (0.66 as f32));
+            if cap_alpha > 1.0 as f32 {cap_alpha = 1.0 as f32;}
+            fillRect(draw_x, cap_top_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+            fillRect(draw_x, cap_bottom_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+            continue;
+        }
+
+        if body_h <= 0 {continue;}
+        i64 y = bottom - body_h;
+
+        i64 draw_w = bar_w + beat_widen;
+        i64 draw_x = x - beat_widen / 2;
+
+        if glow > 0.001 as f32 {
+            f32 glow_alpha = alpha * ((0.16 as f32) + energy * (0.32 as f32)) * glow;
+            if glow_alpha > 0.90 as f32 {glow_alpha = 0.90 as f32;}
+            for i32 pass = 0; pass < 3; pass++ {
+                i64 pad = ((pass + 1) * 2) as i64 + draw_w / 4;
+                if pad < 2 {pad = 2;}
+                f32 pass_scale = (0.38 as f32) / ((pass + 1) as f32);
+                fillRect(draw_x - pad, y - pad, draw_w + pad * 2, body_h + pad * 2, alphaColor(bar_piece_color, glow_alpha * pass_scale));
+            }
+        }
+
+        DrawRectangleGradientV(uiX(draw_x), uiY(y), uiS(draw_w), uiS(body_h), toColor(alphaColor(bar_top, alpha)), toColor(alphaColor(bar_base, alpha * (0.25 as f32))));
+
+        if energy > 0.20 as f32 {
+            f32 tip_glow_a = (energy - 0.20 as f32) * (1.6 as f32) * opacity;
+            if tip_glow_a > 0.72 as f32 {tip_glow_a = 0.72 as f32;}
+            i64 tip_r = 4 + (energy * 8.0 as f32) as i64;
+            DrawCircleGradient(uiX(draw_x + draw_w / 2), uiY(y), uiS(tip_r) as f32, toColor(alphaColor(bar_top, tip_glow_a)), toColor(alphaColor(bar_top, 0.0 as f32)));
+        }
+
+        f32 ref_alpha = energy * opacity * (0.14 as f32);
+        if ref_alpha > 0.0 as f32 {
+            i64 ref_h = body_h / 3;
+            if ref_h > 40 {ref_h = 40;}
+            if ref_h > 1 {
+                DrawRectangleGradientV(uiX(draw_x), uiY(bottom), uiS(draw_w), uiS(ref_h), toColor(alphaColor(bar_base, ref_alpha)), toColor(alphaColor(bar_base, 0.0 as f32)));
+            }
+        }
+
+        i64 cap_h = 2;
+        if draw_w >= 6 {cap_h = 3;}
+        i64 cap_y = bottom - peak_h - cap_h;
+        f32 cap_alpha = opacity * ((0.34 as f32) + peak * (0.66 as f32));
+        if cap_alpha > 1.0 as f32 {cap_alpha = 1.0 as f32;}
+        fillRect(draw_x, cap_y, draw_w, cap_h, alphaColor(cap_color, cap_alpha));
+    }
+
+    if count > 0 {avg_energy = avg_energy / (count as f32);}
+
+    if avg_energy > 0.02 as f32 {
+        i32 dot_count = 24 + (avg_energy * 40.0 as f32) as i32;
+        if dot_count > 80 {dot_count = 80;}
+        for i32 p = 0; p < dot_count; p++ {
+            i32 seed_a = p * 173 + p * p * 53 + 97;
+            i32 seed_b = p * 211 + p * p * 37 + 151;
+            i32 seed_c = p * 131 + p * p * 67 + 229;
+            f32 px_phase = (seed_a % 1000) as f32 / 1000.0 as f32;
+            f32 py_phase = (seed_b % 1000) as f32 / 1000.0 as f32;
+            f32 speed = 0.08 as f32 + (seed_c % 300) as f32 / 1000.0 as f32;
+
+            f32 px_t = fractf(px_phase + t * speed * 0.3 as f32);
+            f32 py_t = fractf(py_phase + t * speed * 0.5 as f32);
+
+            i64 dot_x = left + (px_t * (span_x as f32)) as i64;
+
+            i64 dot_y = 0;
+            if layout == BG_BARS_LAYOUT_MIRROR {
+                dot_y = ((UI_BASE_H as f32) * py_t) as i64;
+            } else {
+                dot_y = ((UI_BASE_H as f32) * py_t) as i64;
+            }
+
+            f32 flicker = fractf(px_phase * 2.3 as f32 + t * (1.2 as f32 + speed));
+            if flicker > 0.5 as f32 {flicker = 1.0 as f32 - flicker;}
+            flicker = flicker * 2.0 as f32;
+
+            f32 energy_boost = (0.3 as f32) + avg_energy * (1.4 as f32);
+            if energy_boost > 1.0 as f32 {energy_boost = 1.0 as f32;}
+            f32 dot_alpha = opacity * energy_boost * flicker * (0.5 as f32 + hit * 0.6 as f32);
+            if dot_alpha > 0.70 as f32 {dot_alpha = 0.70 as f32;}
+            if dot_alpha < 0.02 as f32 {continue;}
+
+            u32 dot_color = bgBarPieceColor(theme, p * 3, t, beat_phase);
+            i64 dot_r = 5 + (flicker * 8.0 as f32) as i64 + (avg_energy * 6.0 as f32) as i64;
+            DrawCircleGradient(uiX(dot_x), uiY(dot_y), uiS(dot_r) as f32, toColor(alphaColor(dot_color, dot_alpha)), toColor(alphaColor(dot_color, 0.0 as f32)));
+
+            i64 core_r = 1 + (flicker * 2.0 as f32) as i64;
+            f32 core_alpha = dot_alpha * 1.4 as f32;
+            if core_alpha > 0.85 as f32 {core_alpha = 0.85 as f32;}
+            DrawCircleGradient(uiX(dot_x), uiY(dot_y), uiS(core_r) as f32, toColor(alphaColor(dot_color, core_alpha)), toColor(alphaColor(dot_color, dot_alpha * 0.3 as f32)));
+        }
+    }
+}
+
+fun drawBackgroundVisual(theme: Theme) >> void {
+    if g_bg_visual_mode == BG_VISUAL_BARS {
+        drawBackgroundMusicBars(theme);
+        return;
+    }
+    drawBackgroundStars(theme);
+}
+

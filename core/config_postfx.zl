@@ -9,6 +9,11 @@ use zltris.theme
 #define STAR_MODE_NONE 0
 #define STAR_MODE_MUSIC 2
 
+#define BG_VISUAL_STARS 0
+#define BG_VISUAL_BARS 1
+#define BG_BARS_LAYOUT_CLASSIC 0
+#define BG_BARS_LAYOUT_MIRROR 1
+
 #define SHADER_MODE_NONE 0
 #define SHADER_MODE_CUSTOM 4
 
@@ -139,6 +144,20 @@ fun clampSettings() >> void {
     if g_star_peak_target_dps > 3.5 {g_star_peak_target_dps = 3.5;}
     if g_star_intensity < 0.1 {g_star_intensity = 0.1;}
     if g_star_intensity > 1.0 {g_star_intensity = 1.0;}
+    if g_bg_visual_mode < BG_VISUAL_STARS {g_bg_visual_mode = BG_VISUAL_STARS;}
+    if g_bg_visual_mode > BG_VISUAL_BARS {g_bg_visual_mode = BG_VISUAL_BARS;}
+    if g_bg_bars_amount < 8 {g_bg_bars_amount = 8;}
+    if g_bg_bars_amount > 96 {g_bg_bars_amount = 96;}
+    if g_bg_bars_intensity < 0.2 {g_bg_bars_intensity = 0.2;}
+    if g_bg_bars_intensity > 2.0 {g_bg_bars_intensity = 2.0;}
+    if g_bg_bars_height_limit < 0.35 {g_bg_bars_height_limit = 0.35;}
+    if g_bg_bars_height_limit > 0.95 {g_bg_bars_height_limit = 0.95;}
+    if g_bg_bars_opacity < 0.2 {g_bg_bars_opacity = 0.2;}
+    if g_bg_bars_opacity > 1.0 {g_bg_bars_opacity = 1.0;}
+    if g_bg_bars_glow < 0.0 {g_bg_bars_glow = 0.0;}
+    if g_bg_bars_glow > 2.0 {g_bg_bars_glow = 2.0;}
+    if g_bg_bars_layout < BG_BARS_LAYOUT_CLASSIC {g_bg_bars_layout = BG_BARS_LAYOUT_CLASSIC;}
+    if g_bg_bars_layout > BG_BARS_LAYOUT_MIRROR {g_bg_bars_layout = BG_BARS_LAYOUT_MIRROR;}
     clampSoundSettings();
     if g_board_bounciness < 0 {g_board_bounciness = 0;}
     if g_board_bounciness > 100 {g_board_bounciness = 100;}
@@ -201,6 +220,13 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
     writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
     writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
+    writeLineFd(fd, TextFormat("bg_visual_mode=%i", g_bg_visual_mode));
+    writeLineFd(fd, TextFormat("bg_bars_amount=%i", g_bg_bars_amount));
+    writeLineFd(fd, TextFormat("bg_bars_intensity=%.2f", g_bg_bars_intensity));
+    writeLineFd(fd, TextFormat("bg_bars_height_limit=%.2f", g_bg_bars_height_limit));
+    writeLineFd(fd, TextFormat("bg_bars_opacity=%.2f", g_bg_bars_opacity));
+    writeLineFd(fd, TextFormat("bg_bars_glow=%.2f", g_bg_bars_glow));
+    writeLineFd(fd, TextFormat("bg_bars_layout=%i", g_bg_bars_layout));
     writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
     writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
     writeLineFd(fd, TextFormat("music_volume=%.2f", g_music_volume));
@@ -316,6 +342,20 @@ fun loadSettingsFile() >> void {
                     g_star_peak_target_dps = parseFloatValue(value, g_star_peak_target_dps);
                 } else if (strEq(key, "star_intensity")) {
                     g_star_intensity = parseFloatValue(value, g_star_intensity);
+                } else if (strEq(key, "bg_visual_mode")) {
+                    g_bg_visual_mode = atoi(value);
+                } else if (strEq(key, "bg_bars_amount")) {
+                    g_bg_bars_amount = atoi(value);
+                } else if (strEq(key, "bg_bars_intensity")) {
+                    g_bg_bars_intensity = parseFloatValue(value, g_bg_bars_intensity);
+                } else if (strEq(key, "bg_bars_height_limit")) {
+                    g_bg_bars_height_limit = parseFloatValue(value, g_bg_bars_height_limit);
+                } else if (strEq(key, "bg_bars_opacity")) {
+                    g_bg_bars_opacity = parseFloatValue(value, g_bg_bars_opacity);
+                } else if (strEq(key, "bg_bars_glow")) {
+                    g_bg_bars_glow = parseFloatValue(value, g_bg_bars_glow);
+                } else if (strEq(key, "bg_bars_layout")) {
+                    g_bg_bars_layout = atoi(value);
                 } else if (strEq(key, "star_music_intensity")) {
                     g_star_music_intensity = parseFloatValue(value, g_star_music_intensity);
                 } else if (strEq(key, "star_music_style")) {
