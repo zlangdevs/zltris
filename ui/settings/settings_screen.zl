@@ -22,31 +22,42 @@ use zltris.ui
 #define SETTINGS_ROW_CRT_BRIGHTNESS 13
 #define SETTINGS_ROW_VHS_WAVES 14
 #define SETTINGS_ROW_VHS_DAMAGE 15
-#define SETTINGS_ROW_BG_STARS_AMOUNT 16
-#define SETTINGS_ROW_BG_STARS_MODE 17
-#define SETTINGS_ROW_STAR_PEAK_TARGET 18
-#define SETTINGS_ROW_STAR_INTENSITY 19
-#define SETTINGS_ROW_MUSIC_STYLE 20
-#define SETTINGS_ROW_MUSIC_INTENSITY 21
-#define SETTINGS_ROW_DOUBLE_ROW 22
-#define SETTINGS_ROW_HARD_DROP_RING 23
-#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 24
-#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 25
-#define SETTINGS_ROW_FULLSCREEN_MODE 26
+#define SETTINGS_ROW_BG_VISUAL_MODE 16
+#define SETTINGS_ROW_BG_STARS_AMOUNT 17
+#define SETTINGS_ROW_BG_STARS_MODE 18
+#define SETTINGS_ROW_STAR_PEAK_TARGET 19
+#define SETTINGS_ROW_STAR_INTENSITY 20
+#define SETTINGS_ROW_MUSIC_STYLE 21
+#define SETTINGS_ROW_MUSIC_INTENSITY 22
+#define SETTINGS_ROW_BG_BARS_AMOUNT 23
+#define SETTINGS_ROW_BG_BARS_INTENSITY 24
+#define SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT 25
+#define SETTINGS_ROW_BG_BARS_OPACITY 26
+#define SETTINGS_ROW_BG_BARS_GLOW 27
+#define SETTINGS_ROW_BG_BARS_LAYOUT 28
+#define SETTINGS_ROW_DOUBLE_ROW 29
+#define SETTINGS_ROW_HARD_DROP_RING 30
+#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 31
+#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 32
+#define SETTINGS_ROW_FULLSCREEN_MODE 33
 
-#define SETTINGS_ROW_SECTION_AUDIO 27
-#define SETTINGS_ROW_MUSIC_VOLUME 28
-#define SETTINGS_ROW_MUSIC_MODE 29
-#define SETTINGS_ROW_SELECT_SONGS 30
-#define SETTINGS_ROW_MUSIC_SHUFFLE 31
+#define SETTINGS_ROW_SECTION_AUDIO 34
+#define SETTINGS_ROW_MUSIC_VOLUME 35
+#define SETTINGS_ROW_MUSIC_MODE 36
+#define SETTINGS_ROW_SELECT_SONGS 37
+#define SETTINGS_ROW_MUSIC_SHUFFLE 38
 
-#define SETTINGS_ROW_BACK 32
-#define SETTINGS_ROW_COUNT 33
+#define SETTINGS_ROW_BACK 39
+#define SETTINGS_ROW_COUNT 40
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
 #define STAR_MODE_DROPS 1
 #define STAR_MODE_MUSIC 2
+#define BG_VISUAL_STARS 0
+#define BG_VISUAL_BARS 1
+#define BG_BARS_LAYOUT_CLASSIC 0
+#define BG_BARS_LAYOUT_MIRROR 1
 #define SHADER_MODE_NONE 0
 #define SHADER_MODE_LIGHT_CRT 1
 #define SHADER_MODE_CRT 2
@@ -110,6 +121,80 @@ struct SettingsState {
     theme_mgr_hue f32,
     theme_mgr_saturation f32,
     theme_mgr_button i32,
+}
+
+struct SettingsDrawParams {
+    theme_index i32,
+    shader_mode i32,
+    crt_curvature f32,
+    crt_brightness f32,
+    vhs_waves f32,
+    vhs_damage f32,
+    arr f32,
+    das f32,
+    dcd f32,
+    sdf f32,
+    music_volume f32,
+    board_bounciness i32,
+    bg_visual_mode i32,
+    bg_stars_amount i32,
+    bg_stars_mode i32,
+    star_peak_target_dps f32,
+    star_intensity f32,
+    bg_bars_amount i32,
+    bg_bars_intensity f32,
+    bg_bars_height_limit f32,
+    bg_bars_opacity f32,
+    bg_bars_glow f32,
+    bg_bars_layout i32,
+    star_music_intensity f32,
+    star_music_style i32,
+    double_row_ui bool,
+    instant_restart bool,
+    hard_drop_ring bool,
+    high_contrast_blocks bool,
+    big_first_bag_preview bool,
+    fullscreen_mode bool,
+    custom_shader_name ptr<u8>,
+    music_mode i32,
+    music_shuffle bool,
+}
+
+struct SettingsUpdateParams {
+    theme_index ptr<i32>,
+    shader_mode ptr<i32>,
+    crt_curvature ptr<f32>,
+    crt_brightness ptr<f32>,
+    vhs_waves ptr<f32>,
+    vhs_damage ptr<f32>,
+    arr ptr<f32>,
+    das ptr<f32>,
+    dcd ptr<f32>,
+    sdf ptr<f32>,
+    music_volume ptr<f32>,
+    board_bounciness ptr<i32>,
+    bg_visual_mode ptr<i32>,
+    bg_stars_amount ptr<i32>,
+    bg_stars_mode ptr<i32>,
+    star_peak_target_dps ptr<f32>,
+    star_intensity ptr<f32>,
+    bg_bars_amount ptr<i32>,
+    bg_bars_intensity ptr<f32>,
+    bg_bars_height_limit ptr<f32>,
+    bg_bars_opacity ptr<f32>,
+    bg_bars_glow ptr<f32>,
+    bg_bars_layout ptr<i32>,
+    star_music_intensity ptr<f32>,
+    star_music_style ptr<i32>,
+    double_row_ui ptr<bool>,
+    instant_restart ptr<bool>,
+    hard_drop_ring ptr<bool>,
+    high_contrast_blocks ptr<bool>,
+    big_first_bag_preview ptr<bool>,
+    fullscreen_mode ptr<bool>,
+    custom_shader_name ptr<u8>,
+    music_mode ptr<i32>,
+    music_shuffle ptr<bool>,
 }
 
 fun init(self: SettingsState) >> SettingsState {
@@ -596,106 +681,12 @@ fun clampf(v: f32, min_v: f32, max_v: f32) >> f32 {
     return v;
 }
 
-fun cstrLen(s: ptr<u8>) >> i32 {
-    i32 n = 0;
-    for (s[n] != 0) {n += 1;}
-    return n;
-}
-
-fun cstrEq(a: ptr<u8>, b: ptr<u8>) >> bool {
-    i32 i = 0;
-    for (true) {
-        if a[i] != b[i] {return false;}
-        if a[i] == 0 {return true;}
-        i += 1;
-    }
-    return true;
-}
-
-fun copyFixed(dst: ptr<u8>, src: ptr<u8>, cap: i32) >> void {
-    i32 i = 0;
-    for (i < cap - 1 && src[i] != 0) {
-        dst[i] = src[i];
-        i += 1;
-    }
-    dst[i] = 0;
-}
-
-fun endsWithFrag(name: ptr<u8>) >> bool {
-    i32 len = cstrLen(name);
-    if len < 5 {return false;}
-    if name[len - 5] != ('.' as u8) {return false;}
-    if name[len - 4] != ('f' as u8) {return false;}
-    if name[len - 3] != ('r' as u8) {return false;}
-    if name[len - 2] != ('a' as u8) {return false;}
-    if name[len - 1] != ('g' as u8) {return false;}
-    return true;
-}
-
-fun pickerNamePtr(index: i32) >> ptr<u8> {
-    if index < 0 || index >= CUSTOM_SHADER_LIST_MAX {return &g_settings.picker_names[0];}
-    return &g_settings.picker_names[index * CUSTOM_SHADER_NAME_MAX];
-}
-
-fun clearPickerList() >> void {
-    g_settings.picker_count = 0;
-    g_settings.picker_selected = 0;
-    g_settings.picker_scroll = 0.0 as f32;
-    for i32 i = 0; i < CUSTOM_SHADER_LIST_MAX * CUSTOM_SHADER_NAME_MAX; i++ {g_settings.picker_names[i] = 0 as u8;}
-}
-
-fun addPickerName(name: ptr<u8>) >> void {
-    if g_settings.picker_count >= CUSTOM_SHADER_LIST_MAX {return;}
-    ptr<u8> dst = pickerNamePtr(g_settings.picker_count);
-    copyFixed(dst, name, CUSTOM_SHADER_NAME_MAX);
-    g_settings.picker_count += 1;
-}
-
-fun openShaderPicker(current_name: ptr<u8>) >> void {
-    clearPickerList();
-
-    ptr<void> dir = openDir("assets/shaders");
-    if dir != (0 as ptr<void>) {
-        for (true) {
-            ptr<DirEntry> ent = readDirEntry(dir);
-            if ent == (0 as ptr<DirEntry>) {break;}
-            ptr<u8> name = &ent.d_name[0];
-            if name[0] == ('.' as u8) {continue;}
-            if cstrEq(name, "default") {continue;}
-            if !endsWithFrag(name) {continue;}
-            addPickerName(name);
-        }
-        closeDir(dir);
-    }
-
-    for i32 i = 0; i < g_settings.picker_count; i++ {
-        if cstrEq(pickerNamePtr(i), current_name) {
-            g_settings.picker_selected = i;
-            break;
-        }
-    }
-    g_settings.picker_open = true;
-}
-
-fun closeShaderPicker() >> void {
-    g_settings.picker_open = false;
-}
-
-fun musicModeLabel(mode: i32) >> ptr<u8> {
-    if mode == MUSIC_MODE_CUSTOM {return "Custom";}
-    return "Builtin";
-}
-
-fun openSongPicker() >> void {
-    g_settings.song_picker_open = true;
-    g_settings.song_picker_scroll = 0.0 as f32;
-    g_settings.song_picker_selected = 0;
-}
-
-fun closeSongPicker() >> void {
-    g_settings.song_picker_open = false;
-    buildDisabledBufFromFlags();
-}
+fun loadI32(p: ptr<i32>) >> i32 {return p[0];}
+fun storeI32(p: ptr<i32>, v: i32) >> void {p[0] = v;}
+fun loadF32(p: ptr<f32>) >> f32 {return p[0];}
+fun storeF32(p: ptr<f32>, v: f32) >> void {p[0] = v;}
+fun loadBool(p: ptr<bool>) >> bool {return p[0];}
+fun storeBool(p: ptr<bool>, v: bool) >> void {p[0] = v;}
 
 fun colorRf(color: u32) >> f32 {return (color & 255) as f32 / 255.0 as f32;}
 fun colorGf(color: u32) >> f32 {return ((color >> 8) & 255) as f32 / 255.0 as f32;}
@@ -1592,7 +1583,7 @@ fun rowIsSectionHeader(row: i32) >> bool {
     return row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO;
 }
 
-fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+fun rowVisible(row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
     if row == SETTINGS_ROW_BACK {return true;}
     if row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO {return true;}
 
@@ -1604,8 +1595,20 @@ fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
         if row == SETTINGS_ROW_CRT_CURVATURE || row == SETTINGS_ROW_CRT_BRIGHTNESS {return shader_mode == SHADER_MODE_CRT;}
         if row == SETTINGS_ROW_VHS_WAVES || row == SETTINGS_ROW_VHS_DAMAGE {return shader_mode == SHADER_MODE_VHS;}
         if row == SETTINGS_ROW_CHOOSE_SHADER {return shader_mode == SHADER_MODE_CUSTOM;}
-        if row == SETTINGS_ROW_STAR_PEAK_TARGET || row == SETTINGS_ROW_STAR_INTENSITY {return bg_stars_mode == STAR_MODE_DROPS;}
-        if row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_INTENSITY {return bg_stars_mode == STAR_MODE_MUSIC;}
+        if row == SETTINGS_ROW_BG_STARS_AMOUNT || row == SETTINGS_ROW_BG_STARS_MODE || row == SETTINGS_ROW_STAR_PEAK_TARGET || row == SETTINGS_ROW_STAR_INTENSITY || row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_INTENSITY {
+            if bg_visual_mode != BG_VISUAL_STARS {return false;}
+            if row == SETTINGS_ROW_STAR_PEAK_TARGET || row == SETTINGS_ROW_STAR_INTENSITY {return bg_stars_mode == STAR_MODE_DROPS;}
+            if row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_INTENSITY {return bg_stars_mode == STAR_MODE_MUSIC;}
+            return true;
+        }
+        if row == SETTINGS_ROW_BG_BARS_AMOUNT ||
+           row == SETTINGS_ROW_BG_BARS_INTENSITY ||
+           row == SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT ||
+           row == SETTINGS_ROW_BG_BARS_OPACITY ||
+           row == SETTINGS_ROW_BG_BARS_GLOW ||
+           row == SETTINGS_ROW_BG_BARS_LAYOUT {
+            return bg_visual_mode == BG_VISUAL_BARS;
+        }
         return true;
     }
 
@@ -1618,35 +1621,35 @@ fun rowVisible(row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
     return false;
 }
 
-fun visibleRowCount(bg_stars_mode: i32, shader_mode: i32) >> i32 {
+fun visibleRowCount(bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
     i32 count = 0;
     for i32 row = 0; row < SETTINGS_ROW_COUNT; row++ {
-        if rowVisible(row, bg_stars_mode, shader_mode) {count += 1;}
+        if rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {count += 1;}
     }
     return count;
 }
 
-fun rowOrder(row: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
-    if !rowVisible(row, bg_stars_mode, shader_mode) {return -1;}
+fun rowOrder(row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
+    if !rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {return -1;}
     i32 order = 0;
     for i32 it = 0; it < row; it++ {
-        if rowVisible(it, bg_stars_mode, shader_mode) {order += 1;}
+        if rowVisible(it, bg_visual_mode, bg_stars_mode, shader_mode) {order += 1;}
     }
     return order;
 }
 
-fun rowFromOrder(order: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
+fun rowFromOrder(order: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> i32 {
     i32 seen = 0;
     for i32 row = 0; row < SETTINGS_ROW_COUNT; row++ {
-        if !rowVisible(row, bg_stars_mode, shader_mode) {continue;}
+        if !rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {continue;}
         if seen == order {return row;}
         seen += 1;
     }
     return SETTINGS_ROW_BACK;
 }
 
-fun itemYDraw(row: i32, bg_stars_mode: i32, shader_mode: i32) >> i64 {
-    i32 order = rowOrder(row, bg_stars_mode, shader_mode);
+fun itemYDraw(row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> i64 {
+    i32 order = rowOrder(row, bg_visual_mode, bg_stars_mode, shader_mode);
     if order < 0 {return -10000;}
     return 246 + (order as i64) * 78 - (g_settings.scroll * 78.0 as f32) as i64;
 }
@@ -1664,6 +1667,16 @@ fun bgStarsModeLabel(mode: i32) >> ptr<u8> {
     if mode == STAR_MODE_DROPS {return "Drops";}
     if mode == STAR_MODE_MUSIC {return "Music";}
     return "None";
+}
+
+fun bgVisualModeLabel(mode: i32) >> ptr<u8> {
+    if mode == BG_VISUAL_BARS {return "Music bars";}
+    return "Stars";
+}
+
+fun barsLayoutLabel(mode: i32) >> ptr<u8> {
+    if mode == BG_BARS_LAYOUT_MIRROR {return "Mirror";}
+    return "Classic";
 }
 
 fun musicStyleLabel(style: i32) >> ptr<u8> {
@@ -1692,24 +1705,24 @@ fun sliderValueFromMouse(px: f32, x: i64, w: i64, min_v: f32, max_v: f32) >> f32
     return min_v + (max_v - min_v) * t;
 }
 
-fun sliderTrackHit(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
-    if !rowVisible(row, bg_stars_mode, shader_mode) {return false;}
-    return pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(row, bg_stars_mode, shader_mode) + 40, 372, 10);
+fun sliderTrackHit(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+    if !rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 136, itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode) + 40, 372, 10);
 }
 
-fun dragSliderF32(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<f32>, min_v: f32, max_v: f32) >> void {
-    if !sliderTrackHit(mouse, row, bg_stars_mode, shader_mode) {return;}
+fun dragSliderF32(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<f32>, min_v: f32, max_v: f32) >> void {
+    if !sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {return;}
     target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v);
 }
 
-fun dragSliderI32(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<i32>, min_v: f32, max_v: f32) >> void {
-    if !sliderTrackHit(mouse, row, bg_stars_mode, shader_mode) {return;}
+fun dragSliderI32(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<i32>, min_v: f32, max_v: f32) >> void {
+    if !sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {return;}
     target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v) as i32;
 }
 
-fun rowBodyHit(mouse: Vector2, row: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
-    if !rowVisible(row, bg_stars_mode, shader_mode) {return false;}
-    return pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(row, bg_stars_mode, shader_mode), 412, 62);
+fun rowBodyHit(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
+    if !rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {return false;}
+    return pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode), 412, 62);
 }
 
 fun selectorDirectionFromMouse(mouse_x: f32) >> i32 {
@@ -1718,7 +1731,7 @@ fun selectorDirectionFromMouse(mouse_x: f32) >> i32 {
 }
 
 fun rowUsesSelectorMouseNudge(row: i32) >> bool {
-    return row == SETTINGS_ROW_SHADER || row == SETTINGS_ROW_BG_STARS_MODE || row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_MODE;
+    return row == SETTINGS_ROW_SHADER || row == SETTINGS_ROW_BG_VISUAL_MODE || row == SETTINGS_ROW_BG_STARS_MODE || row == SETTINGS_ROW_BG_BARS_LAYOUT || row == SETTINGS_ROW_MUSIC_STYLE || row == SETTINGS_ROW_MUSIC_MODE;
 }
 
 fun rowUsesToggleMouseNudge(row: i32) >> bool {
@@ -1777,8 +1790,8 @@ fun updateSectionAnimations(dt: f32) >> void {
     g_settings.audio_anim += (tgt_audio - g_settings.audio_anim) * clampf(dt * speed, 0.0, 1.0);
 }
 
-fun drawSectionHeaderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawSectionHeaderRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     f32 pulse = 0.0 as f32;
     if rowSelected(row) {pulse = triWave01((GetTime() as f32) * (1.8 as f32));}
     u32 stroke = alphaColor(theme.panel_stroke, (0.44 as f32) + pulse * (0.28 as f32));
@@ -1793,8 +1806,8 @@ fun drawSectionHeaderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32,
     drawTextColor(font, caret, 136, y + 20, 16, alphaColor(theme.panel_stroke, 0.96 as f32));
 }
 
-fun drawSelectorRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value: ptr<u8>) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawSelectorRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value: ptr<u8>) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     f32 alpha = sectionAnimForRow(row);
     if alpha < 0.01 as f32 {return;}
     i64 row_x = 118;
@@ -1825,8 +1838,8 @@ fun drawSelectorRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shad
     drawTextColor(font, ">", right_arrow_x, y + 20, 15, alphaColor(theme.text_main, (0.30 as f32) + alpha * (0.70 as f32)));
 }
 
-fun drawSliderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawSliderRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     f32 alpha = sectionAnimForRow(row);
     if alpha < 0.01 as f32 {return;}
 
@@ -1852,8 +1865,8 @@ fun drawSliderRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader
     fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, alphaColor(theme.text_main, (0.52 as f32) + alpha * (0.48 as f32)));
 }
 
-fun drawToggleRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, enabled: bool) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawToggleRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>, enabled: bool) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     f32 alpha = sectionAnimForRow(row);
     if alpha < 0.01 as f32 {return;}
 
@@ -1870,8 +1883,8 @@ fun drawToggleRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader
     drawTextColor(font, mark, 470, y + 20, 15, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
 }
 
-fun drawButtonRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawButtonRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     f32 alpha = sectionAnimForRow(row);
     if alpha < 0.01 as f32 {return;}
 
@@ -1885,8 +1898,8 @@ fun drawButtonRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader
     drawTextCenteredInRect(font, label, 118, y + 2, 412, 58, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
 }
 
-fun drawBackRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
-    i64 y = itemYDraw(row, bg_stars_mode, shader_mode);
+fun drawBackRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
+    i64 y = itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode);
     u32 stroke = alphaColor(theme.text_muted, 0.45 as f32);
     if rowSelected(row) {
         drawSelectionGlow(theme, y, 1.0 as f32);
@@ -1898,8 +1911,8 @@ fun drawBackRow(font: Font, theme: Theme, row: i32, bg_stars_mode: i32, shader_m
     drawTextColor(font, "ENTER", 436, y + 20, 12, theme.text_muted);
 }
 
-fun settingsEnsureSelectedVisible(bg_stars_mode: i32, shader_mode: i32) >> void {
-    if rowVisible(g_settings.selected_row, bg_stars_mode, shader_mode) {return;}
+fun settingsEnsureSelectedVisible(bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> void {
+    if rowVisible(g_settings.selected_row, bg_visual_mode, bg_stars_mode, shader_mode) {return;}
     if g_settings.selected_row >= SETTINGS_ROW_ARR && g_settings.selected_row <= SETTINGS_ROW_INSTANT_RESTART {
         g_settings.selected_row = SETTINGS_ROW_SECTION_CONTROLS;
         return;
@@ -1915,15 +1928,15 @@ fun settingsEnsureSelectedVisible(bg_stars_mode: i32, shader_mode: i32) >> void 
     g_settings.selected_row = SETTINGS_ROW_THEME;
 }
 
-fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, crt_curvature: f32, crt_brightness: f32, vhs_waves: f32, vhs_damage: f32, arr: f32, das: f32, dcd: f32, sdf: f32, music_volume: f32, board_bounciness: i32, bg_stars_amount: i32, bg_stars_mode: i32, star_peak_target_dps: f32, star_intensity: f32, star_music_intensity: f32, star_music_style: i32, double_row_ui: bool, instant_restart: bool, hard_drop_ring: bool, high_contrast_blocks: bool, big_first_bag_preview: bool, fullscreen_mode: bool, custom_shader_name: ptr<u8>, music_mode: i32, music_shuffle: bool) >> void {
-    g_settings.theme_custom_active = theme_index == themeCustomSlotIndex();
+fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
+    g_settings.theme_custom_active = params.theme_index == themeCustomSlotIndex();
 
     if g_settings.theme_mgr_open {
         drawThemeManager(font, theme);
         return;
     }
 
-    settingsEnsureSelectedVisible(bg_stars_mode, shader_mode);
+    settingsEnsureSelectedVisible(params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
 
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
     drawImpulseGridBackground(font, theme);
@@ -2032,7 +2045,7 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
         return;
     }
 
-    i32 visible_rows = visibleRowCount(bg_stars_mode, shader_mode);
+    i32 visible_rows = visibleRowCount(params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
     if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
     i64 list_h_base = 18 + (visible_rows as i64) * 78;
     i32 list_x = uiX(112);
@@ -2041,44 +2054,51 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     i32 list_h = uiS(list_h_base);
     BeginScissorMode(list_x, list_y, list_w, list_h);
 
-    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_CONTROLS, bg_stars_mode, shader_mode);
-    if rowVisible(SETTINGS_ROW_ARR, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_ARR, bg_stars_mode, shader_mode, "ARR", TextFormat("%.1fF", arr), arr, 0.0, 8.0);}
-    if rowVisible(SETTINGS_ROW_DAS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DAS, bg_stars_mode, shader_mode, "DAS", TextFormat("%.1fF", das), das, 0.0, 20.0);}
-    if rowVisible(SETTINGS_ROW_DCD, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DCD, bg_stars_mode, shader_mode, "DCD", TextFormat("%.1fF", dcd), dcd, 0.0, 10.0);}
-    if rowVisible(SETTINGS_ROW_SDF, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_SDF, bg_stars_mode, shader_mode, "SDF", TextFormat("%.1fX", sdf), sdf, 1.0, 40.0);}
-    if rowVisible(SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_INSTANT_RESTART, bg_stars_mode, shader_mode, "Instant restart", instant_restart);}
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_CONTROLS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
+    if rowVisible(SETTINGS_ROW_ARR, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_ARR, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "ARR", TextFormat("%.1fF", params.arr), params.arr, 0.0, 8.0);}
+    if rowVisible(SETTINGS_ROW_DAS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DAS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "DAS", TextFormat("%.1fF", params.das), params.das, 0.0, 20.0);}
+    if rowVisible(SETTINGS_ROW_DCD, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DCD, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "DCD", TextFormat("%.1fF", params.dcd), params.dcd, 0.0, 10.0);}
+    if rowVisible(SETTINGS_ROW_SDF, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_SDF, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "SDF", TextFormat("%.1fX", params.sdf), params.sdf, 1.0, 40.0);}
+    if rowVisible(SETTINGS_ROW_INSTANT_RESTART, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_INSTANT_RESTART, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Instant restart", params.instant_restart);}
 
-    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, bg_stars_mode, shader_mode);
-    if rowVisible(SETTINGS_ROW_THEME, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, bg_stars_mode, shader_mode, "Theme", themeName(theme_index));}
-    if rowVisible(SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode, shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode, shader_mode, "MANAGE THEMES");}
-    if rowVisible(SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_SHADER, bg_stars_mode, shader_mode, "Shader", shaderModeLabel(shader_mode));}
-    if rowVisible(SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode) {
-        drawButtonRow(font, theme, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode, shader_mode, "CHOOSE CUSTOM SHADER");
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
+    if rowVisible(SETTINGS_ROW_THEME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Theme", themeName(params.theme_index));}
+    if rowVisible(SETTINGS_ROW_MANAGE_THEMES, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_MANAGE_THEMES, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "MANAGE THEMES");}
+    if rowVisible(SETTINGS_ROW_SHADER, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_SHADER, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Shader", shaderModeLabel(params.shader_mode));}
+    if rowVisible(SETTINGS_ROW_CHOOSE_SHADER, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {
+        drawButtonRow(font, theme, SETTINGS_ROW_CHOOSE_SHADER, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "CHOOSE CUSTOM SHADER");
     }
-    if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode, shader_mode, "Board bounciness", TextFormat("%i%%", board_bounciness), board_bounciness as f32, 0.0, 100.0);}
-    if rowVisible(SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode, shader_mode, "CRT curvature", TextFormat("%i%%", (crt_curvature * 100.0 as f32) as i32), crt_curvature, 0.2, 1.4);}
-    if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode, shader_mode, "CRT brightness", TextFormat("%i%%", (crt_brightness * 100.0 as f32) as i32), crt_brightness, 0.6, 1.8);}
-    if rowVisible(SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_WAVES, bg_stars_mode, shader_mode, "VHS waves", TextFormat("%i%%", (vhs_waves * 100.0 as f32) as i32), vhs_waves, 0.0, 1.4);}
-    if rowVisible(SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode, shader_mode, "VHS damage", TextFormat("%i%%", (vhs_damage * 100.0 as f32) as i32), vhs_damage, 0.0, 1.5);}
-    if rowVisible(SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode, shader_mode, "BG stars amount", TextFormat("%i", bg_stars_amount), bg_stars_amount as f32, 0.0, 150.0);}
-    if rowVisible(SETTINGS_ROW_BG_STARS_MODE, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_BG_STARS_MODE, bg_stars_mode, shader_mode, "BG stars react", bgStarsModeLabel(bg_stars_mode));}
-    if rowVisible(SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode, shader_mode, "Star peak target", TextFormat("%.1f dps", star_peak_target_dps), star_peak_target_dps, 0.5, 3.5);}
-    if rowVisible(SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode, shader_mode, "Star intensity", TextFormat("%.1f", star_intensity), star_intensity, 0.1, 1.0);}
-    if rowVisible(SETTINGS_ROW_MUSIC_STYLE, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_MUSIC_STYLE, bg_stars_mode, shader_mode, "Music style", musicStyleLabel(star_music_style));}
-    if rowVisible(SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode, shader_mode, "Music intensity", TextFormat("%.1f", star_music_intensity), star_music_intensity, 0.1, 1.0);}
-    if rowVisible(SETTINGS_ROW_DOUBLE_ROW, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_DOUBLE_ROW, bg_stars_mode, shader_mode, "Double-row UI", double_row_ui);}
-    if rowVisible(SETTINGS_ROW_HARD_DROP_RING, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_HARD_DROP_RING, bg_stars_mode, shader_mode, "Hard drop ring", hard_drop_ring);}
-    if rowVisible(SETTINGS_ROW_HIGH_CONTRAST_BLOCKS, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_HIGH_CONTRAST_BLOCKS, bg_stars_mode, shader_mode, "Higher contrast blocks", high_contrast_blocks);}
-    if rowVisible(SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW, bg_stars_mode, shader_mode, "Big first NEXT", big_first_bag_preview);}
-    if rowVisible(SETTINGS_ROW_FULLSCREEN_MODE, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_FULLSCREEN_MODE, bg_stars_mode, shader_mode, "Fullscreen mode", fullscreen_mode);}
+    if rowVisible(SETTINGS_ROW_BOARD_BOUNCINESS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BOARD_BOUNCINESS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Board bounciness", TextFormat("%i%%", params.board_bounciness), params.board_bounciness as f32, 0.0, 100.0);}
+    if rowVisible(SETTINGS_ROW_CRT_CURVATURE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_CURVATURE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "CRT curvature", TextFormat("%i%%", (params.crt_curvature * 100.0 as f32) as i32), params.crt_curvature, 0.2, 1.4);}
+    if rowVisible(SETTINGS_ROW_CRT_BRIGHTNESS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_CRT_BRIGHTNESS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "CRT brightness", TextFormat("%i%%", (params.crt_brightness * 100.0 as f32) as i32), params.crt_brightness, 0.6, 1.8);}
+    if rowVisible(SETTINGS_ROW_VHS_WAVES, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_WAVES, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "VHS waves", TextFormat("%i%%", (params.vhs_waves * 100.0 as f32) as i32), params.vhs_waves, 0.0, 1.4);}
+    if rowVisible(SETTINGS_ROW_VHS_DAMAGE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_VHS_DAMAGE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "VHS damage", TextFormat("%i%%", (params.vhs_damage * 100.0 as f32) as i32), params.vhs_damage, 0.0, 1.5);}
+    if rowVisible(SETTINGS_ROW_BG_VISUAL_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_BG_VISUAL_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "BG", bgVisualModeLabel(params.bg_visual_mode));}
+    if rowVisible(SETTINGS_ROW_BG_STARS_AMOUNT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_STARS_AMOUNT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "BG stars amount", TextFormat("%i", params.bg_stars_amount), params.bg_stars_amount as f32, 0.0, 150.0);}
+    if rowVisible(SETTINGS_ROW_BG_STARS_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_BG_STARS_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "BG stars react", bgStarsModeLabel(params.bg_stars_mode));}
+    if rowVisible(SETTINGS_ROW_STAR_PEAK_TARGET, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_PEAK_TARGET, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Star peak target", TextFormat("%.1f dps", params.star_peak_target_dps), params.star_peak_target_dps, 0.5, 3.5);}
+    if rowVisible(SETTINGS_ROW_STAR_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_STAR_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Star intensity", TextFormat("%.1f", params.star_intensity), params.star_intensity, 0.1, 1.0);}
+    if rowVisible(SETTINGS_ROW_MUSIC_STYLE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_MUSIC_STYLE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Music style", musicStyleLabel(params.star_music_style));}
+    if rowVisible(SETTINGS_ROW_MUSIC_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Music intensity", TextFormat("%.1f", params.star_music_intensity), params.star_music_intensity, 0.1, 1.0);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_AMOUNT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_BARS_AMOUNT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars amount", TextFormat("%i", params.bg_bars_amount), params.bg_bars_amount as f32, 8.0, 96.0);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_BARS_INTENSITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars intensity", TextFormat("%.2f", params.bg_bars_intensity), params.bg_bars_intensity, 0.2, 2.0);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars height limit", TextFormat("%i%%", (params.bg_bars_height_limit * 100.0 as f32) as i32), params.bg_bars_height_limit, 0.35, 0.95);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_OPACITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_BARS_OPACITY, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars opacity", TextFormat("%i%%", (params.bg_bars_opacity * 100.0 as f32) as i32), params.bg_bars_opacity, 0.2, 1.0);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_GLOW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_BG_BARS_GLOW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars glow", TextFormat("%i%%", (params.bg_bars_glow * 100.0 as f32) as i32), params.bg_bars_glow, 0.0, 2.0);}
+    if rowVisible(SETTINGS_ROW_BG_BARS_LAYOUT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_BG_BARS_LAYOUT, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Bars layout", barsLayoutLabel(params.bg_bars_layout));}
+    if rowVisible(SETTINGS_ROW_DOUBLE_ROW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_DOUBLE_ROW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Double-row UI", params.double_row_ui);}
+    if rowVisible(SETTINGS_ROW_HARD_DROP_RING, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_HARD_DROP_RING, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Hard drop ring", params.hard_drop_ring);}
+    if rowVisible(SETTINGS_ROW_HIGH_CONTRAST_BLOCKS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_HIGH_CONTRAST_BLOCKS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Higher contrast blocks", params.high_contrast_blocks);}
+    if rowVisible(SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Big first NEXT", params.big_first_bag_preview);}
+    if rowVisible(SETTINGS_ROW_FULLSCREEN_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_FULLSCREEN_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Fullscreen mode", params.fullscreen_mode);}
 
-    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_AUDIO, bg_stars_mode, shader_mode);
-    if rowVisible(SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode, shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode, shader_mode, "Music volume", TextFormat("%i%%", (music_volume * 100.0 as f32) as i32), music_volume, 0.0, 1.0);}
-    if rowVisible(SETTINGS_ROW_MUSIC_MODE, bg_stars_mode, shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_MUSIC_MODE, bg_stars_mode, shader_mode, "Music", musicModeLabel(music_mode));}
-    if rowVisible(SETTINGS_ROW_SELECT_SONGS, bg_stars_mode, shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_SELECT_SONGS, bg_stars_mode, shader_mode, "SELECT SONGS");}
-    if rowVisible(SETTINGS_ROW_MUSIC_SHUFFLE, bg_stars_mode, shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_MUSIC_SHUFFLE, bg_stars_mode, shader_mode, "Shuffle songs", music_shuffle);}
+    drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_AUDIO, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
+    if rowVisible(SETTINGS_ROW_MUSIC_VOLUME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_MUSIC_VOLUME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Music volume", TextFormat("%i%%", (params.music_volume * 100.0 as f32) as i32), params.music_volume, 0.0, 1.0);}
+    if rowVisible(SETTINGS_ROW_MUSIC_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_MUSIC_MODE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Music", musicModeLabel(params.music_mode));}
+    if rowVisible(SETTINGS_ROW_SELECT_SONGS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_SELECT_SONGS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "SELECT SONGS");}
+    if rowVisible(SETTINGS_ROW_MUSIC_SHUFFLE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_MUSIC_SHUFFLE, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Shuffle songs", params.music_shuffle);}
 
-    drawBackRow(font, theme, SETTINGS_ROW_BACK, bg_stars_mode, shader_mode);
+    drawBackRow(font, theme, SETTINGS_ROW_BACK, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
 
     EndScissorMode();
 
@@ -2086,78 +2106,99 @@ fun drawSettings(font: Font, theme: Theme, theme_index: i32, shader_mode: i32, c
     fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75 as f32));
 }
 
-fun settingsNudgeRow(row: i32, dir: i32, theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>, high_contrast_blocks: ptr<bool>, big_first_bag_preview: ptr<bool>, fullscreen_mode: ptr<bool>, music_mode: ptr<i32>, music_shuffle: ptr<bool>) >> i32 {
+fun settingsNudgeRow(row: i32, dir: i32, params: SettingsUpdateParams) >> i32 {
     if rowIsSectionHeader(row) {
         if dir < 0 {setSectionExpanded(row, false);} else {setSectionExpanded(row, true);}
         return SETTINGS_ACTION_NONE;
     }
 
-    if row == SETTINGS_ROW_THEME {theme_index[0] = switchTheme(theme_index[0], dir); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_THEME {params.theme_index[0] = switchTheme(params.theme_index[0], dir); return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_MANAGE_THEMES {return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_SHADER {
-        shader_mode[0] += dir;
-        if shader_mode[0] < SHADER_MODE_NONE {shader_mode[0] = SHADER_MODE_CUSTOM;}
-        if shader_mode[0] > SHADER_MODE_CUSTOM {shader_mode[0] = SHADER_MODE_NONE;}
+        params.shader_mode[0] += dir;
+        if params.shader_mode[0] < SHADER_MODE_NONE {params.shader_mode[0] = SHADER_MODE_CUSTOM;}
+        if params.shader_mode[0] > SHADER_MODE_CUSTOM {params.shader_mode[0] = SHADER_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
     if row == SETTINGS_ROW_CHOOSE_SHADER {return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_CRT_CURVATURE {crt_curvature[0] = clampf(crt_curvature[0] + (dir as f32) * (0.05 as f32), 0.2, 1.4); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_CRT_BRIGHTNESS {crt_brightness[0] = clampf(crt_brightness[0] + (dir as f32) * (0.05 as f32), 0.6, 1.8); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_VHS_WAVES {vhs_waves[0] = clampf(vhs_waves[0] + (dir as f32) * (0.05 as f32), 0.0, 1.4); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_VHS_DAMAGE {vhs_damage[0] = clampf(vhs_damage[0] + (dir as f32) * (0.05 as f32), 0.0, 1.5); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_ARR {arr[0] = clampf(arr[0] + (dir as f32) * (0.1 as f32), 0.0, 8.0); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_DAS {das[0] = clampf(das[0] + (dir as f32) * (0.1 as f32), 0.0, 20.0); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_DCD {dcd[0] = clampf(dcd[0] + (dir as f32) * (0.1 as f32), 0.0, 10.0); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_SDF {sdf[0] = clampf(sdf[0] + (dir as f32) * (0.5 as f32), 1.0, 40.0); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_MUSIC_VOLUME {music_volume[0] = clampf(music_volume[0] + (dir as f32) * (0.05 as f32), 0.0, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_CRT_CURVATURE {params.crt_curvature[0] = clampf(params.crt_curvature[0] + (dir as f32) * (0.05 as f32), 0.2, 1.4); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_CRT_BRIGHTNESS {params.crt_brightness[0] = clampf(params.crt_brightness[0] + (dir as f32) * (0.05 as f32), 0.6, 1.8); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_VHS_WAVES {params.vhs_waves[0] = clampf(params.vhs_waves[0] + (dir as f32) * (0.05 as f32), 0.0, 1.4); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_VHS_DAMAGE {params.vhs_damage[0] = clampf(params.vhs_damage[0] + (dir as f32) * (0.05 as f32), 0.0, 1.5); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_ARR {params.arr[0] = clampf(params.arr[0] + (dir as f32) * (0.1 as f32), 0.0, 8.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DAS {params.das[0] = clampf(params.das[0] + (dir as f32) * (0.1 as f32), 0.0, 20.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DCD {params.dcd[0] = clampf(params.dcd[0] + (dir as f32) * (0.1 as f32), 0.0, 10.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_SDF {params.sdf[0] = clampf(params.sdf[0] + (dir as f32) * (0.5 as f32), 1.0, 40.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_VOLUME {params.music_volume[0] = clampf(params.music_volume[0] + (dir as f32) * (0.05 as f32), 0.0, 1.0); return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_BOARD_BOUNCINESS {
-        board_bounciness[0] += dir;
-        if board_bounciness[0] < 0 {board_bounciness[0] = 0;}
-        if board_bounciness[0] > 100 {board_bounciness[0] = 100;}
+        params.board_bounciness[0] += dir;
+        if params.board_bounciness[0] < 0 {params.board_bounciness[0] = 0;}
+        if params.board_bounciness[0] > 100 {params.board_bounciness[0] = 100;}
+        return SETTINGS_ACTION_NONE;
+    }
+    if row == SETTINGS_ROW_BG_VISUAL_MODE {
+        params.bg_visual_mode[0] += dir;
+        if params.bg_visual_mode[0] < BG_VISUAL_STARS {params.bg_visual_mode[0] = BG_VISUAL_BARS;}
+        if params.bg_visual_mode[0] > BG_VISUAL_BARS {params.bg_visual_mode[0] = BG_VISUAL_STARS;}
         return SETTINGS_ACTION_NONE;
     }
     if row == SETTINGS_ROW_BG_STARS_AMOUNT {
-        bg_stars_amount[0] += dir;
-        if bg_stars_amount[0] < 0 {bg_stars_amount[0] = 0;}
-        if bg_stars_amount[0] > 150 {bg_stars_amount[0] = 150;}
+        params.bg_stars_amount[0] += dir;
+        if params.bg_stars_amount[0] < 0 {params.bg_stars_amount[0] = 0;}
+        if params.bg_stars_amount[0] > 150 {params.bg_stars_amount[0] = 150;}
         return SETTINGS_ACTION_NONE;
     }
     if row == SETTINGS_ROW_BG_STARS_MODE {
-        bg_stars_mode[0] += dir;
-        if bg_stars_mode[0] < STAR_MODE_NONE {bg_stars_mode[0] = STAR_MODE_MUSIC;}
-        if bg_stars_mode[0] > STAR_MODE_MUSIC {bg_stars_mode[0] = STAR_MODE_NONE;}
+        params.bg_stars_mode[0] += dir;
+        if params.bg_stars_mode[0] < STAR_MODE_NONE {params.bg_stars_mode[0] = STAR_MODE_MUSIC;}
+        if params.bg_stars_mode[0] > STAR_MODE_MUSIC {params.bg_stars_mode[0] = STAR_MODE_NONE;}
         return SETTINGS_ACTION_NONE;
     }
-    if row == SETTINGS_ROW_STAR_PEAK_TARGET {star_peak_target_dps[0] = clampf(star_peak_target_dps[0] + (dir as f32) * (0.1 as f32), 0.5, 3.5); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_STAR_INTENSITY {star_intensity[0] = clampf(star_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_STAR_PEAK_TARGET {params.star_peak_target_dps[0] = clampf(params.star_peak_target_dps[0] + (dir as f32) * (0.1 as f32), 0.5, 3.5); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_STAR_INTENSITY {params.star_intensity[0] = clampf(params.star_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_MUSIC_STYLE {
-        star_music_style[0] += dir;
-        if star_music_style[0] < STAR_MUSIC_STYLE_PULSE {star_music_style[0] = STAR_MUSIC_STYLE_AGGRO;}
-        if star_music_style[0] > STAR_MUSIC_STYLE_AGGRO {star_music_style[0] = STAR_MUSIC_STYLE_PULSE;}
+        params.star_music_style[0] += dir;
+        if params.star_music_style[0] < STAR_MUSIC_STYLE_PULSE {params.star_music_style[0] = STAR_MUSIC_STYLE_AGGRO;}
+        if params.star_music_style[0] > STAR_MUSIC_STYLE_AGGRO {params.star_music_style[0] = STAR_MUSIC_STYLE_PULSE;}
         return SETTINGS_ACTION_NONE;
     }
-    if row == SETTINGS_ROW_MUSIC_INTENSITY {star_music_intensity[0] = clampf(star_music_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_DOUBLE_ROW {double_row_ui[0] = !double_row_ui[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_INSTANT_RESTART {instant_restart[0] = !instant_restart[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_HARD_DROP_RING {hard_drop_ring[0] = !hard_drop_ring[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_HIGH_CONTRAST_BLOCKS {high_contrast_blocks[0] = !high_contrast_blocks[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW {big_first_bag_preview[0] = !big_first_bag_preview[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_FULLSCREEN_MODE {fullscreen_mode[0] = !fullscreen_mode[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_INTENSITY {params.star_music_intensity[0] = clampf(params.star_music_intensity[0] + (dir as f32) * (0.1 as f32), 0.1, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BG_BARS_AMOUNT {
+        params.bg_bars_amount[0] += dir;
+        if params.bg_bars_amount[0] < 8 {params.bg_bars_amount[0] = 8;}
+        if params.bg_bars_amount[0] > 96 {params.bg_bars_amount[0] = 96;}
+        return SETTINGS_ACTION_NONE;
+    }
+    if row == SETTINGS_ROW_BG_BARS_INTENSITY {params.bg_bars_intensity[0] = clampf(params.bg_bars_intensity[0] + (dir as f32) * (0.05 as f32), 0.2, 2.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT {params.bg_bars_height_limit[0] = clampf(params.bg_bars_height_limit[0] + (dir as f32) * (0.02 as f32), 0.35, 0.95); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BG_BARS_OPACITY {params.bg_bars_opacity[0] = clampf(params.bg_bars_opacity[0] + (dir as f32) * (0.05 as f32), 0.2, 1.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BG_BARS_GLOW {params.bg_bars_glow[0] = clampf(params.bg_bars_glow[0] + (dir as f32) * (0.05 as f32), 0.0, 2.0); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BG_BARS_LAYOUT {
+        params.bg_bars_layout[0] += dir;
+        if params.bg_bars_layout[0] < BG_BARS_LAYOUT_CLASSIC {params.bg_bars_layout[0] = BG_BARS_LAYOUT_MIRROR;}
+        if params.bg_bars_layout[0] > BG_BARS_LAYOUT_MIRROR {params.bg_bars_layout[0] = BG_BARS_LAYOUT_CLASSIC;}
+        return SETTINGS_ACTION_NONE;
+    }
+    if row == SETTINGS_ROW_DOUBLE_ROW {params.double_row_ui[0] = !params.double_row_ui[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_INSTANT_RESTART {params.instant_restart[0] = !params.instant_restart[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_HARD_DROP_RING {params.hard_drop_ring[0] = !params.hard_drop_ring[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_HIGH_CONTRAST_BLOCKS {params.high_contrast_blocks[0] = !params.high_contrast_blocks[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW {params.big_first_bag_preview[0] = !params.big_first_bag_preview[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_FULLSCREEN_MODE {params.fullscreen_mode[0] = !params.fullscreen_mode[0]; return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_MUSIC_MODE {
-        music_mode[0] += dir;
-        if music_mode[0] < MUSIC_MODE_BUILTIN {music_mode[0] = MUSIC_MODE_CUSTOM;}
-        if music_mode[0] > MUSIC_MODE_CUSTOM {music_mode[0] = MUSIC_MODE_BUILTIN;}
+        params.music_mode[0] += dir;
+        if params.music_mode[0] < MUSIC_MODE_BUILTIN {params.music_mode[0] = MUSIC_MODE_CUSTOM;}
+        if params.music_mode[0] > MUSIC_MODE_CUSTOM {params.music_mode[0] = MUSIC_MODE_BUILTIN;}
         return SETTINGS_ACTION_NONE;
     }
     if row == SETTINGS_ROW_SELECT_SONGS {return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_MUSIC_SHUFFLE {music_shuffle[0] = !music_shuffle[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_SHUFFLE {params.music_shuffle[0] = !params.music_shuffle[0]; return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_BACK {return SETTINGS_ACTION_BACK;}
     return SETTINGS_ACTION_NONE;
 }
 
-fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: ptr<f32>, crt_brightness: ptr<f32>, vhs_waves: ptr<f32>, vhs_damage: ptr<f32>, arr: ptr<f32>, das: ptr<f32>, dcd: ptr<f32>, sdf: ptr<f32>, music_volume: ptr<f32>, board_bounciness: ptr<i32>, bg_stars_amount: ptr<i32>, bg_stars_mode: ptr<i32>, star_peak_target_dps: ptr<f32>, star_intensity: ptr<f32>, star_music_intensity: ptr<f32>, star_music_style: ptr<i32>, double_row_ui: ptr<bool>, instant_restart: ptr<bool>, hard_drop_ring: ptr<bool>, high_contrast_blocks: ptr<bool>, big_first_bag_preview: ptr<bool>, fullscreen_mode: ptr<bool>, custom_shader_name: ptr<u8>, music_mode: ptr<i32>, music_shuffle: ptr<bool>) >> i32 {
-
-    g_settings.theme_custom_active = theme_index[0] == themeCustomSlotIndex();
+fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
+    g_settings.theme_custom_active = params.theme_index[0] == themeCustomSlotIndex();
     if !g_settings.theme_custom_active && g_settings.theme_mgr_open {closeThemeManager();}
 
     updateSectionAnimations(GetFrameTime());
@@ -2260,20 +2301,20 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
                 return SETTINGS_ACTION_NONE;
             }
             if g_settings.picker_selected >= 0 && g_settings.picker_selected < g_settings.picker_count {
-                copyFixed(custom_shader_name, pickerNamePtr(g_settings.picker_selected), CUSTOM_SHADER_NAME_MAX);
+                copyFixed(params.custom_shader_name, pickerNamePtr(g_settings.picker_selected), CUSTOM_SHADER_NAME_MAX);
                 return SETTINGS_ACTION_NONE;
             }
         }
         return SETTINGS_ACTION_NONE;
     }
 
-    if updateThemeManager(theme_index) {return SETTINGS_ACTION_NONE;}
+    if updateThemeManager(params.theme_index) {return SETTINGS_ACTION_NONE;}
 
     if IsKeyPressed(KEY_ESCAPE) {return SETTINGS_ACTION_BACK;}
 
-    settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+    settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
 
-    i32 item_count = visibleRowCount(bg_stars_mode[0], shader_mode[0]);
+    i32 item_count = visibleRowCount(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
     i32 max_scroll = item_count - (SETTINGS_VISIBLE_ROWS as i32);
     if max_scroll < 0 {max_scroll = 0;}
 
@@ -2283,23 +2324,23 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     if g_settings.scroll > (max_scroll as f32) {g_settings.scroll = max_scroll as f32;}
 
     if IsKeyPressed(KEY_UP) {
-        i32 order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+        i32 order = rowOrder(g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         if order < 0 {order = 0;}
         order -= 1;
         if order < 0 {order = item_count - 1;}
-        g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.selected_row = rowFromOrder(order, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         g_settings.keyboard_nav_lock = true;
     }
     if IsKeyPressed(KEY_DOWN) {
-        i32 order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+        i32 order = rowOrder(g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         if order < 0 {order = 0;}
         order += 1;
         if order >= item_count {order = 0;}
-        g_settings.selected_row = rowFromOrder(order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.selected_row = rowFromOrder(order, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         g_settings.keyboard_nav_lock = true;
     }
 
-    i32 sel_order = rowOrder(g_settings.selected_row, bg_stars_mode[0], shader_mode[0]);
+    i32 sel_order = rowOrder(g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
     if sel_order < 0 {sel_order = 0;}
     if (sel_order as f32) < g_settings.scroll {g_settings.scroll = sel_order as f32;}
     if sel_order >= (g_settings.scroll as i32) + (SETTINGS_VISIBLE_ROWS as i32) {g_settings.scroll = (sel_order - ((SETTINGS_VISIBLE_ROWS as i32) - 1)) as f32;}
@@ -2308,30 +2349,30 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
 
     if IsKeyPressed(KEY_LEFT) {
         g_settings.keyboard_nav_lock = true;
-        i32 act = settingsNudgeRow(g_settings.selected_row, -1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-        settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        i32 act = settingsNudgeRow(g_settings.selected_row, -1, params);
+        settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         if act != SETTINGS_ACTION_NONE {return act;}
     }
     if IsKeyPressed(KEY_RIGHT) {
         g_settings.keyboard_nav_lock = true;
-        i32 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-        settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+        i32 act = settingsNudgeRow(g_settings.selected_row, 1, params);
+        settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         if act != SETTINGS_ACTION_NONE {return act;}
     }
     if IsKeyPressed(KEY_ENTER) {
         g_settings.keyboard_nav_lock = true;
         if rowIsSectionHeader(g_settings.selected_row) {
             toggleSection(g_settings.selected_row);
-            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+            settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         } else if g_settings.selected_row == SETTINGS_ROW_MANAGE_THEMES {
-            openThemeManager(theme_index);
+            openThemeManager(params.theme_index);
         } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER {
-            openShaderPicker(custom_shader_name);
+            openShaderPicker(params.custom_shader_name);
         } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS {
             if g_star_music_track_count > 0 {openSongPicker();}
         } else {
-            i32 act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+            i32 act = settingsNudgeRow(g_settings.selected_row, 1, params);
+            settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
             if act != SETTINGS_ACTION_NONE {return act;}
         }
     }
@@ -2345,29 +2386,29 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
         i32 hovered_order = (local + g_settings.scroll) as i32;
         if hovered_order < 0 {hovered_order = 0;}
         if hovered_order >= item_count {hovered_order = item_count - 1;}
-        g_settings.selected_row = rowFromOrder(hovered_order, bg_stars_mode[0], shader_mode[0]);
+        g_settings.selected_row = rowFromOrder(hovered_order, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
     }
 
     if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
         g_settings.keyboard_nav_lock = false;
-        if rowIsSectionHeader(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
+        if rowIsSectionHeader(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
             toggleSection(g_settings.selected_row);
-            settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+            settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
         } else {
             i32 act = SETTINGS_ACTION_NONE;
-            if g_settings.selected_row == SETTINGS_ROW_THEME && rowBodyHit(mouse, SETTINGS_ROW_THEME, bg_stars_mode[0], shader_mode[0]) {
-                act = settingsNudgeRow(SETTINGS_ROW_THEME, selectorDirectionFromMouse(mouse.x), theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-            } else if rowUsesSelectorMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
-                act = settingsNudgeRow(g_settings.selected_row, selectorDirectionFromMouse(mouse.x), theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-            } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && rowBodyHit(mouse, SETTINGS_ROW_CHOOSE_SHADER, bg_stars_mode[0], shader_mode[0]) {
-                openShaderPicker(custom_shader_name);
-            } else if g_settings.selected_row == SETTINGS_ROW_MANAGE_THEMES && rowBodyHit(mouse, SETTINGS_ROW_MANAGE_THEMES, bg_stars_mode[0], shader_mode[0]) {
-                openThemeManager(theme_index);
-            } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS && rowBodyHit(mouse, SETTINGS_ROW_SELECT_SONGS, bg_stars_mode[0], shader_mode[0]) {
+            if g_settings.selected_row == SETTINGS_ROW_THEME && rowBodyHit(mouse, SETTINGS_ROW_THEME, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                act = settingsNudgeRow(SETTINGS_ROW_THEME, selectorDirectionFromMouse(mouse.x), params);
+            } else if rowUsesSelectorMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                act = settingsNudgeRow(g_settings.selected_row, selectorDirectionFromMouse(mouse.x), params);
+            } else if g_settings.selected_row == SETTINGS_ROW_CHOOSE_SHADER && rowBodyHit(mouse, SETTINGS_ROW_CHOOSE_SHADER, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                openShaderPicker(params.custom_shader_name);
+            } else if g_settings.selected_row == SETTINGS_ROW_MANAGE_THEMES && rowBodyHit(mouse, SETTINGS_ROW_MANAGE_THEMES, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                openThemeManager(params.theme_index);
+            } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS && rowBodyHit(mouse, SETTINGS_ROW_SELECT_SONGS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
                 if g_star_music_track_count > 0 {openSongPicker();}
-            } else if rowUsesToggleMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, bg_stars_mode[0], shader_mode[0]) {
-                act = settingsNudgeRow(g_settings.selected_row, 1, theme_index, shader_mode, crt_curvature, crt_brightness, vhs_waves, vhs_damage, arr, das, dcd, sdf, music_volume, board_bounciness, bg_stars_amount, bg_stars_mode, star_peak_target_dps, star_intensity, star_music_intensity, star_music_style, double_row_ui, instant_restart, hard_drop_ring, high_contrast_blocks, big_first_bag_preview, fullscreen_mode, music_mode, music_shuffle);
-            } else if g_settings.selected_row == SETTINGS_ROW_BACK && rowBodyHit(mouse, SETTINGS_ROW_BACK, bg_stars_mode[0], shader_mode[0]) {
+            } else if rowUsesToggleMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                act = settingsNudgeRow(g_settings.selected_row, 1, params);
+            } else if g_settings.selected_row == SETTINGS_ROW_BACK && rowBodyHit(mouse, SETTINGS_ROW_BACK, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
                 return SETTINGS_ACTION_BACK;
             }
             if act != SETTINGS_ACTION_NONE {return act;}
@@ -2375,22 +2416,27 @@ fun settingsUpdate(theme_index: ptr<i32>, shader_mode: ptr<i32>, crt_curvature: 
     }
 
     if IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
-        dragSliderF32(mouse, SETTINGS_ROW_CRT_CURVATURE, bg_stars_mode[0], shader_mode[0], crt_curvature, 0.2, 1.4);
-        dragSliderF32(mouse, SETTINGS_ROW_CRT_BRIGHTNESS, bg_stars_mode[0], shader_mode[0], crt_brightness, 0.6, 1.8);
-        dragSliderF32(mouse, SETTINGS_ROW_VHS_WAVES, bg_stars_mode[0], shader_mode[0], vhs_waves, 0.0, 1.4);
-        dragSliderF32(mouse, SETTINGS_ROW_VHS_DAMAGE, bg_stars_mode[0], shader_mode[0], vhs_damage, 0.0, 1.5);
-        dragSliderF32(mouse, SETTINGS_ROW_ARR, bg_stars_mode[0], shader_mode[0], arr, 0.0, 8.0);
-        dragSliderF32(mouse, SETTINGS_ROW_DAS, bg_stars_mode[0], shader_mode[0], das, 0.0, 20.0);
-        dragSliderF32(mouse, SETTINGS_ROW_DCD, bg_stars_mode[0], shader_mode[0], dcd, 0.0, 10.0);
-        dragSliderF32(mouse, SETTINGS_ROW_SDF, bg_stars_mode[0], shader_mode[0], sdf, 1.0, 40.0);
-        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_VOLUME, bg_stars_mode[0], shader_mode[0], music_volume, 0.0, 1.0);
-        dragSliderI32(mouse, SETTINGS_ROW_BOARD_BOUNCINESS, bg_stars_mode[0], shader_mode[0], board_bounciness, 0.0, 100.0);
-        dragSliderI32(mouse, SETTINGS_ROW_BG_STARS_AMOUNT, bg_stars_mode[0], shader_mode[0], bg_stars_amount, 0.0, 150.0);
-        dragSliderF32(mouse, SETTINGS_ROW_STAR_PEAK_TARGET, bg_stars_mode[0], shader_mode[0], star_peak_target_dps, 0.5, 3.5);
-        dragSliderF32(mouse, SETTINGS_ROW_STAR_INTENSITY, bg_stars_mode[0], shader_mode[0], star_intensity, 0.1, 1.0);
-        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_INTENSITY, bg_stars_mode[0], shader_mode[0], star_music_intensity, 0.1, 1.0);
+        dragSliderF32(mouse, SETTINGS_ROW_CRT_CURVATURE, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.crt_curvature, 0.2, 1.4);
+        dragSliderF32(mouse, SETTINGS_ROW_CRT_BRIGHTNESS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.crt_brightness, 0.6, 1.8);
+        dragSliderF32(mouse, SETTINGS_ROW_VHS_WAVES, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.vhs_waves, 0.0, 1.4);
+        dragSliderF32(mouse, SETTINGS_ROW_VHS_DAMAGE, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.vhs_damage, 0.0, 1.5);
+        dragSliderF32(mouse, SETTINGS_ROW_ARR, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.arr, 0.0, 8.0);
+        dragSliderF32(mouse, SETTINGS_ROW_DAS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.das, 0.0, 20.0);
+        dragSliderF32(mouse, SETTINGS_ROW_DCD, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.dcd, 0.0, 10.0);
+        dragSliderF32(mouse, SETTINGS_ROW_SDF, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.sdf, 1.0, 40.0);
+        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_VOLUME, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.music_volume, 0.0, 1.0);
+        dragSliderI32(mouse, SETTINGS_ROW_BOARD_BOUNCINESS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.board_bounciness, 0.0, 100.0);
+        dragSliderI32(mouse, SETTINGS_ROW_BG_STARS_AMOUNT, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_stars_amount, 0.0, 150.0);
+        dragSliderF32(mouse, SETTINGS_ROW_STAR_PEAK_TARGET, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.star_peak_target_dps, 0.5, 3.5);
+        dragSliderF32(mouse, SETTINGS_ROW_STAR_INTENSITY, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.star_intensity, 0.1, 1.0);
+        dragSliderF32(mouse, SETTINGS_ROW_MUSIC_INTENSITY, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.star_music_intensity, 0.1, 1.0);
+        dragSliderI32(mouse, SETTINGS_ROW_BG_BARS_AMOUNT, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_bars_amount, 8.0, 96.0);
+        dragSliderF32(mouse, SETTINGS_ROW_BG_BARS_INTENSITY, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_bars_intensity, 0.2, 2.0);
+        dragSliderF32(mouse, SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_bars_height_limit, 0.35, 0.95);
+        dragSliderF32(mouse, SETTINGS_ROW_BG_BARS_OPACITY, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_bars_opacity, 0.2, 1.0);
+        dragSliderF32(mouse, SETTINGS_ROW_BG_BARS_GLOW, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.bg_bars_glow, 0.0, 2.0);
     }
 
-    settingsEnsureSelectedVisible(bg_stars_mode[0], shader_mode[0]);
+    settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
     return SETTINGS_ACTION_NONE;
 }

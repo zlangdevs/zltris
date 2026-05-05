@@ -313,7 +313,7 @@ fun drawBotDuelsFrame(font: Font) >> void {
     if !BOTDEVMODE {return;}
     Theme theme = currentTheme();
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
-    drawBackgroundStars(theme);
+    drawBackgroundVisual(theme);
 
     if !canOpenBotSetupUi() {
         drawBotWidthPopup(font, theme, true);

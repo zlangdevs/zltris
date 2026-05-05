@@ -1,0 +1,228 @@
+module zltris;
+use raylib
+use std.string
+use zltris.settings
+use zltris.sound
+
+struct SettingsSnapshot {
+    theme_index i32,
+    shader_mode i32,
+    crt_curvature f32,
+    crt_brightness f32,
+    vhs_waves f32,
+    vhs_damage f32,
+    arr f32,
+    das f32,
+    dcd f32,
+    sdf f32,
+    music_volume f32,
+    board_bounciness i32,
+    bg_stars_amount i32,
+    bg_stars_mode i32,
+    bg_visual_mode i32,
+    bg_bars_amount i32,
+    bg_bars_intensity f32,
+    bg_bars_height_limit f32,
+    bg_bars_opacity f32,
+    bg_bars_glow f32,
+    bg_bars_layout i32,
+    star_peak_target_dps f32,
+    star_intensity f32,
+    star_music_intensity f32,
+    star_music_style i32,
+    double_row_ui bool,
+    instant_restart bool,
+    hard_drop_ring bool,
+    high_contrast_blocks bool,
+    big_first_bag_preview bool,
+    fullscreen_mode bool,
+    custom_shader_name arr<u8, 96>,
+    music_mode i32,
+    music_shuffle bool,
+    custom_theme_rev i32,
+    settings_controls_open bool,
+    settings_video_open bool,
+    settings_audio_open bool,
+}
+
+fun captureSettingsSnapshot() >> SettingsSnapshot {
+    SettingsSnapshot snapshot = {0};
+    snapshot.theme_index = g_game.theme_index;
+    snapshot.shader_mode = g_post_shader_mode;
+    snapshot.crt_curvature = g_crt_curvature;
+    snapshot.crt_brightness = g_crt_brightness;
+    snapshot.vhs_waves = g_vhs_waves;
+    snapshot.vhs_damage = g_vhs_damage;
+    snapshot.arr = g_arr_frames;
+    snapshot.das = g_das_frames;
+    snapshot.dcd = g_dcd_frames;
+    snapshot.sdf = g_sdf_multiplier;
+    snapshot.music_volume = g_music_volume;
+    snapshot.board_bounciness = g_board_bounciness;
+    snapshot.bg_stars_amount = g_bg_stars_amount;
+    snapshot.bg_stars_mode = g_bg_star_react_mode;
+    snapshot.bg_visual_mode = g_bg_visual_mode;
+    snapshot.bg_bars_amount = g_bg_bars_amount;
+    snapshot.bg_bars_intensity = g_bg_bars_intensity;
+    snapshot.bg_bars_height_limit = g_bg_bars_height_limit;
+    snapshot.bg_bars_opacity = g_bg_bars_opacity;
+    snapshot.bg_bars_glow = g_bg_bars_glow;
+    snapshot.bg_bars_layout = g_bg_bars_layout;
+    snapshot.star_peak_target_dps = g_star_peak_target_dps;
+    snapshot.star_intensity = g_star_intensity;
+    snapshot.star_music_intensity = g_star_music_intensity;
+    snapshot.star_music_style = g_star_music_style;
+    snapshot.double_row_ui = g_double_row_ui;
+    snapshot.instant_restart = g_instant_restart;
+    snapshot.hard_drop_ring = g_hard_drop_ring;
+    snapshot.high_contrast_blocks = g_high_contrast_blocks;
+    snapshot.big_first_bag_preview = g_big_first_bag_preview;
+    snapshot.fullscreen_mode = g_fullscreen_mode;
+    copyCustomShaderName(&snapshot.custom_shader_name[0], &g_custom_shader_name[0]);
+    snapshot.music_mode = g_music_mode;
+    snapshot.music_shuffle = g_music_shuffle;
+    snapshot.custom_theme_rev = customThemeRevision();
+    snapshot.settings_controls_open = g_settings_controls_expanded;
+    snapshot.settings_video_open = g_settings_video_expanded;
+    snapshot.settings_audio_open = g_settings_audio_expanded;
+    return snapshot;
+}
+
+fun bindSettingsUpdateParams() >> SettingsUpdateParams {
+    SettingsUpdateParams params = {0};
+    params.theme_index = &g_game.theme_index;
+    params.shader_mode = &g_post_shader_mode;
+    params.crt_curvature = &g_crt_curvature;
+    params.crt_brightness = &g_crt_brightness;
+    params.vhs_waves = &g_vhs_waves;
+    params.vhs_damage = &g_vhs_damage;
+    params.arr = &g_arr_frames;
+    params.das = &g_das_frames;
+    params.dcd = &g_dcd_frames;
+    params.sdf = &g_sdf_multiplier;
+    params.music_volume = &g_music_volume;
+    params.board_bounciness = &g_board_bounciness;
+    params.bg_visual_mode = &g_bg_visual_mode;
+    params.bg_stars_amount = &g_bg_stars_amount;
+    params.bg_stars_mode = &g_bg_star_react_mode;
+    params.star_peak_target_dps = &g_star_peak_target_dps;
+    params.star_intensity = &g_star_intensity;
+    params.bg_bars_amount = &g_bg_bars_amount;
+    params.bg_bars_intensity = &g_bg_bars_intensity;
+    params.bg_bars_height_limit = &g_bg_bars_height_limit;
+    params.bg_bars_opacity = &g_bg_bars_opacity;
+    params.bg_bars_glow = &g_bg_bars_glow;
+    params.bg_bars_layout = &g_bg_bars_layout;
+    params.star_music_intensity = &g_star_music_intensity;
+    params.star_music_style = &g_star_music_style;
+    params.double_row_ui = &g_double_row_ui;
+    params.instant_restart = &g_instant_restart;
+    params.hard_drop_ring = &g_hard_drop_ring;
+    params.high_contrast_blocks = &g_high_contrast_blocks;
+    params.big_first_bag_preview = &g_big_first_bag_preview;
+    params.fullscreen_mode = &g_fullscreen_mode;
+    params.custom_shader_name = &g_custom_shader_name[0];
+    params.music_mode = &g_music_mode;
+    params.music_shuffle = &g_music_shuffle;
+    return params;
+}
+
+fun customShaderChanged(self: SettingsSnapshot) >> bool {
+    return !strEq(&self.custom_shader_name[0], &g_custom_shader_name[0]);
+}
+
+fun changed(self: SettingsSnapshot) >> bool {
+    bool dirty = self.theme_index != g_game.theme_index;
+    dirty = dirty || self.shader_mode != g_post_shader_mode;
+    dirty = dirty || self.crt_curvature != g_crt_curvature;
+    dirty = dirty || self.crt_brightness != g_crt_brightness;
+    dirty = dirty || self.vhs_waves != g_vhs_waves;
+    dirty = dirty || self.vhs_damage != g_vhs_damage;
+    dirty = dirty || self.arr != g_arr_frames;
+    dirty = dirty || self.das != g_das_frames;
+    dirty = dirty || self.dcd != g_dcd_frames;
+    dirty = dirty || self.sdf != g_sdf_multiplier;
+    dirty = dirty || self.music_volume != g_music_volume;
+    dirty = dirty || self.board_bounciness != g_board_bounciness;
+    dirty = dirty || self.bg_stars_amount != g_bg_stars_amount;
+    dirty = dirty || self.bg_stars_mode != g_bg_star_react_mode;
+    dirty = dirty || self.bg_visual_mode != g_bg_visual_mode;
+    dirty = dirty || self.bg_bars_amount != g_bg_bars_amount;
+    dirty = dirty || self.bg_bars_intensity != g_bg_bars_intensity;
+    dirty = dirty || self.bg_bars_height_limit != g_bg_bars_height_limit;
+    dirty = dirty || self.bg_bars_opacity != g_bg_bars_opacity;
+    dirty = dirty || self.bg_bars_glow != g_bg_bars_glow;
+    dirty = dirty || self.bg_bars_layout != g_bg_bars_layout;
+    dirty = dirty || self.star_peak_target_dps != g_star_peak_target_dps;
+    dirty = dirty || self.star_intensity != g_star_intensity;
+    dirty = dirty || self.star_music_intensity != g_star_music_intensity;
+    dirty = dirty || self.star_music_style != g_star_music_style;
+    dirty = dirty || self.double_row_ui != g_double_row_ui;
+    dirty = dirty || self.instant_restart != g_instant_restart;
+    dirty = dirty || self.hard_drop_ring != g_hard_drop_ring;
+    dirty = dirty || self.high_contrast_blocks != g_high_contrast_blocks;
+    dirty = dirty || self.big_first_bag_preview != g_big_first_bag_preview;
+    dirty = dirty || self.fullscreen_mode != g_fullscreen_mode;
+    dirty = dirty || self.customShaderChanged();
+    dirty = dirty || self.music_mode != g_music_mode;
+    dirty = dirty || self.music_shuffle != g_music_shuffle;
+    dirty = dirty || self.custom_theme_rev != customThemeRevision();
+    dirty = dirty || self.settings_controls_open != g_settings_controls_expanded;
+    dirty = dirty || self.settings_video_open != g_settings_video_expanded;
+    dirty = dirty || self.settings_audio_open != g_settings_audio_expanded;
+    dirty = dirty || g_songs_modified;
+    return dirty;
+}
+
+fun shaderReloadNeeded(self: SettingsSnapshot) >> bool {
+    return self.shader_mode != g_post_shader_mode || self.customShaderChanged();
+}
+
+fun musicModeChanged(self: SettingsSnapshot) >> bool {
+    return self.music_mode != g_music_mode;
+}
+
+fun fullscreenModeChanged(self: SettingsSnapshot) >> bool {
+    return self.fullscreen_mode != g_fullscreen_mode;
+}
+
+fun applyFullscreenMode() >> void {
+    if g_fullscreen_mode {
+        if !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+            ToggleBorderlessWindowed();
+        }
+        i32 mon = GetCurrentMonitor();
+        SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
+    } else {
+        if IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+            ToggleBorderlessWindowed();
+        } else if IsWindowFullscreen() {
+            ToggleFullscreen();
+        }
+        SetWindowSize(960, 920);
+    }
+    g_game = g_game.refresh_screen_size();
+    ensurePostFxTarget(GetScreenWidth(), GetScreenHeight());
+    ensureLayerTargets(GetScreenWidth(), GetScreenHeight());
+}
+
+fun applySettingsChanges(previous: SettingsSnapshot) >> void {
+    if !previous.changed() {return;}
+
+    clampSettings();
+    if previous.shaderReloadNeeded() {loadPostEffects();}
+    if previous.fullscreenModeChanged() {applyFullscreenMode();}
+    if previous.musicModeChanged() {
+        buildMusicPlaylist();
+        if g_star_music_track_count > 0 {
+            loadStarMusicTrack(getRandomEnabledTrack());
+        }
+    }
+    if g_songs_modified {
+        g_songs_modified = false;
+        if g_star_music_track_index >= 0 && g_star_music_track_index < g_star_music_track_count && g_star_music_track_disabled[g_star_music_track_index] {
+            loadStarMusicTrack(getRandomEnabledTrack());
+        }
+    }
+    saveSettingsFile();
+}

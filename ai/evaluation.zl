@@ -466,8 +466,8 @@ fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32
 
     for i32 i = 0; i < BOARD_CELLS; i++ {out_board[i] = board[i];}
     for i32 i = 0; i < 4; i++ {
-        i32 mx = x + minoX(kind, rotation, i);
-        i32 my = y + minoY(kind, rotation, i);
+        i32 mx = x + aiMinoX(kind, rotation, i);
+        i32 my = y + aiMinoY(kind, rotation, i);
         if my >= 0 {out_board[boardIndex(mx, my)] = kind + 1;}
     }
     if kind == PIECE_T && last_rotate_success && isTSpinPlacement(out_board, kind, x, y) {out_tspin[0] = 1;} else {out_tspin[0] = 0;}
