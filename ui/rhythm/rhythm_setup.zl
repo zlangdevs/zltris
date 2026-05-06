@@ -125,7 +125,7 @@ fun rhythmNudge(row: i32, dir: i32) >> void {
         return;
     }
     if row == RHYTHM_ROW_ALLOW_MISS {
-        g_rhythm_allow_miss = !g_rhythm_allow_miss;
+        g_rhythm_allow_miss = toggled(g_rhythm_allow_miss);
         return;
     }
     if row == RHYTHM_ROW_BEAT_SENSITIVITY {
@@ -194,9 +194,7 @@ fun drawRhythmToggleRow(font: Font, theme: Theme, row: i32, label: ptr<u8>, enab
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
-    ptr<u8> mark = "[ ]";
-    if enabled {mark = "[X]";}
-    drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
+    drawCheckboxText(font, enabled, 470, y + 20, 15, theme.panel_stroke);
 }
 
 fun drawRhythmSongRow(font: Font, theme: Theme) >> void {
@@ -323,9 +321,12 @@ fun updateRhythmSetup() >> i32 {
         if g_rhythm_setup.picker_scroll < 0.0 as f32 {g_rhythm_setup.picker_scroll = 0.0 as f32;}
         if g_rhythm_setup.picker_scroll > (max_scroll as f32) {g_rhythm_setup.picker_scroll = max_scroll as f32;}
 
-        if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
-            i32 idx = (((mouse.y - uiY(286) as f32) / (uiS(68) as f32)) + g_rhythm_setup.picker_scroll) as i32;
-            if idx >= 0 && idx < g_star_music_track_count {g_rhythm_setup.picker_selected = idx;}
+        i32 hovered = 0;
+        if uiScrollListHoverIndex(mouse, 116, 286, 420, 68, visible, g_rhythm_setup.picker_scroll, g_star_music_track_count, &hovered) {
+            g_rhythm_setup.picker_selected = hovered;
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                g_rhythm_setup.picker_selected = hovered;
+            }
         }
 
         if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {

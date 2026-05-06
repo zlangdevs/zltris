@@ -121,6 +121,10 @@ struct SettingsState {
     theme_mgr_hue f32,
     theme_mgr_saturation f32,
     theme_mgr_button i32,
+    theme_mgr_left_repeat f32,
+    theme_mgr_right_repeat f32,
+    theme_mgr_backspace_repeat f32,
+    theme_mgr_delete_repeat f32,
 }
 
 struct SettingsDrawParams {
@@ -233,6 +237,10 @@ fun init(self: SettingsState) >> SettingsState {
     next.theme_mgr_hue = 0.0 as f32;
     next.theme_mgr_saturation = 0.0 as f32;
     next.theme_mgr_button = THEME_MGR_BUTTON_NEW;
+    next.theme_mgr_left_repeat = 0.0 as f32;
+    next.theme_mgr_right_repeat = 0.0 as f32;
+    next.theme_mgr_backspace_repeat = 0.0 as f32;
+    next.theme_mgr_delete_repeat = 0.0 as f32;
     return next;
 }
 
@@ -903,14 +911,54 @@ fun themeMgrInsertChar(ch: i32) >> void {
     themeMgrCommitNameBuffer();
 }
 
+fun themeMgrInsertUtf8Text(text: ptr<u8>) >> void {
+    if text == (0 as ptr<u8>) {return;}
+
+    i32 add = 0;
+    i32 i = 0;
+    for (text[i] != 0) {
+        u8 ch = text[i];
+        if ch != ('\n' as u8) && ch != ('\r' as u8) && ch != ('\t' as u8) {
+            add += 1;
+        }
+        i += 1;
+    }
+    if add <= 0 {return;}
+
+    i32 len = themeMgrNameLen();
+    themeMgrClampNameCursor();
+    i32 free = (CUSTOM_THEME_NAME_MAX - 1) - len;
+    if free <= 0 {return;}
+    if add > free {add = free;}
+
+    i32 at = g_settings.theme_mgr_name_cursor;
+    for i32 p = len; p >= at; p-- {
+        g_settings.theme_mgr_name[p + add] = g_settings.theme_mgr_name[p];
+    }
+
+    i32 wrote = 0;
+    i = 0;
+    for (text[i] != 0 && wrote < add) {
+        u8 ch = text[i];
+        if ch != ('\n' as u8) && ch != ('\r' as u8) && ch != ('\t' as u8) {
+            g_settings.theme_mgr_name[at + wrote] = ch;
+            wrote += 1;
+        }
+        i += 1;
+    }
+
+    g_settings.theme_mgr_name_cursor = at + wrote;
+    themeMgrClampNameCursor();
+    themeMgrCommitNameBuffer();
+}
+
+fun themeMgrRangeWidth(font: Font, size: i64, start_idx: i32, end_idx: i32) >> i64 {
+    return uiTextRangeWidth(font, &g_settings.theme_mgr_name[0], size, start_idx, end_idx);
+}
+
 fun themeMgrCursorOffset(font: Font, size: i64) >> i64 {
     themeMgrClampNameCursor();
-    i32 idx = g_settings.theme_mgr_name_cursor;
-    u8 saved = g_settings.theme_mgr_name[idx];
-    g_settings.theme_mgr_name[idx] = 0;
-    i64 w = measureTextWidthBase(font, &g_settings.theme_mgr_name[0], size);
-    g_settings.theme_mgr_name[idx] = saved;
-    return w;
+    return themeMgrRangeWidth(font, size, 0, g_settings.theme_mgr_name_cursor);
 }
 
 fun themeMgrCursorOffsetAt(font: Font, size: i64, idx: i32) >> i64 {
@@ -918,33 +966,15 @@ fun themeMgrCursorOffsetAt(font: Font, size: i64, idx: i32) >> i64 {
     i32 at = idx;
     if at < 0 {at = 0;}
     if at > len {at = len;}
-    u8 saved = g_settings.theme_mgr_name[at];
-    g_settings.theme_mgr_name[at] = 0;
-    i64 w = measureTextWidthBase(font, &g_settings.theme_mgr_name[0], size);
-    g_settings.theme_mgr_name[at] = saved;
-    return w;
+    return themeMgrRangeWidth(font, size, 0, at);
 }
 
-fun themeMgrSetCursorFromMouse(font: Font, size: i64, text_x: i64, mouse_x: f32) >> void {
-    i32 len = themeMgrNameLen();
-    i32 best_idx = 0;
-    f32 best_dist = absf(mouse_x - (uiX(text_x) as f32));
+fun themeMgrVisibleStart(font: Font, size: i64, max_w: i64) >> i32 {
+    return uiTextVisibleStartForCursor(font, &g_settings.theme_mgr_name[0], size, g_settings.theme_mgr_name_cursor, max_w);
+}
 
-    i32 idx = 0;
-    for (idx <= len) {
-        i64 w = themeMgrCursorOffsetAt(font, size, idx);
-        f32 px = uiX(text_x + w) as f32;
-        f32 d = absf(mouse_x - px);
-        if d < best_dist {
-            best_dist = d;
-            best_idx = idx;
-        }
-        if idx >= len {break;}
-        idx = themeMgrNextCharStart(idx);
-        if idx <= 0 {idx = len;}
-    }
-
-    g_settings.theme_mgr_name_cursor = best_idx;
+fun themeMgrSetCursorFromMouse(font: Font, size: i64, text_x: i64, mouse_x: f32, start_idx: i32) >> void {
+    uiTextSetCursorFromMouse(font, &g_settings.theme_mgr_name[0], size, text_x, mouse_x, start_idx, &g_settings.theme_mgr_name_cursor);
     themeMgrClampNameCursor();
 }
 
@@ -1113,25 +1143,53 @@ fun themeMgrWheelSetFromMouse(mouse: Vector2, cx: i64, cy: i64, radius: i64) >> 
     themeMgrApplyWheelColor();
 }
 
+fun keyRepeatPulse(key: i32, timer: ptr<f32>, initial_delay: f32, repeat_delay: f32) >> bool {
+    return uiKeyRepeatPulse(key, timer, initial_delay, repeat_delay);
+}
+
 fun themeMgrHandleNameEdit() >> void {
     themeMgrClampNameCursor();
 
-    if IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT) {
+    bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+
+    if IsKeyPressed(KEY_HOME) {
+        g_settings.theme_mgr_name_cursor = 0;
+        themeMgrClampNameCursor();
+    }
+    if IsKeyPressed(KEY_END) {
+        g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+        themeMgrClampNameCursor();
+    }
+
+    if keyRepeatPulse(KEY_LEFT, &g_settings.theme_mgr_left_repeat, 0.28 as f32, 0.04 as f32) {
         g_settings.theme_mgr_name_cursor = themeMgrPrevCharStart(g_settings.theme_mgr_name_cursor);
         themeMgrClampNameCursor();
     }
-    if IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT) {
+    if keyRepeatPulse(KEY_RIGHT, &g_settings.theme_mgr_right_repeat, 0.28 as f32, 0.04 as f32) {
         g_settings.theme_mgr_name_cursor = themeMgrNextCharStart(g_settings.theme_mgr_name_cursor);
         themeMgrClampNameCursor();
     }
 
-    if IsKeyPressed(KEY_BACKSPACE) {themeMgrDeleteAtCursor(true);}
-    if IsKeyPressed(KEY_DELETE) {themeMgrDeleteAtCursor(false);}
+    if (ctrl && IsKeyPressed(KEY_V)) || IsKeyPressed(KEY_INSERT) {
+        if ctrl || IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) {themeMgrInsertUtf8Text(GetClipboardText());}
+    }
+    if ctrl && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_INSERT)) {SetClipboardText(&g_settings.theme_mgr_name[0]);}
+    if ctrl && IsKeyPressed(KEY_X) {
+        SetClipboardText(&g_settings.theme_mgr_name[0]);
+        g_settings.theme_mgr_name[0] = 0;
+        g_settings.theme_mgr_name_cursor = 0;
+        themeMgrCommitNameBuffer();
+    }
 
-    for (true) {
-        i32 ch = GetCharPressed();
-        if ch == 0 {break;}
-        themeMgrInsertChar(ch);
+    if keyRepeatPulse(KEY_BACKSPACE, &g_settings.theme_mgr_backspace_repeat, 0.32 as f32, 0.035 as f32) {themeMgrDeleteAtCursor(true);}
+    if keyRepeatPulse(KEY_DELETE, &g_settings.theme_mgr_delete_repeat, 0.32 as f32, 0.035 as f32) {themeMgrDeleteAtCursor(false);}
+
+    if !ctrl {
+        for (true) {
+            i32 ch = GetCharPressed();
+            if ch == 0 {break;}
+            themeMgrInsertChar(ch);
+        }
     }
 
     if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE) {
@@ -1189,10 +1247,22 @@ fun drawThemeManager(font: Font, theme: Theme) >> void {
     strokeRect(right_x, name_y, right_w, 54, alphaColor(theme.text_muted, 0.52 as f32));
     if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_NAME {strokeRect(right_x - 2, name_y - 2, right_w + 4, 58, alphaColor(theme.panel_stroke, 0.86 as f32));}
     drawTextColor(font, "Name", right_x + 12, name_y + 8, 11, alphaColor(theme.text_muted, 0.80 as f32));
-    drawTextColor(font, &g_settings.theme_mgr_name[0], right_x + 12, name_y + 28, 13, theme.text_main);
+
+    i64 name_text_x = right_x + 12;
+    i64 name_text_y = name_y + 28;
+    i64 name_text_w = right_w - 24;
+    i64 name_visible_w = name_text_w - 2;
+    if name_visible_w < 1 {name_visible_w = 1;}
+    i32 name_start = themeMgrVisibleStart(font, 13, name_visible_w);
+
+    BeginScissorMode(uiX(name_text_x), uiY(name_text_y), uiS(name_text_w), uiS(18));
+    drawTextColor(font, &g_settings.theme_mgr_name[name_start], name_text_x, name_text_y, 13, theme.text_main);
+    EndScissorMode();
+
     if g_settings.theme_mgr_name_edit {
-        i64 cursor_x = right_x + 12 + themeMgrCursorOffset(font, 13) + 4;
-        fillRect(cursor_x, name_y + 28, 2, 16, alphaColor(theme.panel_stroke, 0.92 as f32));
+        i64 cursor_dx = themeMgrRangeWidth(font, 13, name_start, g_settings.theme_mgr_name_cursor);
+        i64 cursor_x = name_text_x + cursor_dx;
+        fillRect(cursor_x, name_text_y, 2, 16, alphaColor(theme.panel_stroke, 0.92 as f32));
     }
 
     i64 field_y = panel_y + 150;
@@ -1459,6 +1529,10 @@ fun updateThemeManager(theme_index: ptr<i32>) >> bool {
         if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_NAME && count > 0 {
             g_settings.theme_mgr_name_edit = true;
             g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+            g_settings.theme_mgr_left_repeat = 0.0 as f32;
+            g_settings.theme_mgr_right_repeat = 0.0 as f32;
+            g_settings.theme_mgr_backspace_repeat = 0.0 as f32;
+            g_settings.theme_mgr_delete_repeat = 0.0 as f32;
         } else if g_settings.theme_mgr_focus == THEME_MGR_FOCUS_BUTTONS {
             if g_settings.theme_mgr_button == THEME_MGR_BUTTON_NEW {
                 Theme base = setTheme(theme_index[0]);
@@ -1489,13 +1563,19 @@ fun updateThemeManager(theme_index: ptr<i32>) >> bool {
 
         if pointInBaseRect(mouse.x, mouse.y, list_x, list_y, list_w, list_h) {
             g_settings.theme_mgr_focus = THEME_MGR_FOCUS_LIST;
-            i32 idx = (((mouse.y - uiY(list_y) as f32) / (uiS(list_row_h) as f32)) + g_settings.theme_mgr_scroll) as i32;
-            if idx >= 0 && idx < customThemeCount() {themeMgrSelectTheme(idx);}
+            i32 idx = 0;
+            if uiScrollListHoverIndex(mouse, list_x, list_y, list_w, list_row_h, themeMgrListVisible(), g_settings.theme_mgr_scroll, customThemeCount(), &idx) {
+                themeMgrSelectTheme(idx);
+            }
         } else if pointInBaseRect(mouse.x, mouse.y, right_x, name_y, right_w, 54) {
             g_settings.theme_mgr_focus = THEME_MGR_FOCUS_NAME;
             if count > 0 {
                 g_settings.theme_mgr_name_edit = true;
                 g_settings.theme_mgr_name_cursor = themeMgrNameLen();
+                g_settings.theme_mgr_left_repeat = 0.0 as f32;
+                g_settings.theme_mgr_right_repeat = 0.0 as f32;
+                g_settings.theme_mgr_backspace_repeat = 0.0 as f32;
+                g_settings.theme_mgr_delete_repeat = 0.0 as f32;
             }
         } else if pointInBaseRect(mouse.x, mouse.y, right_x, field_y, right_w, 54) {
             g_settings.theme_mgr_focus = THEME_MGR_FOCUS_FIELD;
@@ -1722,6 +1802,12 @@ fun dragSliderI32(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: 
 
 fun rowBodyHit(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
     if !rowVisible(row, bg_visual_mode, bg_stars_mode, shader_mode) {return false;}
+
+    i32 visible_rows = visibleRowCount(bg_visual_mode, bg_stars_mode, shader_mode);
+    if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
+    if visible_rows < 0 {visible_rows = 0;}
+    if !pointInBaseRect(mouse.x, mouse.y, 112, 246, 424, (visible_rows as i64) * 78) {return false;}
+
     return pointInBaseRect(mouse.x, mouse.y, 118, itemYDraw(row, bg_visual_mode, bg_stars_mode, shader_mode), 412, 62);
 }
 
@@ -1878,9 +1964,7 @@ fun drawToggleRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_st
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, (0.30 as f32) + alpha * (0.62 as f32)));
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, label, 136, y + 20, 15, alphaColor(theme.text_main, (0.36 as f32) + alpha * (0.64 as f32)));
-    ptr<u8> mark = "[ ]";
-    if enabled {mark = "[X]";}
-    drawTextColor(font, mark, 470, y + 20, 15, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
+    drawCheckboxText(font, enabled, 470, y + 20, 15, alphaColor(theme.panel_stroke, (0.42 as f32) + alpha * (0.58 as f32)));
 }
 
 fun drawButtonRow(font: Font, theme: Theme, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, label: ptr<u8>) >> void {
@@ -1984,11 +2068,9 @@ fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
             }
             fillRect(130, iy, 388, row_inner_h, alphaColor(theme.board_bg, 0.74 as f32));
             strokeRect(130, iy, 388, row_inner_h, stroke);
-            ptr<u8> mark = "[ ]";
-            if enabled {mark = "[X]";}
             u32 mark_col = alphaColor(theme.text_muted, 0.60 as f32);
             if enabled {mark_col = alphaColor(theme.panel_stroke, 0.90 as f32);}
-            drawTextColor(font, mark, 148, iy + 20, 13, mark_col);
+            drawCheckboxText(font, enabled, 148, iy + 20, 13, mark_col);
             drawTextColor(font, musicTrackBasename(i), 222, iy + 20, 13, alphaColor(theme.text_main, 0.92 as f32));
         }
 
@@ -2179,12 +2261,12 @@ fun settingsNudgeRow(row: i32, dir: i32, params: SettingsUpdateParams) >> i32 {
         if params.bg_bars_layout[0] > BG_BARS_LAYOUT_MIRROR {params.bg_bars_layout[0] = BG_BARS_LAYOUT_CLASSIC;}
         return SETTINGS_ACTION_NONE;
     }
-    if row == SETTINGS_ROW_DOUBLE_ROW {params.double_row_ui[0] = !params.double_row_ui[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_INSTANT_RESTART {params.instant_restart[0] = !params.instant_restart[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_HARD_DROP_RING {params.hard_drop_ring[0] = !params.hard_drop_ring[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_HIGH_CONTRAST_BLOCKS {params.high_contrast_blocks[0] = !params.high_contrast_blocks[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW {params.big_first_bag_preview[0] = !params.big_first_bag_preview[0]; return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_FULLSCREEN_MODE {params.fullscreen_mode[0] = !params.fullscreen_mode[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_DOUBLE_ROW {toggleBoolPtr(params.double_row_ui); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_INSTANT_RESTART {toggleBoolPtr(params.instant_restart); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_HARD_DROP_RING {toggleBoolPtr(params.hard_drop_ring); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_HIGH_CONTRAST_BLOCKS {toggleBoolPtr(params.high_contrast_blocks); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW {toggleBoolPtr(params.big_first_bag_preview); return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_FULLSCREEN_MODE {toggleBoolPtr(params.fullscreen_mode); return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_MUSIC_MODE {
         params.music_mode[0] += dir;
         if params.music_mode[0] < MUSIC_MODE_BUILTIN {params.music_mode[0] = MUSIC_MODE_CUSTOM;}
@@ -2192,7 +2274,7 @@ fun settingsNudgeRow(row: i32, dir: i32, params: SettingsUpdateParams) >> i32 {
         return SETTINGS_ACTION_NONE;
     }
     if row == SETTINGS_ROW_SELECT_SONGS {return SETTINGS_ACTION_NONE;}
-    if row == SETTINGS_ROW_MUSIC_SHUFFLE {params.music_shuffle[0] = !params.music_shuffle[0]; return SETTINGS_ACTION_NONE;}
+    if row == SETTINGS_ROW_MUSIC_SHUFFLE {toggleBoolPtr(params.music_shuffle); return SETTINGS_ACTION_NONE;}
     if row == SETTINGS_ROW_BACK {return SETTINGS_ACTION_BACK;}
     return SETTINGS_ACTION_NONE;
 }
@@ -2237,9 +2319,11 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
         if g_settings.song_picker_scroll < 0.0 as f32 {g_settings.song_picker_scroll = 0.0 as f32;}
         if g_settings.song_picker_scroll > song_max_scroll as f32 {g_settings.song_picker_scroll = song_max_scroll as f32;}
 
-        if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 298, 388, 68 * song_visible) {
-            i32 sidx = (((mouse.y - uiY(298) as f32) / (uiS(68) as f32)) + g_settings.song_picker_scroll) as i32;
-            if sidx >= 0 && sidx < song_count {g_settings.song_picker_selected = sidx;}
+        if !g_settings.keyboard_nav_lock {
+            i32 hovered = 0;
+            if uiScrollListHoverIndex(mouse, 130, 298, 388, 68, song_visible, g_settings.song_picker_scroll, song_count, &hovered) {
+                g_settings.song_picker_selected = hovered;
+            }
         }
         if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 806, 388, 56) {g_settings.song_picker_selected = song_count;}
 
@@ -2251,7 +2335,8 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
                 return SETTINGS_ACTION_NONE;
             }
             if g_settings.song_picker_selected >= 0 && g_settings.song_picker_selected < song_count {
-                g_star_music_track_disabled[g_settings.song_picker_selected] = !g_star_music_track_disabled[g_settings.song_picker_selected];
+                i32 idx = g_settings.song_picker_selected;
+                g_star_music_track_disabled[idx] = toggled(g_star_music_track_disabled[idx]);
                 if countEnabledTracks() <= 0 {
                     g_star_music_track_disabled[g_settings.song_picker_selected] = false;
                 }
@@ -2287,9 +2372,11 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
         if g_settings.picker_scroll < 0.0 as f32 {g_settings.picker_scroll = 0.0 as f32;}
         if g_settings.picker_scroll > max_scroll as f32 {g_settings.picker_scroll = max_scroll as f32;}
 
-        if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 298, 388, 68 * visible) {
-            i32 idx = (((mouse.y - uiY(298) as f32) / (uiS(68) as f32)) + g_settings.picker_scroll) as i32;
-            if idx >= 0 && idx < g_settings.picker_count {g_settings.picker_selected = idx;}
+        if !g_settings.keyboard_nav_lock {
+            i32 hovered = 0;
+            if uiScrollListHoverIndex(mouse, 130, 298, 388, 68, visible, g_settings.picker_scroll, g_settings.picker_count, &hovered) {
+                g_settings.picker_selected = hovered;
+            }
         }
         if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 130, 806, 388, 56) {g_settings.picker_selected = g_settings.picker_count;}
 
@@ -2379,14 +2466,12 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
 
     i32 visible_rows = item_count;
     if visible_rows > SETTINGS_VISIBLE_ROWS {visible_rows = SETTINGS_VISIBLE_ROWS;}
-    i64 list_h_base = 18 + (visible_rows as i64) * 78;
-    if !g_settings.keyboard_nav_lock && pointInBaseRect(mouse.x, mouse.y, 112, 232, 424, list_h_base) {
-        f32 row_h = uiS(78) as f32;
-        f32 local = (mouse.y - (uiY(246) as f32)) / row_h;
-        i32 hovered_order = (local + g_settings.scroll) as i32;
-        if hovered_order < 0 {hovered_order = 0;}
-        if hovered_order >= item_count {hovered_order = item_count - 1;}
-        g_settings.selected_row = rowFromOrder(hovered_order, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
+
+    if !g_settings.keyboard_nav_lock {
+        i32 hovered_order = 0;
+        if uiScrollListHoverIndex(mouse, 112, 246, 424, 78, visible_rows, g_settings.scroll, item_count, &hovered_order) {
+            g_settings.selected_row = rowFromOrder(hovered_order, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
+        }
     }
 
     if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {

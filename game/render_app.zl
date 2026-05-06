@@ -529,23 +529,19 @@ fun drawThemeManagerOverlayPreview(font: Font, theme: Theme) >> void {
 fun drawOnlineRestartReadyOverlay(font: Font, theme: Theme, box_x: i64, box_y: i64, box_w: i64) >> void {
     if !isOnlineDuelMode() {return;}
 
-    ptr<u8> local_status = "YOU [ ]";
     u32 local_color = alphaColor(theme.text_muted, 0.92 as f32);
     if g_online_local_restart_ready {
-        local_status = "YOU [X]";
         local_color = alphaColor(pieceColor(theme, PIECE_S), 0.95 as f32);
     }
 
-    ptr<u8> remote_status = "OPP [ ]";
     u32 remote_color = alphaColor(theme.text_muted, 0.92 as f32);
     if g_online_remote_restart_ready {
-        remote_status = "OPP [X]";
         remote_color = alphaColor(pieceColor(theme, PIECE_I), 0.95 as f32);
     }
 
     i64 line_y = box_y + 100;
-    drawTextColor(font, local_status, box_x + 24, line_y, 12, local_color);
-    drawTextColor(font, remote_status, box_x + box_w - 118, line_y, 12, remote_color);
+    drawTextColor(font, TextFormat("YOU %s", checkboxText(g_online_local_restart_ready)), box_x + 24, line_y, 12, local_color);
+    drawTextColor(font, TextFormat("OPP %s", checkboxText(g_online_remote_restart_ready)), box_x + box_w - 118, line_y, 12, remote_color);
 }
 
 fun controlsHintY() >> i64 {
