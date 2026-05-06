@@ -68,6 +68,12 @@ fun challengeRowY(row: i32) >> i64 {
 
 fun challengeRowBodyHit(mouse: Vector2, row: i32) >> bool {
     if !challengeRowVisible(row) {return false;}
+
+    i32 visible_rows = challengeVisibleCount();
+    if visible_rows > CHALLENGE_VISIBLE_ROWS {visible_rows = CHALLENGE_VISIBLE_ROWS;}
+    if visible_rows < 0 {visible_rows = 0;}
+    if !pointInBaseRect(mouse.x, mouse.y, 112, 246, 424, (visible_rows as i64) * 78) {return false;}
+
     return pointInBaseRect(mouse.x, mouse.y, 118, challengeRowY(row), 412, 62);
 }
 
@@ -334,7 +340,7 @@ fun challengeNudge(row: i32, dir: i32) >> void {
         return;
     }
     if challengeToggleRow(row) {
-        g_challenge_infinite_hold = !g_challenge_infinite_hold;
+        g_challenge_infinite_hold = toggled(g_challenge_infinite_hold);
         return;
     }
     if row == CHALLENGE_ROW_KICK_TABLE {
@@ -431,9 +437,7 @@ fun drawChallengeToggleRow(font: Font, theme: Theme, row: i32) >> void {
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, challengeLabelText(row), 136, y + 20, 15, theme.text_main);
-    ptr<u8> mark = "[ ]";
-    if g_challenge_infinite_hold {mark = "[X]";}
-    drawTextColor(font, mark, 470, y + 20, 15, theme.panel_stroke);
+    drawCheckboxText(font, g_challenge_infinite_hold, 470, y + 20, 15, theme.panel_stroke);
 }
 
 fun drawChallengeButtonRow(font: Font, theme: Theme, row: i32) >> void {

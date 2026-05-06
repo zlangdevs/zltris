@@ -45,6 +45,11 @@ struct OnlineDuelSetupState {
     mouse_last_y f32,
     keyboard_nav_lock bool,
     editing_host bool,
+    host_cursor i32,
+    host_left_repeat f32,
+    host_right_repeat f32,
+    host_backspace_repeat f32,
+    host_delete_repeat f32,
 }
 
 OnlineDuelSetupState g_online_setup = {0};
@@ -64,6 +69,11 @@ fun onlineDuelSetupUiInit() >> void {
     g_online_setup.mouse_last_y = 0.0 as f32;
     g_online_setup.keyboard_nav_lock = false;
     g_online_setup.editing_host = false;
+    g_online_setup.host_cursor = strlen(&g_online_host[0]) as i32;
+    g_online_setup.host_left_repeat = 0.0 as f32;
+    g_online_setup.host_right_repeat = 0.0 as f32;
+    g_online_setup.host_backspace_repeat = 0.0 as f32;
+    g_online_setup.host_delete_repeat = 0.0 as f32;
 }
 
 fun onlineCanEditSettings() >> bool {
@@ -120,6 +130,12 @@ fun onlineRowY(row: i32) >> i64 {
 
 fun onlineRowBodyHit(mouse: Vector2, row: i32) >> bool {
     if !onlineRowVisible(row) {return false;}
+
+    i32 visible_rows = onlineVisibleCount();
+    if visible_rows > ONLINE_VISIBLE_ROWS {visible_rows = ONLINE_VISIBLE_ROWS;}
+    if visible_rows < 0 {visible_rows = 0;}
+    if !pointInBaseRect(mouse.x, mouse.y, 112, 246, 424, (visible_rows as i64) * 78) {return false;}
+
     return pointInBaseRect(mouse.x, mouse.y, 118, onlineRowY(row), 412, 62);
 }
 
@@ -349,7 +365,7 @@ fun onlineNudge(row: i32, dir: i32) >> void {
         return;
     }
     if row == ONLINE_ROW_INFINITE_HOLD {
-        g_online_infinite_hold = !g_online_infinite_hold;
+        g_online_infinite_hold = toggled(g_online_infinite_hold);
         onlineSyncConfigIfNeeded();
         return;
     }
@@ -360,7 +376,7 @@ fun onlineNudge(row: i32, dir: i32) >> void {
     }
     if row == ONLINE_ROW_GUEST_EDIT {
         if g_online_role == ONLINE_ROLE_HOST {
-            g_online_allow_guest_edit = !g_online_allow_guest_edit;
+            g_online_allow_guest_edit = toggled(g_online_allow_guest_edit);
             onlineSyncConfigIfNeeded();
         }
         return;
@@ -472,11 +488,9 @@ fun drawOnlineToggleRow(font: Font, theme: Theme, row: i32) >> void {
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
     drawTextColor(font, onlineLabelText(row), 136, y + 20, 15, text_color);
-    ptr<u8> mark = "[ ]";
     bool val = g_online_infinite_hold;
     if row == ONLINE_ROW_GUEST_EDIT {val = g_online_allow_guest_edit;}
-    if val {mark = "[X]";}
-    drawTextColor(font, mark, 470, y + 20, 15, val_color);
+    drawCheckboxText(font, val, 470, y + 20, 15, val_color);
 }
 
 fun drawOnlineButtonRow(font: Font, theme: Theme, row: i32) >> void {
@@ -491,6 +505,50 @@ fun drawOnlineButtonRow(font: Font, theme: Theme, row: i32) >> void {
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
     drawTextCenteredInRect(font, onlineLabelText(row), 118, y + 2, 412, 58, 15, theme.text_main);
+}
+
+fun onlineHostLen() >> i32 {
+    return uiTextLen(&g_online_host[0]);
+}
+
+fun onlineClampHostCursor() >> void {
+    uiTextClampCursor(&g_online_host[0], &g_online_setup.host_cursor);
+}
+
+fun onlineHostAllowedByte(ch: u8) >> bool {
+    if ch >= ('a' as u8) && ch <= ('z' as u8) {return true;}
+    if ch >= ('A' as u8) && ch <= ('Z' as u8) {return true;}
+    if ch >= ('0' as u8) && ch <= ('9' as u8) {return true;}
+    if ch == ('.' as u8) || ch == ('-' as u8) || ch == ('_' as u8) || ch == (':' as u8) || ch == ('[' as u8) || ch == (']' as u8) {return true;}
+    return false;
+}
+
+fun onlineHostInsertByte(ch: u8) >> void {
+    if !onlineHostAllowedByte(ch) {return;}
+    uiTextInsertByteAtCursor(&g_online_host[0], ONLINE_ADDR_MAX, &g_online_setup.host_cursor, ch);
+}
+
+fun onlineHostDeleteAtCursor(backspace: bool) >> void {
+    uiTextDeleteAtCursor(&g_online_host[0], &g_online_setup.host_cursor, backspace);
+}
+
+fun onlineHostInsertText(text: ptr<u8>) >> void {
+    if text == (0 as ptr<u8>) {return;}
+    i32 i = 0;
+    for (text[i] != 0) {
+        u8 ch = text[i];
+        if ch == ('\n' as u8) || ch == ('\r' as u8) || ch == ('\t' as u8) {
+            i += 1;
+            continue;
+        }
+        onlineHostInsertByte(ch);
+        i += 1;
+    }
+}
+
+fun onlineHostCursorOffset(font: Font, size: i64, start_idx: i32) >> i64 {
+    onlineClampHostCursor();
+    return uiTextRangeWidth(font, &g_online_host[0], size, start_idx, g_online_setup.host_cursor);
 }
 
 fun drawOnlineHostInputRow(font: Font, theme: Theme, row: i32) >> void {
@@ -516,16 +574,26 @@ fun drawOnlineHostInputRow(font: Font, theme: Theme, row: i32) >> void {
     strokeRect(fx, fy, fw, fh, field_stroke);
 
     ptr<u8> placeholder = "enter host ip or domain";
+    i64 text_x = fx + 8;
+    i64 text_y = fy + 4;
+    i64 text_w = fw - 16;
+    i64 visible_w = text_w - 2;
+    if visible_w < 1 {visible_w = 1;}
+
+    i32 start = uiTextVisibleStartForCursor(font, &g_online_host[0], 12, g_online_setup.host_cursor, visible_w);
     if g_online_host[0] == 0 {
-        drawTextColor(font, placeholder, fx + 8, fy + 4, 12, alphaColor(theme.text_muted, 0.76 as f32));
+        drawTextColor(font, placeholder, text_x, text_y, 12, alphaColor(theme.text_muted, 0.76 as f32));
     } else {
-        drawTextColor(font, &g_online_host[0], fx + 8, fy + 4, 12, theme.panel_stroke);
+        BeginScissorMode(uiX(text_x), uiY(text_y), uiS(text_w), uiS(16));
+        drawTextColor(font, &g_online_host[start], text_x, text_y, 12, theme.panel_stroke);
+        EndScissorMode();
     }
 
     if g_online_setup.editing_host {
-        i64 text_w = onlineMeasureTextWidth(font, &g_online_host[0], 12);
-        i64 cx = fx + 8 + text_w + 1;
-        fillRect(cx, fy + 4, 2, 14, alphaColor(theme.text_main, 0.94 as f32));
+        i64 cursor_dx = onlineHostCursorOffset(font, 12, start);
+        i64 cx = text_x + cursor_dx;
+        f32 blink = fractf((GetTime() as f32) * (1.4 as f32));
+        if blink < 0.65 as f32 {fillRect(cx, text_y, 2, 14, alphaColor(theme.text_main, 0.94 as f32));}
     }
 }
 
@@ -633,24 +701,56 @@ fun onlineHostEditTick() >> void {
     if IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_ENTER) {
         g_online_setup.editing_host = false;
         if g_online_host[0] == 0 {copyFixed(&g_online_host[0], "127.0.0.1", ONLINE_ADDR_MAX);}
+        onlineClampHostCursor();
         return;
     }
 
-    if IsKeyPressed(KEY_BACKSPACE) {
-        i32 len = strlen(&g_online_host[0]) as i32;
-        if len > 0 {g_online_host[len - 1] = 0;}
+    onlineClampHostCursor();
+
+    bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+    if (ctrl && IsKeyPressed(KEY_V)) || (shift && IsKeyPressed(KEY_INSERT)) {
+        onlineHostInsertText(GetClipboardText());
     }
 
-    for (true) {
-        i32 ch = GetCharPressed();
-        if ch == 0 {break;}
-        if ch < 32 || ch > 126 {continue;}
-        i32 len = strlen(&g_online_host[0]) as i32;
-        i32 cap = ONLINE_ADDR_MAX;
-        if len >= cap - 1 {continue;}
-        g_online_host[len] = ch as u8;
-        g_online_host[len + 1] = 0;
+    if ctrl && (IsKeyPressed(KEY_C) || IsKeyPressed(KEY_INSERT)) {
+        SetClipboardText(&g_online_host[0]);
     }
+
+    if ctrl && IsKeyPressed(KEY_X) {
+        SetClipboardText(&g_online_host[0]);
+        g_online_host[0] = 0;
+        g_online_setup.host_cursor = 0;
+    }
+
+    if IsKeyPressed(KEY_HOME) {g_online_setup.host_cursor = 0;}
+    if IsKeyPressed(KEY_END) {g_online_setup.host_cursor = onlineHostLen();}
+
+    if uiKeyRepeatPulse(KEY_LEFT, &g_online_setup.host_left_repeat, 0.28 as f32, 0.04 as f32) {
+        g_online_setup.host_cursor -= 1;
+    }
+    if uiKeyRepeatPulse(KEY_RIGHT, &g_online_setup.host_right_repeat, 0.28 as f32, 0.04 as f32) {
+        g_online_setup.host_cursor += 1;
+    }
+
+    if uiKeyRepeatPulse(KEY_BACKSPACE, &g_online_setup.host_backspace_repeat, 0.32 as f32, 0.035 as f32) {
+        onlineHostDeleteAtCursor(true);
+    }
+    if uiKeyRepeatPulse(KEY_DELETE, &g_online_setup.host_delete_repeat, 0.32 as f32, 0.035 as f32) {
+        onlineHostDeleteAtCursor(false);
+    }
+
+    if !ctrl {
+        for (true) {
+            i32 ch = GetCharPressed();
+            if ch == 0 {break;}
+            if ch < 32 || ch > 126 {continue;}
+            onlineHostInsertByte(ch as u8);
+        }
+    }
+
+    onlineClampHostCursor();
 }
 
 fun updateOnlineDuelSetup() >> i32 {
@@ -682,14 +782,30 @@ fun updateOnlineDuelSetup() >> i32 {
     if g_online_setup.scroll < 0.0 as f32 {g_online_setup.scroll = 0.0 as f32;}
     if g_online_setup.scroll > (max_scroll as f32) {g_online_setup.scroll = max_scroll as f32;}
 
+    i32 item_count = onlineVisibleCount();
+    i32 visible_rows = item_count;
+    if visible_rows > ONLINE_VISIBLE_ROWS {visible_rows = ONLINE_VISIBLE_ROWS;}
+    if !g_online_setup.keyboard_nav_lock {
+        i32 hovered_order = 0;
+        if uiScrollListHoverIndex(mouse, 112, 246, 424, 78, visible_rows, g_online_setup.scroll, item_count, &hovered_order) {
+            g_online_setup.selected_row = onlineRowFromOrder(hovered_order);
+        }
+    }
+
     for i32 row = 0; row < ONLINE_ROW_COUNT; row++ {
         if !onlineRowVisible(row) {continue;}
         if onlineRowBodyHit(mouse, row) {
-            if !g_online_setup.keyboard_nav_lock {g_online_setup.selected_row = row;}
             if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
                 g_online_setup.keyboard_nav_lock = false;
                 g_online_setup.selected_row = row;
-                if row == ONLINE_ROW_HOST {g_online_setup.editing_host = true;}
+                if row == ONLINE_ROW_HOST {
+                    g_online_setup.editing_host = true;
+                    g_online_setup.host_cursor = onlineHostLen();
+                    g_online_setup.host_left_repeat = 0.0 as f32;
+                    g_online_setup.host_right_repeat = 0.0 as f32;
+                    g_online_setup.host_backspace_repeat = 0.0 as f32;
+                    g_online_setup.host_delete_repeat = 0.0 as f32;
+                }
                 if row == ONLINE_ROW_BACK {return ONLINE_SETUP_ACTION_BACK;}
                 if row == ONLINE_ROW_START {
                     if !g_online_start_requested || g_online_net_state == ONLINE_NET_STATE_ERROR || g_online_net_state == ONLINE_NET_STATE_DISCONNECTED {
@@ -716,6 +832,11 @@ fun updateOnlineDuelSetup() >> i32 {
         i32 sel = g_online_setup.selected_row;
         if sel == ONLINE_ROW_HOST {
             g_online_setup.editing_host = true;
+            g_online_setup.host_cursor = onlineHostLen();
+            g_online_setup.host_left_repeat = 0.0 as f32;
+            g_online_setup.host_right_repeat = 0.0 as f32;
+            g_online_setup.host_backspace_repeat = 0.0 as f32;
+            g_online_setup.host_delete_repeat = 0.0 as f32;
             return ONLINE_SETUP_ACTION_NONE;
         }
         if sel == ONLINE_ROW_BACK {return ONLINE_SETUP_ACTION_BACK;}
