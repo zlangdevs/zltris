@@ -48,6 +48,11 @@ struct MenuState {
     versus_index i32,
     online_open bool,
     online_index i32,
+    transition_active bool,
+    transition_progress f32,
+    transition_dir i32,
+    transition_from i32,
+    transition_to i32,
 }
 
 fun init(self: MenuState) >> MenuState {
@@ -64,6 +69,23 @@ fun init(self: MenuState) >> MenuState {
     next.versus_index = 0;
     next.online_open = false;
     next.online_index = 0;
+    next.transition_active = false;
+    next.transition_progress = 0.0;
+    next.transition_dir = 1;
+    next.transition_from = 0;
+    next.transition_to = 0;
+    return next;
+}
+
+fun tick_transition(self: MenuState, dt: f32) >> MenuState {
+    MenuState next = self;
+    if next.transition_active {
+        next.transition_progress += dt / (0.42 as f32);
+        if next.transition_progress >= 1.0 {
+            next.transition_progress = 1.0;
+            next.transition_active = false;
+        }
+    }
     return next;
 }
 
@@ -123,8 +145,42 @@ fun show_notice(self: MenuState, idx: i32) >> MenuState {
 
 MenuState g_menu = {0};
 
+f32 g_btn_off_x = 0.0;
+f32 g_btn_off_y = 0.0;
+f32 g_btn_alpha = 1.0;
+
 fun menuInit() >> void {
     g_menu = g_menu.init();
+}
+
+fun pageDepth(p: i32) >> i32 {
+    if p == 0 {return 0;}
+    if p == 3 {return 2;}
+    return 1;
+}
+
+fun currentPageId() >> i32 {
+    if g_menu.online_open {return 3;}
+    if g_menu.versus_open {return 2;}
+    if g_menu.solo_open {return 1;}
+    return 0;
+}
+
+fun startPageTransition(from: i32, to: i32) >> void {
+    if from == to {return;}
+    g_menu.transition_active = true;
+    g_menu.transition_progress = 0.0;
+    g_menu.transition_from = from;
+    g_menu.transition_to = to;
+    i32 dir = 1;
+    if pageDepth(to) < pageDepth(from) {dir = -1;}
+    g_menu.transition_dir = dir;
+}
+
+fun easeOutCubic(t: f32) >> f32 {
+    f32 c = clamp01(t);
+    f32 inv = 1.0 - c;
+    return 1.0 - inv * inv * inv;
 }
 
 fun menuActionNone() >> i32 { return MENU_ACTION_NONE; }
@@ -202,6 +258,7 @@ fun selectMenuIndex(index: i32) >> i32 {
         g_menu.versus_open = false;
         g_menu.solo_index = 0;
         g_menu.keyboard_nav_lock = true;
+        startPageTransition(0, 1);
         return MENU_ACTION_NONE;
     }
     if index == MENU_BTN_AGAINST_BOT {
@@ -209,6 +266,7 @@ fun selectMenuIndex(index: i32) >> i32 {
         g_menu.solo_open = false;
         g_menu.versus_index = MENU_VERSUS_AGAINST_BOT;
         g_menu.keyboard_nav_lock = true;
+        startPageTransition(0, 2);
         return MENU_ACTION_NONE;
     }
     i32 action = menuActionForIndex(index);
@@ -270,6 +328,7 @@ fun selectVersusIndex(index: i32) >> i32 {
             g_menu.online_open = true;
             g_menu.online_index = 0;
             g_menu.keyboard_nav_lock = true;
+            startPageTransition(2, 3);
             return MENU_ACTION_NONE;
         }
     }
@@ -331,109 +390,171 @@ fun drawRetroGrid(theme: Theme) >> void {
 }
 
 fun drawMenuButton(font: Font, theme: Theme, index: i32) >> void {
-    i64 x = 148;
-    i64 y = menuButtonY(index);
+    i64 x = (148 as i64) + (g_btn_off_x as i64);
+    i64 y = menuButtonY(index) + (g_btn_off_y as i64);
     i64 w = 352;
     i64 h = 72;
 
     bool selected = index == g_menu.index;
     bool enabled = menuEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52);
-    u32 text_color = theme.text_main;
+    u32 bg = alphaColor(theme.panel_bg, (0.90 as f32) * g_btn_alpha);
+    u32 stroke = alphaColor(theme.panel_stroke, (0.52 as f32) * g_btn_alpha);
+    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
 
     if (selected) {
-        bg = alphaColor(theme.board_bg, 0.98);
-        stroke = theme.panel_stroke;
+        bg = alphaColor(theme.board_bg, (0.98 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
     }
     if (!enabled) {
-        text_color = alphaColor(theme.text_muted, 0.76);
-        stroke = alphaColor(theme.text_muted, 0.42);
+        text_color = alphaColor(theme.text_muted, (0.76 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.text_muted, (0.42 as f32) * g_btn_alpha);
     }
 
     fillRect(x, y, w, h, bg);
     strokeRect(x, y, w, h, stroke);
     drawTextColor(font, menuLabel(index), x + 24, y + 24, 18, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, 0.82));}
+    if !enabled {drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, (0.82 as f32) * g_btn_alpha));}
 }
 
 fun drawSoloButton(font: Font, theme: Theme, index: i32) >> void {
-    i64 x = 148;
-    i64 y = soloButtonY(index);
+    i64 x = (148 as i64) + (g_btn_off_x as i64);
+    i64 y = soloButtonY(index) + (g_btn_off_y as i64);
     i64 w = 352;
     i64 h = 64;
 
     bool selected = index == g_menu.solo_index;
     bool enabled = soloEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52);
-    u32 text_color = theme.text_main;
+    u32 bg = alphaColor(theme.panel_bg, (0.90 as f32) * g_btn_alpha);
+    u32 stroke = alphaColor(theme.panel_stroke, (0.52 as f32) * g_btn_alpha);
+    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
 
     if selected {
-        bg = alphaColor(theme.board_bg, 0.98);
-        stroke = theme.panel_stroke;
+        bg = alphaColor(theme.board_bg, (0.98 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
     }
     if !enabled {
-        text_color = alphaColor(theme.text_muted, 0.76);
-        stroke = alphaColor(theme.text_muted, 0.42);
+        text_color = alphaColor(theme.text_muted, (0.76 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.text_muted, (0.42 as f32) * g_btn_alpha);
     }
 
     fillRect(x, y, w, h, bg);
     strokeRect(x, y, w, h, stroke);
     drawTextColor(font, soloLabel(index), x + 24, y + 22, 16, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, 0.80));}
+    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, (0.80 as f32) * g_btn_alpha));}
 }
 
 fun drawVersusButton(font: Font, theme: Theme, index: i32) >> void {
-    i64 x = 148;
-    i64 y = versusButtonY(index);
+    i64 x = (148 as i64) + (g_btn_off_x as i64);
+    i64 y = versusButtonY(index) + (g_btn_off_y as i64);
     i64 w = 352;
     i64 h = 64;
 
     bool selected = index == g_menu.versus_index;
     bool enabled = versusEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52);
-    u32 text_color = theme.text_main;
+    u32 bg = alphaColor(theme.panel_bg, (0.90 as f32) * g_btn_alpha);
+    u32 stroke = alphaColor(theme.panel_stroke, (0.52 as f32) * g_btn_alpha);
+    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
 
     if selected {
-        bg = alphaColor(theme.board_bg, 0.98);
-        stroke = theme.panel_stroke;
+        bg = alphaColor(theme.board_bg, (0.98 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
     }
     if !enabled {
-        text_color = alphaColor(theme.text_muted, 0.76);
-        stroke = alphaColor(theme.text_muted, 0.42);
+        text_color = alphaColor(theme.text_muted, (0.76 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.text_muted, (0.42 as f32) * g_btn_alpha);
     }
 
     fillRect(x, y, w, h, bg);
     strokeRect(x, y, w, h, stroke);
     drawTextColor(font, versusLabel(index), x + 24, y + 22, 16, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, 0.80));}
+    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, (0.80 as f32) * g_btn_alpha));}
 }
 
 fun drawOnlineButton(font: Font, theme: Theme, index: i32) >> void {
-    i64 x = 148;
-    i64 y = onlineButtonY(index);
+    i64 x = (148 as i64) + (g_btn_off_x as i64);
+    i64 y = onlineButtonY(index) + (g_btn_off_y as i64);
     i64 w = 352;
     i64 h = 64;
 
     bool selected = index == g_menu.online_index;
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52);
-    u32 text_color = theme.text_main;
+    u32 bg = alphaColor(theme.panel_bg, (0.90 as f32) * g_btn_alpha);
+    u32 stroke = alphaColor(theme.panel_stroke, (0.52 as f32) * g_btn_alpha);
+    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
 
     if selected {
-        bg = alphaColor(theme.board_bg, 0.98);
-        stroke = theme.panel_stroke;
+        bg = alphaColor(theme.board_bg, (0.98 as f32) * g_btn_alpha);
+        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
     }
 
     fillRect(x, y, w, h, bg);
     strokeRect(x, y, w, h, stroke);
     drawTextColor(font, onlineLabel(index), x + 24, y + 22, 16, text_color);
+}
+
+fun drawPageContents(font: Font, theme: Theme, page: i32, t_in: f32, slide_sign: f32, incoming: bool) >> void {
+    f32 t = clamp01(t_in);
+    f32 page_alpha = easeOutCubic(t);
+    f32 base_off_x = (1.0 - easeOutCubic(t)) * slide_sign * (220.0 as f32);
+
+    i32 count = 0;
+    ptr<u8> header = "";
+    bool show_header = true;
+    if page == 0 {count = menuButtonCount(); show_header = false;}
+    if page == 1 {count = MENU_SOLO_COUNT; header = "SOLO";}
+    if page == 2 {count = MENU_VERSUS_COUNT; header = "VERSUS";}
+    if page == 3 {count = 2; header = "ONLINE DUEL";}
+
+    g_btn_off_x = base_off_x;
+    g_btn_off_y = 0.0;
+    g_btn_alpha = page_alpha;
+
+    if show_header {
+        i64 hx = (172 as i64) + (base_off_x as i64);
+        u32 hcol = alphaColor(theme.text_muted, (0.90 as f32) * page_alpha);
+        drawTextColor(font, header, hx, 290, 13, hcol);
+        i64 lx1 = (148 as i64) + (base_off_x as i64);
+        i64 lx2 = (500 as i64) + (base_off_x as i64);
+        drawLineBase(lx1, 310, lx2, 310, alphaColor(theme.panel_stroke, (0.60 as f32) * page_alpha));
+    }
+
+    for i32 i = 0; i < count; i++ {
+        f32 lead = 0.0;
+        if incoming {lead = (i as f32) * (0.06 as f32);}
+        else {lead = ((count - 1 - i) as f32) * (0.06 as f32);}
+        f32 denom = 1.0 - lead;
+        if denom < 0.001 {denom = 0.001;}
+        f32 b_t = (t - lead) / denom;
+        f32 eased = easeOutCubic(b_t);
+
+        g_btn_off_x = base_off_x + (1.0 - eased) * slide_sign * (110.0 as f32);
+        g_btn_off_y = (1.0 - eased) * (18.0 as f32);
+        g_btn_alpha = eased * page_alpha;
+
+        if page == 0 {drawMenuButton(font, theme, i);}
+        if page == 1 {drawSoloButton(font, theme, i);}
+        if page == 2 {drawVersusButton(font, theme, i);}
+        if page == 3 {drawOnlineButton(font, theme, i);}
+    }
+
+    g_btn_off_x = base_off_x;
+    g_btn_off_y = 0.0;
+    g_btn_alpha = page_alpha;
+    u32 hint_col = alphaColor(theme.text_muted, page_alpha);
+    i64 hx2 = (146 as i64) + (base_off_x as i64);
+    if page == 0 {
+        drawTextColor(font, "UP/DOWN choose  ENTER select", hx2, 761, 12, hint_col);
+        drawTextColor(font, "ESC in game returns here", hx2, 784, 12, hint_col);
+    } else {
+        drawTextColor(font, "UP/DOWN choose  ENTER select  ESC back", hx2, 761, 12, hint_col);
+    }
+
+    g_btn_off_x = 0.0;
+    g_btn_off_y = 0.0;
+    g_btn_alpha = 1.0;
 }
 
 fun drawMenu(font: Font, theme: Theme) >> void {
@@ -448,34 +569,15 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     drawTextColor(font, "ZLTRIS", 220, 156, 36, theme.text_main);
     drawTextColor(font, "Modern handling, classic pleasure.", 138, 212, 11, theme.text_muted);
 
-    if g_menu.solo_open {
-        drawTextColor(font, "SOLO", 172 as i64, 290 as i64, 13, alphaColor(theme.text_muted, 0.90 as f32));
-        drawLineBase(148 as i64, 310 as i64, 500 as i64, 310 as i64, alphaColor(theme.panel_stroke, 0.60 as f32));
-        for i32 i = 0; i < MENU_SOLO_COUNT; i++ {
-            drawSoloButton(font, theme, i);
-        }
-        drawTextColor(font, "UP/DOWN choose  ENTER select  ESC back", 146, 761, 12, theme.text_muted);
-    } else if g_menu.versus_open {
-        drawTextColor(font, "VERSUS", 172 as i64, 290 as i64, 13, alphaColor(theme.text_muted, 0.90 as f32));
-        drawLineBase(148 as i64, 310 as i64, 500 as i64, 310 as i64, alphaColor(theme.panel_stroke, 0.60 as f32));
-        for i32 i = 0; i < MENU_VERSUS_COUNT; i++ {
-            drawVersusButton(font, theme, i);
-        }
-        drawTextColor(font, "UP/DOWN choose  ENTER select  ESC back", 146, 761, 12, theme.text_muted);
-    } else if g_menu.online_open {
-        drawTextColor(font, "ONLINE DUEL", 172 as i64, 290 as i64, 13, alphaColor(theme.text_muted, 0.90 as f32));
-        drawLineBase(148 as i64, 310 as i64, 500 as i64, 310 as i64, alphaColor(theme.panel_stroke, 0.60 as f32));
-        for i32 i = 0; i < 2; i++ {
-            drawOnlineButton(font, theme, i);
-        }
-        drawTextColor(font, "UP/DOWN choose  ENTER select  ESC back", 146, 761, 12, theme.text_muted);
+    if g_menu.transition_active {
+        f32 p = g_menu.transition_progress;
+        f32 dir = g_menu.transition_dir as f32;
+        f32 inv_p = (1.0 as f32) - p;
+        f32 neg_dir = (0.0 as f32) - dir;
+        drawPageContents(font, theme, g_menu.transition_from, inv_p, neg_dir, false);
+        drawPageContents(font, theme, g_menu.transition_to, p, dir, true);
     } else {
-        i32 count = menuButtonCount();
-        for i32 i = 0; i < count; i++ {
-            drawMenuButton(font, theme, i);
-        }
-        drawTextColor(font, "UP/DOWN choose  ENTER select", 146, 761, 12, theme.text_muted);
-        drawTextColor(font, "ESC in game returns here", 146, 784, 12, theme.text_muted);
+        drawPageContents(font, theme, currentPageId(), 1.0 as f32, 1.0 as f32, true);
     }
 
     if (g_menu.notice_timer > 0.0) {
@@ -493,6 +595,11 @@ fun drawMenu(font: Font, theme: Theme) >> void {
 fun menuUpdate() >> i32 {
     f32 dt = GetFrameTime();
     g_menu = g_menu.tick_notice(dt);
+    g_menu = g_menu.tick_transition(dt);
+
+    if g_menu.transition_active {
+        return MENU_ACTION_NONE;
+    }
 
     Vector2 mouse = GetMousePosition();
     bool mouse_moved = absf(mouse.x - g_menu.mouse_last_x) > 0.5 || absf(mouse.y - g_menu.mouse_last_y) > 0.5;
@@ -504,6 +611,7 @@ fun menuUpdate() >> i32 {
         if IsKeyPressed(KEY_ESCAPE) {
             g_menu.solo_open = false;
             g_menu.keyboard_nav_lock = true;
+            startPageTransition(1, 0);
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {
@@ -535,6 +643,7 @@ fun menuUpdate() >> i32 {
         if IsKeyPressed(KEY_ESCAPE) {
             g_menu.versus_open = false;
             g_menu.keyboard_nav_lock = true;
+            startPageTransition(2, 0);
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {
@@ -567,6 +676,7 @@ fun menuUpdate() >> i32 {
             g_menu.online_open = false;
             g_menu.versus_open = true;
             g_menu.keyboard_nav_lock = true;
+            startPageTransition(3, 2);
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {

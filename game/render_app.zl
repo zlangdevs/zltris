@@ -3,6 +3,7 @@ use raylib
 use std.string
 use zltris.menu
 use zltris.scale
+use zltris.screen_transition
 use zltris.settings
 use zltris.theme
 use zltris.ui
@@ -61,7 +62,7 @@ use zltris.ui
 #define SHADER_MODE_CUSTOM 4
 #define CUSTOM_SHADER_NAME_MAX 96
 
-fun drawAppContent(font: Font, theme: Theme) >> void {
+fun drawAppContentInner(font: Font, theme: Theme) >> void {
     if (g_game.screen == SCREEN_MENU) {
         drawMenu(font, theme);
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
@@ -171,6 +172,11 @@ fun drawAppContent(font: Font, theme: Theme) >> void {
     if isBotDuelsMode() {drawBotDuelsFrame(font);} else {drawGameFrame(font);}
 }
 
+fun drawAppContent(font: Font, theme: Theme) >> void {
+    drawAppContentInner(font, theme);
+    drawScreenTransitionOverlay(theme);
+}
+
 fun applyUiScaleBaseForScreen() >> void {
     if g_game.screen == SCREEN_SETTINGS && settingsThemeManagerOpen() {
         setScaleBase(THEME_EDITOR_BASE_W, UI_BASE_H);
@@ -183,6 +189,11 @@ fun applyUiScaleBaseForScreen() >> void {
     }
 
     if g_game.screen == SCREEN_ONLINE_DUEL_SETUP {
+        setScaleBase(900, UI_BASE_H);
+        return;
+    }
+
+    if g_game.screen == SCREEN_CHALLENGE_SETUP {
         setScaleBase(900, UI_BASE_H);
         return;
     }
@@ -331,6 +342,58 @@ fun drawApp(font: Font) >> void {
     EndDrawing();
 }
 
+fun menuActionUsesGameTransition(action: i32) >> bool {
+    if action == menuActionStartFreePlay() {return true;}
+    if action == menuActionStart40Lines() {return true;}
+    if action == menuActionStartBlitz() {return true;}
+    if action == menuActionStartComboTrainer() {return true;}
+    return false;
+}
+
+fun menuActionUsesSettingsTransition(action: i32) >> bool {
+    return action == menuActionOpenSettings();
+}
+
+fun applyMenuAction(action: i32) >> void {
+    if (action == menuActionStartFreePlay()) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_FREE_PLAY);
+    } else if (action == menuActionStart40Lines()) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_40_LINES);
+    } else if (action == menuActionStartBlitz()) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_BLITZ);
+    } else if (action == menuActionOpenChallengeSetup()) {
+        challengeInit();
+        g_game = g_game.with_screen(SCREEN_CHALLENGE_SETUP);
+    } else if (action == menuActionOpenRhythmSetup()) {
+        rhythmPrepareCustomMusicPlaylist();
+        rhythmSetupInit();
+        g_game = g_game.with_screen(SCREEN_RHYTHM_SETUP);
+    } else if (action == menuActionStartComboTrainer()) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_COMBO_TRAINER);
+    } else if (action == menuActionOpenBotSetup()) {
+        initBotSetupDefaults();
+        g_game = g_game.with_screen(SCREEN_BOT_SETUP);
+    } else if (action == menuActionOpenOnlineDuelHost()) {
+        g_online_role = ONLINE_ROLE_HOST;
+        onlineDuelSetupInit();
+        g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
+    } else if (action == menuActionOpenOnlineDuelJoin()) {
+        g_online_role = ONLINE_ROLE_CLIENT;
+        onlineDuelSetupInit();
+        g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
+    } else if (action == menuActionStartBotDuels()) {
+        if BOTDEVMODE {startBotDuelsMode();}
+    } else if (action == menuActionOpenSettings()) {
+        g_game = g_game.with_settings_return_screen(SCREEN_MENU);
+        settingsInit();
+        g_game = g_game.with_screen(SCREEN_SETTINGS);
+    }
+}
+
 fun updateApp() >> void {
     g_game = g_game.refresh_screen_size();
     applyUiScaleBaseForScreen();
@@ -360,45 +423,28 @@ fun updateApp() >> void {
         }
     }
 
+    f32 tx_dt = GetFrameTime();
+    screenTransitionTick(tx_dt);
+    if screenTransitionShouldApply() {
+        i32 pending = screenTransitionPending();
+        screenTransitionConsume();
+        applyMenuAction(pending);
+    }
+    if screenTransitionActive() {
+        return;
+    }
+
     if (g_game.screen == SCREEN_MENU) {
         i32 action = menuUpdate();
-        if (action == menuActionStartFreePlay()) {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_FREE_PLAY);
-        } else if (action == menuActionStart40Lines()) {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_40_LINES);
-        } else if (action == menuActionStartBlitz()) {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_BLITZ);
-        } else if (action == menuActionOpenChallengeSetup()) {
-            challengeInit();
-            g_game = g_game.with_screen(SCREEN_CHALLENGE_SETUP);
-        } else if (action == menuActionOpenRhythmSetup()) {
-            rhythmPrepareCustomMusicPlaylist();
-            rhythmSetupInit();
-            g_game = g_game.with_screen(SCREEN_RHYTHM_SETUP);
-        } else if (action == menuActionStartComboTrainer()) {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_COMBO_TRAINER);
-        } else if (action == menuActionOpenBotSetup()) {
-            initBotSetupDefaults();
-            g_game = g_game.with_screen(SCREEN_BOT_SETUP);
-        } else if (action == menuActionOpenOnlineDuelHost()) {
-            g_online_role = ONLINE_ROLE_HOST;
-            onlineDuelSetupInit();
-            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
-        } else if (action == menuActionOpenOnlineDuelJoin()) {
-            g_online_role = ONLINE_ROLE_CLIENT;
-            onlineDuelSetupInit();
-            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
-        } else if (action == menuActionStartBotDuels()) {
-            if BOTDEVMODE {startBotDuelsMode();}
-        } else if (action == menuActionOpenSettings()) {
-            g_game = g_game.with_settings_return_screen(SCREEN_MENU);
-            settingsInit();
-            g_game = g_game.with_screen(SCREEN_SETTINGS);
+        if menuActionUsesGameTransition(action) {
+            screenTransitionStart(screenTxBarsVert(), action);
+            return;
         }
+        if menuActionUsesSettingsTransition(action) {
+            screenTransitionStart(screenTxBarsHoriz(), action);
+            return;
+        }
+        applyMenuAction(action);
         return;
     }
 

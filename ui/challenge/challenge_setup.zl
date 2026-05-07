@@ -236,7 +236,9 @@ fun challengeRowNorm(row: i32) >> f32 {
         return challengeSliderPercent(g_challenge_garbage_factor, 0.1 as f32, 2.0 as f32);
     }
     if row == CHALLENGE_ROW_START_GARBAGE {
-        return (g_challenge_start_garbage_lines as f32) / (19.0 as f32);
+        f32 denom = (g_challenge_board_height - 1) as f32;
+        if denom <= 0.0 as f32 {return 0.0 as f32;}
+        return (g_challenge_start_garbage_lines as f32) / denom;
     }
     if row == CHALLENGE_ROW_GARBAGE_MESSINESS {
         return g_challenge_garbage_messiness / (100.0 as f32);
@@ -270,6 +272,9 @@ fun challengeSetFromNorm(row: i32, raw_norm: f32) >> void {
         if v < 4 {v = 4;}
         if v > 40 {v = 40;}
         g_challenge_board_height = v;
+        i32 max_lines = g_challenge_board_height - 1;
+        if max_lines < 0 {max_lines = 0;}
+        if g_challenge_start_garbage_lines > max_lines {g_challenge_start_garbage_lines = max_lines;}
         return;
     }
     if row == CHALLENGE_ROW_GARBAGE_FACTOR {
@@ -279,9 +284,11 @@ fun challengeSetFromNorm(row: i32, raw_norm: f32) >> void {
         return;
     }
     if row == CHALLENGE_ROW_START_GARBAGE {
-        i32 lines = (norm * (19.0 as f32) + (0.5 as f32)) as i32;
+        i32 max_lines = g_challenge_board_height - 1;
+        if max_lines < 0 {max_lines = 0;}
+        i32 lines = (norm * (max_lines as f32) + (0.5 as f32)) as i32;
         if lines < 0 {lines = 0;}
-        if lines > 19 {lines = 19;}
+        if lines > max_lines {lines = max_lines;}
         g_challenge_start_garbage_lines = lines;
         return;
     }
@@ -318,6 +325,9 @@ fun challengeNudge(row: i32, dir: i32) >> void {
         g_challenge_board_height += dir;
         if g_challenge_board_height < 4 {g_challenge_board_height = 4;}
         if g_challenge_board_height > 40 {g_challenge_board_height = 40;}
+        i32 max_lines = g_challenge_board_height - 1;
+        if max_lines < 0 {max_lines = 0;}
+        if g_challenge_start_garbage_lines > max_lines {g_challenge_start_garbage_lines = max_lines;}
         return;
     }
     if row == CHALLENGE_ROW_GARBAGE_FACTOR {
@@ -327,9 +337,11 @@ fun challengeNudge(row: i32, dir: i32) >> void {
         return;
     }
     if row == CHALLENGE_ROW_START_GARBAGE {
+        i32 max_lines = g_challenge_board_height - 1;
+        if max_lines < 0 {max_lines = 0;}
         g_challenge_start_garbage_lines += dir;
         if g_challenge_start_garbage_lines < 0 {g_challenge_start_garbage_lines = 0;}
-        if g_challenge_start_garbage_lines > 19 {g_challenge_start_garbage_lines = 19;}
+        if g_challenge_start_garbage_lines > max_lines {g_challenge_start_garbage_lines = max_lines;}
         return;
     }
     if row == CHALLENGE_ROW_GARBAGE_MESSINESS {
@@ -454,6 +466,72 @@ fun drawChallengeButtonRow(font: Font, theme: Theme, row: i32) >> void {
     drawTextCenteredInRect(font, challengeLabelText(row), 118, y + 2, 412, 58, 15, theme.text_main);
 }
 
+fun drawChallengePreviewPanel(font: Font, theme: Theme) >> void {
+    fillRect(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86 as f32));
+    strokeRect(600, 98, 280, 740, alphaColor(theme.panel_stroke, 0.90 as f32));
+
+    drawTextColor(font, "PREVIEW", 620, 132, 24, theme.text_main);
+    drawTextColor(font, TextFormat("%i x %i", g_challenge_board_width, g_challenge_board_height), 620, 168, 12, theme.text_muted);
+
+    i64 area_x = 620;
+    i64 area_y = 200;
+    i64 area_w = 240;
+    i64 area_h = 460;
+
+    fillRect(area_x, area_y, area_w, area_h, alphaColor(theme.panel_bg, 0.55 as f32));
+    strokeRect(area_x, area_y, area_w, area_h, alphaColor(theme.text_muted, 0.40 as f32));
+
+    i32 bw = g_challenge_board_width;
+    i32 bh = g_challenge_board_height;
+    if bw < 1 {bw = 1;}
+    if bh < 1 {bh = 1;}
+
+    i64 cell_by_w = (area_w - 16) / (bw as i64);
+    i64 cell_by_h = (area_h - 16) / (bh as i64);
+    i64 cell = cell_by_w;
+    if cell_by_h < cell {cell = cell_by_h;}
+    if cell < 2 {cell = 2;}
+    if cell > 22 {cell = 22;}
+
+    i64 grid_w = cell * (bw as i64);
+    i64 grid_h = cell * (bh as i64);
+    i64 gx = area_x + (area_w - grid_w) / 2;
+    i64 gy = area_y + (area_h - grid_h) / 2;
+
+    fillRect(gx, gy, grid_w, grid_h, alphaColor(theme.board_bg, 0.94 as f32));
+
+    for i32 cy = 0; cy < bh; cy++ {
+        for i32 cx = 0; cx < bw; cx++ {
+            i64 px = gx + (cx as i64) * cell;
+            i64 py = gy + (cy as i64) * cell;
+            strokeRect(px, py, cell, cell, alphaColor(theme.board_grid, 0.78 as f32));
+        }
+    }
+
+    i32 garbage_lines = g_challenge_start_garbage_lines;
+    if garbage_lines > bh {garbage_lines = bh;}
+    if garbage_lines < 0 {garbage_lines = 0;}
+    if garbage_lines > 0 && g_challenge_garbage_mode != CHALLENGE_GARBAGE_NONE {
+        i64 gar_h = (garbage_lines as i64) * cell;
+        i64 gar_y = gy + grid_h - gar_h;
+        fillRect(gx, gar_y, grid_w, gar_h, alphaColor(garbageCellColor(theme), 0.66 as f32));
+    } else if garbage_lines > 0 {
+        i64 gar_h = (garbage_lines as i64) * cell;
+        i64 gar_y = gy + grid_h - gar_h;
+        fillRect(gx, gar_y, grid_w, gar_h, alphaColor(theme.text_muted, 0.30 as f32));
+    }
+
+    strokeRect(gx, gy, grid_w, grid_h, alphaColor(theme.panel_stroke, 0.90 as f32));
+
+    i64 info_y = 690;
+    drawTextColor(font, "RULES", 620, info_y, 14, theme.text_main);
+    drawTextColor(font, TextFormat("Gravity %.2f g/s", g_challenge_start_gravity), 620, info_y + 24, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("Ramp %.2f /min", g_challenge_gravity_ramp), 620, info_y + 42, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("Kick %s", challengeKickLabel()), 620, info_y + 60, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("Garbage %s", challengeGarbageLabel()), 620, info_y + 78, 11, theme.text_muted);
+    drawTextColor(font, TextFormat("Start lines %i", g_challenge_start_garbage_lines), 620, info_y + 96, 11, theme.text_muted);
+}
+
 fun drawChallengeSetup(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
 
@@ -462,9 +540,19 @@ fun drawChallengeSetup(font: Font, theme: Theme) >> void {
     drawTextColor(font, "CHALLENGE", 118, 132, 24, theme.text_main);
     drawTextColor(font, "Custom rules before solo start", 118, 168, 11, theme.text_muted);
 
+    i32 visible_rows = challengeVisibleCount();
+    if visible_rows > CHALLENGE_VISIBLE_ROWS {visible_rows = CHALLENGE_VISIBLE_ROWS;}
+    i64 list_h_base = 18 + (visible_rows as i64) * 78;
+    i32 list_x = uiX((112) as i32);
+    i32 list_y = uiY((232) as i32);
+    i32 list_w = uiS(424);
+    i32 list_h = uiS(list_h_base);
+    BeginScissorMode(list_x, list_y, list_w, list_h);
+
     for i32 row = 0; row < CHALLENGE_ROW_COUNT; row++ {
+        if !challengeRowVisible(row) {continue;}
         i64 y = challengeRowY(row);
-        if y < 178 || y > 760 {continue;}
+        if y < 178 || y > 780 {continue;}
         if challengeSliderRow(row) {
             drawChallengeSliderRow(font, theme, row);
         } else if challengeSelectorRow(row) {
@@ -475,6 +563,13 @@ fun drawChallengeSetup(font: Font, theme: Theme) >> void {
             drawChallengeButtonRow(font, theme, row);
         }
     }
+
+    EndScissorMode();
+
+    fillRect(112, 232, 424, 18, alphaColor(theme.bg_outer, 0.75 as f32));
+    fillRect(112, 232 + list_h_base - 18, 424, 18, alphaColor(theme.bg_outer, 0.75 as f32));
+
+    drawChallengePreviewPanel(font, theme);
 
     drawTextColor(font, "UP/DOWN select  LEFT/RIGHT adjust", 118, 792, 11, theme.text_muted);
     drawTextColor(font, "Drag sliders  ENTER apply  ESC back", 118, 814, 11, theme.text_muted);
