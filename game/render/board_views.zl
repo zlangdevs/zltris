@@ -145,33 +145,107 @@ fun drawMiniPieceCentered(theme: Theme, kind: i32, panel_x: i64, panel_y: i64, p
     drawMiniPiece(theme, kind, origin_x, origin_y, size);
 }
 
+fun spawnZoneAtRisk() >> bool {
+    i32 vis = boardVisibleStartRow();
+    i32 limit = vis + 2;
+    if limit > boardHeight() {limit = boardHeight();}
+    for i32 y = 0; y < limit; y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
+            if boardGet(x, y) != 0 {return true;}
+        }
+    }
+    return false;
+}
+
+fun drawSpawnXMark(sx: i32, sy: i32, sw: i32, sh: i32, color: u32) >> void {
+    if sw < 4 || sh < 4 {return;}
+    f32 thick = (sw as f32) / (8.0 as f32);
+    if thick < 2.0 as f32 {thick = 2.0 as f32;}
+    f32 inset = (sw as f32) * (0.18 as f32);
+    if inset < 2.0 as f32 {inset = 2.0 as f32;}
+
+    f32 x0 = (sx as f32) + inset;
+    f32 y0 = (sy as f32) + inset;
+    f32 x1 = ((sx + sw) as f32) - inset;
+    f32 y1 = ((sy + sh) as f32) - inset;
+
+    Vector2 a0 = Vector2{x = x0, y = y0};
+    Vector2 a1 = Vector2{x = x1, y = y1};
+    Vector2 b0 = Vector2{x = x1, y = y0};
+    Vector2 b1 = Vector2{x = x0, y = y1};
+
+    Color c = toColor(color);
+    DrawLineEx(a0, a1, thick, c);
+    DrawLineEx(b0, b1, thick, c);
+}
+
+fun drawNextSpawnSilhouette(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if !modeExtendedSkyline() {return;}
+    if g_play.queue_count <= 0 {return;}
+    if g_play.game_over {return;}
+    if !spawnZoneAtRisk() {return;}
+
+    i32 next_kind = g_queue[0];
+    if next_kind < 0 || next_kind >= 7 {return;}
+    i32 spawn_x = playerSpawnX();
+    i32 spawn_y = playerSpawnY();
+    u32 base = pieceColor(theme, next_kind);
+    u32 mark_col = alphaColor(base, 0.85 as f32);
+    u32 glow_col = alphaColor(base, 0.18 as f32);
+    i32 render_min = boardRenderMinRow();
+
+    for i32 idx = 0; idx < 4; idx++ {
+        i64 cx = (spawn_x as i64) + (minoX(next_kind, 0, idx) as i64);
+        i64 cy = (spawn_y as i64) + (minoY(next_kind, 0, idx) as i64);
+        if cy < (render_min as i64) {continue;}
+        i32 sx = 0;
+        i32 sy = 0;
+        i32 sw = 0;
+        i32 sh = 0;
+        boardCellRectPixels(board_left, board_top, cx, cy, &sx, &sy, &sw, &sh);
+        if sw > 2 && sh > 2 {DrawRectangle(sx + 1, sy + 1, sw - 2, sh - 2, toColor(glow_col));}
+        drawSpawnXMark(sx, sy, sw, sh, mark_col);
+    }
+}
+
 fun drawBoard(theme: Theme) >> void {
     i64 board_left = currentPlayerBoardLeft();
     i64 board_top = currentBoardTop();
     i64 board_w = (boardWidth() as i64) * boardCellSize();
     i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
     drawHighStackSpawnZone(theme, board_left, board_top);
-    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
-    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+    if modeExtendedSkyline() {
+        fillRect(board_left - 8, board_top, board_w + 16, board_h + 8, theme.board_bg);
+        fillRect(board_left - 8, board_top, 1, board_h + 8, theme.panel_stroke);
+        fillRect(board_left + board_w + 7, board_top, 1, board_h + 8, theme.panel_stroke);
+        fillRect(board_left - 8, board_top + board_h + 7, board_w + 16, 1, theme.panel_stroke);
+    } else {
+        fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
+        strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+    }
 
-    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+    i32 vis_start = boardVisibleStartRow();
+    for i32 y = boardRenderMinRow(); y < boardHeight(); y++ {
         for i32 x = 0; x < boardWidth(); x++ {
             i32 sx = 0;
             i32 sy = 0;
             i32 sw = 0;
             i32 sh = 0;
             boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
-            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
-            i32 cell = boardGet(x, y);
-            if cell == 8 {
+            if y >= vis_start {
+                DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+            }
+            i32 c = boardGet(x, y);
+            if c == 8 {
                 drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
-            } else if cell != 0 {
-                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            } else if c != 0 {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, c - 1));
             }
         }
     }
 
     if (!g_play.game_over) {
+        drawNextSpawnSilhouette(theme, board_left, board_top);
         drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, currentGhostY(), ghostColor(pieceColor(theme, g_piece_kind)));
         drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
     }
@@ -184,6 +258,18 @@ fun drawBoard(theme: Theme) >> void {
     drawLineClearEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
 }
 
+fun onlineLocalDisplayName() >> ptr<u8> {
+    if g_online_local_name[0] != 0 {return &g_online_local_name[0];}
+    if g_online_role == 0 {return "Host";}
+    return "Guest";
+}
+
+fun onlineRemoteDisplayName() >> ptr<u8> {
+    if g_online_remote_name[0] != 0 {return &g_online_remote_name[0];}
+    if g_online_role == 0 {return "Guest";}
+    return "Host";
+}
+
 fun drawBotBoard(theme: Theme, font: Font) >> void {
     i64 board_x = currentBotBoardLeft();
     i64 board_y = currentBotBoardTop();
@@ -193,7 +279,9 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
     drawHighStackSpawnZone(theme, board_x, board_y);
     fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
     strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
-    drawTextColor(font, "BOT", board_x + 120, board_y - 42, 16, theme.text_main);
+    ptr<u8> board_title = "BOT";
+    if isOnlineDuelMode() {board_title = onlineRemoteDisplayName();}
+    drawTextColor(font, board_title, board_x + 24, board_y - 42, 16, theme.text_main);
 
     for i32 y = boardVisibleStartRow(); y < botBoardHeight(); y++ {
         for i32 x = 0; x < botBoardWidth(); x++ {
@@ -224,8 +312,13 @@ fun drawBotBoard(theme: Theme, font: Font) >> void {
 
     f32 bot_apm = 0.0;
     if g_rt.run_timer > 0.001 {bot_apm = ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;}
-    drawTextColor(font, TextFormat("APM %.1f / %.1f", bot_apm, g_bot_setup.target_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
-    drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+    if isOnlineDuelMode() {
+        drawTextColor(font, TextFormat("APM %.1f", bot_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
+        drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 124, board_y + board_h + 14, 10, theme.text_muted);
+    } else {
+        drawTextColor(font, TextFormat("APM %.1f / %.1f", bot_apm, g_bot_setup.target_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
+        drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+    }
 }
 
 fun arenaBoardPtr(side: i32) >> ptr<i32> {

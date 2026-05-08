@@ -27,6 +27,7 @@ fun defaultArenaChampionSetup() >> BotSetupState {
     BotSetupState setup = {0};
     setup.target_apm = BOT_DUELS_FIXED_APM;
     setup.garbage_messiness = 35.0;
+    setup.garbage_delay = 1.0;
     setup.high_stack_tolerance = false;
     setup.panic_burst_enabled = true;
     setup.index = 0;
@@ -37,6 +38,7 @@ fun clampArenaSetup(setup: BotSetupState) >> BotSetupState {
     BotSetupState next = setup;
     next.target_apm = BOT_DUELS_FIXED_APM;
     next.garbage_messiness = 35.0;
+    next.garbage_delay = 1.0;
     next.high_stack_tolerance = false;
     next.panic_burst_enabled = true;
     next.index = 0;

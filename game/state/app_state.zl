@@ -56,6 +56,7 @@ use zltris.theme
 #define ONLINE_NET_STATE_ERROR 6
 #define ONLINE_NET_STATE_DISCONNECTED 7
 #define ONLINE_ADDR_MAX 128
+#define ONLINE_NAME_MAX 32
 #define ONLINE_RX_BUF_MAX 32768
 
 #define RHYTHM_BASE_INPUT 0
@@ -120,6 +121,7 @@ struct GameRuntime {
 struct BotSetupState {
     target_apm f32,
     garbage_messiness f32,
+    garbage_delay f32,
     high_stack_tolerance bool,
     panic_burst_enabled bool,
     weights_mode i32,
@@ -287,10 +289,19 @@ bool g_ai_armed = false;
 i32 g_ai_worker_next_request = 1;
 i32 g_ai_worker_pending_request = 0;
 i32 g_ai_worker_pending_piece_kind = -1;
+i32 g_bot_ai_worker_pending_request = 0;
+i32 g_bot_ai_worker_pending_piece_kind = -1;
+i32 g_bot_ai_worker_pending_garbage = 0;
 bool g_duel_running = false;
 i32 g_duel_result = DUEL_RESULT_PLAYING;
 i32 g_player_pending_garbage = 0;
 i32 g_bot_pending_garbage = 0;
+i32 g_player_delayed_garbage = 0;
+f32 g_player_delayed_garbage_timer = 0.0;
+f32 g_player_delayed_garbage_delay = 0.0;
+i32 g_bot_delayed_garbage = 0;
+f32 g_bot_delayed_garbage_timer = 0.0;
+f32 g_bot_delayed_garbage_delay = 0.0;
 bool g_double_row_ui = true;
 bool g_instant_restart = false;
 bool g_hard_drop_ring = false;
@@ -336,10 +347,13 @@ f32 g_challenge_garbage_factor = 1.0;
 i32 g_challenge_start_garbage_lines = 0;
 f32 g_challenge_garbage_messiness = 35.0;
 f32 g_challenge_garbage_accum = 0.0;
+bool g_challenge_extended_skyline = false;
 i32 g_combo_practice_pattern_index = -1;
 
 i32 g_online_role = ONLINE_ROLE_HOST;
 arr<u8, ONLINE_ADDR_MAX> g_online_host = {0};
+arr<u8, ONLINE_NAME_MAX> g_online_local_name = {0};
+arr<u8, ONLINE_NAME_MAX> g_online_remote_name = {0};
 i32 g_online_port = 24777;
 f32 g_online_start_gravity = 1.4;
 f32 g_online_gravity_ramp = 0.4;
@@ -348,6 +362,8 @@ i32 g_online_board_width = BOARD_DEFAULT_W;
 i32 g_online_board_height = BOARD_DEFAULT_H - BOARD_HIDDEN_ROWS;
 i32 g_online_kick_table = CHALLENGE_KICK_SRS;
 i32 g_online_start_garbage_lines = 0;
+f32 g_online_garbage_delay = 1.0;
+bool g_online_extended_skyline = false;
 bool g_online_allow_guest_edit = false;
 i32 g_online_listen_fd = -1;
 i32 g_online_conn_fd = -1;

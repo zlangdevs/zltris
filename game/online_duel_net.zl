@@ -37,6 +37,7 @@ use zltris.net
 #define ONLINE_ERR_LEFT 9
 
 #define ONLINE_ADDR_MAX 128
+#define ONLINE_NAME_MAX 32
 #define ONLINE_RX_BUF_MAX 32768
 #define BOARD_CELLS 840
 
@@ -51,6 +52,10 @@ fun onlineClampRules() >> void {
     if g_online_board_width > 20 {g_online_board_width = 20;}
     if g_online_board_height < 4 {g_online_board_height = 4;}
     if g_online_board_height > 40 {g_online_board_height = 40;}
+    if g_online_extended_skyline {
+        i32 max_vis = 42 - 20;
+        if g_online_board_height > max_vis {g_online_board_height = max_vis;}
+    }
 
     if g_online_start_gravity < 0.2 as f32 {g_online_start_gravity = 0.2 as f32;}
     if g_online_start_gravity > 20.0 as f32 {g_online_start_gravity = 20.0 as f32;}
@@ -58,6 +63,8 @@ fun onlineClampRules() >> void {
     if g_online_gravity_ramp > 20.0 as f32 {g_online_gravity_ramp = 20.0 as f32;}
     if g_online_start_garbage_lines < 0 {g_online_start_garbage_lines = 0;}
     if g_online_start_garbage_lines > 39 {g_online_start_garbage_lines = 39;}
+    if g_online_garbage_delay < 0.0 as f32 {g_online_garbage_delay = 0.0 as f32;}
+    if g_online_garbage_delay > 10.0 as f32 {g_online_garbage_delay = 10.0 as f32;}
 
     if g_online_kick_table < CHALLENGE_KICK_SRS {g_online_kick_table = CHALLENGE_KICK_SRS;}
     if g_online_kick_table > CHALLENGE_KICK_NONE {g_online_kick_table = CHALLENGE_KICK_NONE;}
@@ -105,6 +112,33 @@ fun onlineResetSessionFlowFlags() >> void {
     g_online_rx_buf[0] = 0;
 }
 
+fun onlineDefaultNameForRole(role: i32) >> ptr<u8> {
+    if role == ONLINE_ROLE_HOST {return "Host";}
+    return "Guest";
+}
+
+fun onlineEnsureLocalName() >> void {
+    if g_online_local_name[0] != 0 {return;}
+    copyFixed(&g_online_local_name[0], onlineDefaultNameForRole(g_online_role), ONLINE_NAME_MAX);
+}
+
+fun onlineFallbackRemoteName() >> ptr<u8> {
+    if g_online_role == ONLINE_ROLE_HOST {return "Guest";}
+    return "Host";
+}
+
+fun onlineCopyTokenTo(line: ptr<u8>, token_index: i32, dst: ptr<u8>, cap: i32) >> bool {
+    if cap <= 0 {return false;}
+    i32 start = 0;
+    i32 len = 0;
+    if !onlineTokenRange(line, token_index, &start, &len) {return false;}
+    i32 n = len;
+    if n > cap - 1 {n = cap - 1;}
+    for i32 i = 0; i < n; i++ {dst[i] = line[start + i];}
+    dst[n] = 0;
+    return true;
+}
+
 fun onlineHostResumeWaiting() >> bool {
     if g_online_role != ONLINE_ROLE_HOST {return false;}
     if !g_online_start_requested {return false;}
@@ -148,12 +182,14 @@ fun onlineAbortSession() >> void {
     g_online_net_target_ip = 0;
     g_online_start_requested = false;
     g_online_allow_guest_edit = false;
+    g_online_remote_name[0] = 0;
     onlineResetSessionFlowFlags();
     onlineSetState(ONLINE_NET_STATE_IDLE);
 }
 
 fun onlineDuelSetupInit() >> void {
     onlineClampRules();
+    onlineEnsureLocalName();
     onlineAbortSession();
     onlineResetRemoteView();
     onlineDuelSetupUiInit();
@@ -205,7 +241,8 @@ fun onlineSendLine(line: ptr<u8>) >> bool {
 
 fun onlineSendHello() >> void {
     if g_online_sent_hello {return;}
-    if onlineSendLine(TextFormat("ZD1|HELLO|%i\n", g_online_role)) {
+    onlineEnsureLocalName();
+    if onlineSendLine(TextFormat("ZD1|HELLO|%i|%s\n", g_online_role, &g_online_local_name[0])) {
         g_online_sent_hello = true;
     }
 }
@@ -215,9 +252,12 @@ fun onlineSendConfig() >> void {
     if g_online_infinite_hold {hold_i = 1;}
     i32 guest_edit_i = 0;
     if g_online_allow_guest_edit {guest_edit_i = 1;}
+    i32 sky_i = 0;
+    if g_online_extended_skyline {sky_i = 1;}
     i32 g0 = (g_online_start_gravity * 100.0 as f32) as i32;
     i32 gr = (g_online_gravity_ramp * 100.0 as f32) as i32;
-    onlineSendLine(TextFormat("ZD1|CFG|%i|%i|%i|%i|%i|%i|%i|%i\n", g_online_board_width, g_online_board_height, g0, gr, hold_i, g_online_kick_table, g_online_start_garbage_lines, guest_edit_i));
+    i32 gd = (g_online_garbage_delay * 100.0 as f32) as i32;
+    onlineSendLine(TextFormat("ZD1|CFG|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i\n", g_online_board_width, g_online_board_height, g0, gr, hold_i, g_online_kick_table, g_online_start_garbage_lines, guest_edit_i, sky_i, gd));
     g_online_sent_cfg = true;
 }
 
@@ -356,6 +396,7 @@ fun onlineBeginClientSocket() >> bool {
 
 fun onlineBeginLobbyFromSettings() >> bool {
     onlineClampRules();
+    onlineEnsureLocalName();
     
     if g_online_host[0] == 0 {
         copyFixed(&g_online_host[0], "127.0.0.1", ONLINE_ADDR_MAX);
@@ -501,6 +542,9 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
 
     if onlineTokenEq(line, 1, "HELLO") {
         g_online_peer_role = onlineTokenToInt(line, 2, -1);
+        if !onlineCopyTokenTo(line, 3, &g_online_remote_name[0], ONLINE_NAME_MAX) || g_online_remote_name[0] == 0 {
+            copyFixed(&g_online_remote_name[0], onlineFallbackRemoteName(), ONLINE_NAME_MAX);
+        }
         return;
     }
 
@@ -516,12 +560,14 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
             g_online_infinite_hold = onlineTokenToInt(line, 6, 0) != 0;
             g_online_kick_table = onlineTokenToInt(line, 7, g_online_kick_table);
             g_online_start_garbage_lines = onlineTokenToInt(line, 8, g_online_start_garbage_lines);
-            
-            
+
+
             if g_online_role == ONLINE_ROLE_CLIENT {
                 g_online_allow_guest_edit = onlineTokenToInt(line, 9, 0) != 0;
             }
-            
+            g_online_extended_skyline = onlineTokenToInt(line, 10, 0) != 0;
+            g_online_garbage_delay = (onlineTokenToInt(line, 11, (g_online_garbage_delay * 100.0 as f32) as i32) as f32) / (100.0 as f32);
+
             onlineClampRules();
             onlineResetReadiness();
 
@@ -551,7 +597,7 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
     if onlineTokenEq(line, 1, "ATK") {
         i32 amt = onlineTokenToInt(line, 2, 0);
         if amt > 0 && isOnlineDuelMode() && g_duel_running {
-            g_player_pending_garbage += amt;
+            queuePlayerGarbage(amt);
         }
         return;
     }

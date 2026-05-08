@@ -69,7 +69,7 @@ fun boardCellSize() >> i64 {
     if !isChallengeMode() && !isOnlineDuelMode() {return base_cell;}
 
     i64 w_cells = boardWidth() as i64;
-    i64 h_cells = boardVisibleRows() as i64;
+    i64 h_cells = boardVisibleRows() as i64 + (extendedSkylineBufferRows() as i64);
     if w_cells <= 0 || h_cells <= 0 {return base_cell;}
 
     i64 overhead_w = nonVsSidebarGap() + 178;
@@ -79,7 +79,7 @@ fun boardCellSize() >> i64 {
         overhead_w = nonVsSidebarGap() + 440;
     }
     i64 free_w = viewportBaseWidth() - overhead_w;
-    i64 free_h = viewportBaseHeight() - currentBoardTop() - 138;
+    i64 free_h = viewportBaseHeight() - (BOARD_TOP as i64) - 138;
     if free_w < 24 {free_w = 24;}
     if free_h < 24 {free_h = 24;}
 
@@ -212,6 +212,30 @@ fun boardShakeY() >> i32 {
     return g_rt.board_shake_px_y;
 }
 
+fun incomingGarbageShake(amount: i32, timer: f32, delay: f32, axis: i32) >> i64 {
+    if !g_duel_running {return 0;}
+    if amount <= 0 {return 0;}
+    if delay <= 0.001 as f32 {return 0;}
+    if g_board_bounciness <= 0 {return 0;}
+    f32 elapsed = delay - timer;
+    if elapsed < delay * (0.30 as f32) {return 0;}
+    if elapsed > delay * (0.90 as f32) {return 0;}
+    f32 phase = fractf(GetTime() as f32 * (18.0 as f32) + (axis as f32) * (0.37 as f32));
+    f32 intensity = (g_board_bounciness as f32) * (0.012 as f32);
+    i64 mag = ((2 + amount) as f32 * intensity) as i64;
+    if mag < 1 {mag = 1;}
+    if mag > 8 {mag = 8;}
+    if phase < 0.25 as f32 {return mag;}
+    if phase < 0.50 as f32 {return -mag;}
+    if phase < 0.75 as f32 {return mag / 2;}
+    return -(mag / 2);
+}
+
+fun playerIncomingGarbageShakeX() >> i64 {return incomingGarbageShake(g_player_delayed_garbage, g_player_delayed_garbage_timer, g_player_delayed_garbage_delay, 0);}
+fun playerIncomingGarbageShakeY() >> i64 {return incomingGarbageShake(g_player_delayed_garbage, g_player_delayed_garbage_timer, g_player_delayed_garbage_delay, 1);}
+fun botIncomingGarbageShakeX() >> i64 {return incomingGarbageShake(g_bot_delayed_garbage, g_bot_delayed_garbage_timer, g_bot_delayed_garbage_delay, 2);}
+fun botIncomingGarbageShakeY() >> i64 {return incomingGarbageShake(g_bot_delayed_garbage, g_bot_delayed_garbage_timer, g_bot_delayed_garbage_delay, 3);}
+
 fun vsBotGapBase() >> i64 {
     f32 scale = uiScale();
     if scale <= 0.0001 {return 32;}
@@ -250,7 +274,7 @@ fun vsBotBotPanelX() >> i64 {
 }
 
 fun currentPlayerBoardLeft() >> i64 {
-    if isVersusMode() {return vsBotPlayerBoardLeft();}
+    if isVersusMode() {return vsBotPlayerBoardLeft() + playerIncomingGarbageShakeX();}
     if gameUsesSplitLayout() {return BOARD_LEFT;}
 
     i64 board_w = (boardWidth() as i64) * boardCellSize();
@@ -263,8 +287,12 @@ fun duelShowsHighStackArea() >> bool {
 }
 
 fun currentBoardTop() >> i64 {
-    if duelShowsHighStackArea() {return BOARD_TOP + HIGH_STACK_BOARD_SHIFT;}
-    return BOARD_TOP;
+    i64 shake_y = 0;
+    if isVersusMode() {shake_y = playerIncomingGarbageShakeY();}
+    if duelShowsHighStackArea() {return BOARD_TOP + HIGH_STACK_BOARD_SHIFT + shake_y;}
+    i32 buf = extendedSkylineBufferRows();
+    if buf > 0 {return (BOARD_TOP as i64) + (buf as i64) * boardCellSize() + shake_y;}
+    return (BOARD_TOP as i64) + shake_y;
 }
 
 fun currentCenterSidebarX() >> i64 {
@@ -293,13 +321,17 @@ fun splitLayoutExtraXBase() >> i64 {
 }
 
 fun currentBotBoardLeft() >> i64 {
-    if isVersusMode() {return vsBotBotBoardLeft();}
+    if isVersusMode() {return vsBotBotBoardLeft() + botIncomingGarbageShakeX();}
     return BOT_BOARD_LEFT;
 }
 
 fun currentBotBoardTop() >> i64 {
-    if duelShowsHighStackArea() {return BOT_BOARD_TOP + HIGH_STACK_BOARD_SHIFT;}
-    return BOT_BOARD_TOP;
+    i64 shake_y = 0;
+    if isVersusMode() {shake_y = botIncomingGarbageShakeY();}
+    if duelShowsHighStackArea() {return BOT_BOARD_TOP + HIGH_STACK_BOARD_SHIFT + shake_y;}
+    i32 buf = extendedSkylineBufferRows();
+    if buf > 0 {return (BOT_BOARD_TOP as i64) + (buf as i64) * boardCellSize() + shake_y;}
+    return (BOT_BOARD_TOP as i64) + shake_y;
 }
 
 fun boardVisibleStartRow() >> i32 {
@@ -313,8 +345,18 @@ fun boardVisibleRows() >> i32 {
     return boardHeight() - boardVisibleStartRow();
 }
 
+fun extendedSkylineBufferRows() >> i32 {
+    if !modeExtendedSkyline() {return 0;}
+    i32 hidden = boardHiddenRows();
+    i32 buf = 4;
+    if hidden < buf {buf = hidden;}
+    return buf;
+}
+
 fun boardRenderMinRow() >> i32 {
     if duelShowsHighStackArea() {return -HIGH_STACK_SPAWN_ROWS;}
+    i32 buf = extendedSkylineBufferRows();
+    if buf > 0 {return boardVisibleStartRow() - buf;}
     return boardVisibleStartRow();
 }
 
