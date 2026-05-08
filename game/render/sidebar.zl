@@ -148,7 +148,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
             drawPreviewPiece(theme, rect, g_queue[i]);
         }
 
-        if isVersusMode() {
+        if isAgainstBotMode() {
             i64 bot_panel_x = panels.bot_x;
 
             fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);

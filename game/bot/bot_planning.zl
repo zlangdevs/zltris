@@ -619,3 +619,79 @@ fun botPerformPlannedAction() >> bool {
     g_bot_plan_index = 0;
     return true;
 }
+
+fun botApplyAsyncMove(move: AiMove) >> bool {
+    if !move.valid {return false;}
+    if !botPieceFits(g_bot.piece_kind, move.rotation, move.x, g_bot.piece_y) {return false;}
+    i32 target_y = botTempDropY(&g_bot_board[0], g_bot.piece_kind, move.rotation, move.x, g_bot.piece_y);
+    if target_y < -1000 {return false;}
+
+    g_bot.target_x = move.x;
+    g_bot.target_y = target_y;
+    g_bot.target_rotation = move.rotation;
+    g_bot.target_last_rotate = move.tspin;
+    g_bot.target_valid = true;
+    g_bot.target_tspin = move.tspin;
+    g_bot_plan_len = 1;
+    g_bot_plan_index = 0;
+    g_bot_plan_actions[0] = BOT_ACTION_DROP;
+    g_bot_plan_pending_snapshot = g_bot_pending_garbage;
+    return true;
+}
+
+fun botAsyncPlanTick() >> bool {
+    aiWorkerEnsureStarted();
+
+    if g_bot_ai_worker_pending_request != 0 {
+        if g_bot_ai_worker_pending_piece_kind != g_bot.piece_kind || g_bot_ai_worker_pending_garbage != g_bot_pending_garbage {
+            g_bot_ai_worker_pending_request = 0;
+            g_bot_ai_worker_pending_piece_kind = -1;
+            g_bot_ai_worker_pending_garbage = 0;
+        }
+    }
+
+    if g_bot_ai_worker_pending_request == 0 {
+        aiWorkerSubmitBotState();
+        return false;
+    }
+
+    AiMove move = {0};
+    i32 result_request = 0;
+    if !aiWorkerTryConsumeResult(&move, &result_request) {return false;}
+    if result_request != g_bot_ai_worker_pending_request {return false;}
+    g_bot_ai_worker_pending_request = 0;
+    if g_bot_ai_worker_pending_piece_kind != g_bot.piece_kind {return false;}
+    g_bot_ai_worker_pending_piece_kind = -1;
+    g_bot_ai_worker_pending_garbage = 0;
+
+    return botApplyAsyncMove(move);
+}
+
+fun botPerformAsyncPlannedAction() >> bool {
+    if g_bot.target_valid && g_bot_plan_index < g_bot_plan_len && g_bot_plan_pending_snapshot != g_bot_pending_garbage {
+        g_bot.target_valid = false;
+        g_bot_plan_len = 0;
+        g_bot_plan_index = 0;
+        g_bot_ai_worker_pending_request = 0;
+        g_bot_ai_worker_pending_piece_kind = -1;
+        g_bot_ai_worker_pending_garbage = 0;
+    }
+
+    if !g_bot.target_valid || g_bot_plan_index >= g_bot_plan_len {
+        if !botAsyncPlanTick() {return true;}
+    }
+
+    i32 drop_distance = g_bot.target_y - g_bot.piece_y;
+    if drop_distance < 0 {drop_distance = 0;}
+    g_bot.piece_x = g_bot.target_x;
+    g_bot.piece_y = g_bot.target_y;
+    g_bot.piece_rotation = g_bot.target_rotation;
+    g_bot.last_rotate_success = g_bot.target_last_rotate;
+    if g_hard_drop_ring {
+        spawnHardDropImpactRing(LINE_FX_BOARD_BOT, g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x, g_bot.piece_y, drop_distance);
+    }
+    g_bot_plan_index = g_bot_plan_len;
+    g_bot.target_valid = false;
+    botStepLock();
+    return true;
+}

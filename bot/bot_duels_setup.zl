@@ -34,32 +34,32 @@ use zltris.ui
 #define AI_TUNE_COUNT 221
 
 fun botSetupPanelHeight() >> i64 {
-    if BOTDEVMODE {return 636;}
-    return 560;
+    if BOTDEVMODE {return 712;}
+    return 636;
 }
 
 fun botSetupRowCount() >> i32 {
-    if BOTDEVMODE {return 6;}
-    return 5;
+    if BOTDEVMODE {return 7;}
+    return 6;
 }
 
 fun botSetupPanicRow() >> i32 {
-    return 2;
+    return 3;
 }
 
 fun botSetupWeightsRow() >> i32 {
-    if BOTDEVMODE {return 3;}
+    if BOTDEVMODE {return 4;}
     return -1;
 }
 
 fun botSetupStartRow() >> i32 {
-    if BOTDEVMODE {return 4;}
-    return 3;
+    if BOTDEVMODE {return 5;}
+    return 4;
 }
 
 fun botSetupBackRow() >> i32 {
-    if BOTDEVMODE {return 5;}
-    return 4;
+    if BOTDEVMODE {return 6;}
+    return 5;
 }
 
 fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
@@ -115,24 +115,34 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     i64 messiness_knob_x = slider_x + (((slider_w - 14) as f32) * messiness_norm) as i64;
     fillRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
     strokeRect(messiness_knob_x, slider_y + row_h - 4, 14, 16, alphaColor(theme.text_main, 0.85));
+    f32 delay_norm = g_bot_setup.garbage_delay / 10.0;
+    if delay_norm < 0.0 {delay_norm = 0.0;}
+    if delay_norm > 1.0 {delay_norm = 1.0;}
+    drawTextColor(font, "Garbage delay", 176, 438, 13, theme.text_main);
+    drawTextColor(font, TextFormat("%.2fs", g_bot_setup.garbage_delay), 420, 438, 13, theme.panel_stroke);
+    fillRect(slider_x, slider_y + row_h * 2, slider_w, 8, alphaColor(theme.board_bg, 0.94));
+    strokeRect(slider_x, slider_y + row_h * 2, slider_w, 8, alphaColor(theme.panel_stroke, 0.76));
+    i64 delay_knob_x = slider_x + (((slider_w - 14) as f32) * delay_norm) as i64;
+    fillRect(delay_knob_x, slider_y + row_h * 2 - 4, 14, 16, alphaColor(theme.panel_stroke, 0.95));
+    strokeRect(delay_knob_x, slider_y + row_h * 2 - 4, 14, 16, alphaColor(theme.text_main, 0.85));
     ... Hidden temporarily.
-    drawTextColor(font, "High stack tolerance", 176, 438, 13, theme.text_main);
-    drawTextColor(font, "OFF", 384, 438, 13, theme.text_muted);
+    drawTextColor(font, "High stack tolerance", 176, 514, 13, theme.text_main);
+    drawTextColor(font, "OFF", 384, 514, 13, theme.text_muted);
     ...
-    drawTextColor(font, "Panic burst", 176, 438, 13, theme.text_main);
-    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 438, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 438, 13, theme.text_muted);}
+    drawTextColor(font, "Panic burst", 176, 514, 13, theme.text_main);
+    if g_bot_setup.panic_burst_enabled {drawTextColor(font, "ON", 434, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "OFF", 418, 514, 13, theme.text_muted);}
     if BOTDEVMODE {
-        drawTextColor(font, "Weights", 176, 514, 13, theme.text_main);
-        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 514, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 514, 13, theme.panel_stroke);}
+        drawTextColor(font, "Weights", 176, 590, 13, theme.text_main);
+        if g_bot_setup.weights_mode == BOT_WEIGHTS_STOCK {drawTextColor(font, "STOCK", 408, 590, 13, theme.panel_stroke);} else {drawTextColor(font, "CHAMPION", 368, 590, 13, theme.panel_stroke);}
+        drawTextColor(font, "START DUEL", 176, 666, 13, theme.text_main);
+        drawTextColor(font, "BACK", 176, 742, 13, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 794, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 809, 10, theme.text_muted);
+    } else {
         drawTextColor(font, "START DUEL", 176, 590, 13, theme.text_main);
         drawTextColor(font, "BACK", 176, 666, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 718, 10, theme.text_muted);
-        drawTextColor(font, "ENTER confirm", 156, 733, 10, theme.text_muted);
-    } else {
-        drawTextColor(font, "START DUEL", 176, 514, 13, theme.text_main);
-        drawTextColor(font, "BACK", 176, 590, 13, theme.text_muted);
-        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 643, 10, theme.text_muted);
-        drawTextColor(font, "ENTER confirm", 156, 658, 10, theme.text_muted);
+        drawTextColor(font, "UP/DOWN select  LEFT/RIGHT or mouse", 156, 719, 10, theme.text_muted);
+        drawTextColor(font, "ENTER confirm", 156, 734, 10, theme.text_muted);
     }
 }
 
@@ -147,6 +157,21 @@ fun setBotTargetApmNorm(norm: f32) >> void {
     if n > 1.0 {n = 1.0;}
     g_bot_setup.target_apm = (BOT_APM_MIN as f32) + ((BOT_APM_MAX - BOT_APM_MIN) as f32) * n;
     clampBotTargetApm();
+}
+
+fun clampBotGarbageDelay() >> void {
+    if g_bot_setup.garbage_delay < 0.0 as f32 {g_bot_setup.garbage_delay = 0.0 as f32;}
+    if g_bot_setup.garbage_delay > 10.0 as f32 {g_bot_setup.garbage_delay = 10.0 as f32;}
+}
+
+fun setBotGarbageDelayNorm(norm: f32) >> void {
+    f32 n = norm;
+    if n < 0.0 {n = 0.0;}
+    if n > 1.0 {n = 1.0;}
+    f32 v = n * 10.0;
+    i32 step = (v * 4.0 + 0.5) as i32;
+    g_bot_setup.garbage_delay = (step as f32) / 4.0;
+    clampBotGarbageDelay();
 }
 
 fun mouseBaseX() >> f32 {
@@ -176,11 +201,13 @@ fun pointInBaseRectLocal(px: f32, py: f32, x: i64, y: i64, w: i64, h: i64) >> bo
 fun initBotSetupDefaults() >> void {
     if g_bot_setup.target_apm < 1.0 {g_bot_setup.target_apm = 65.0;}
     if g_bot_setup.garbage_messiness < 0.5 {g_bot_setup.garbage_messiness = 35.0;}
+    if g_bot_setup.garbage_delay <= 0.0 {g_bot_setup.garbage_delay = 1.0;}
     g_bot_setup.high_stack_tolerance = false;
     g_bot_setup.panic_burst_enabled = false;
     g_bot_setup.weights_mode = BOT_WEIGHTS_CHAMPION;
     clampBotTargetApm();
     clampBotGarbageMessiness();
+    clampBotGarbageDelay();
     g_bot_setup.index = 0;
 }
 
@@ -651,6 +678,7 @@ fun updateBotSetupScreen() >> void {
     }
     bool slider_hover = mx >= (slider_x as f32) && mx <= ((slider_x + slider_w) as f32) && my >= ((slider_y - 10) as f32) && my <= ((slider_y + 20) as f32);
     bool messiness_slider_hover = mx >= (slider_x as f32) && mx <= ((slider_x + slider_w) as f32) && my >= ((slider_y + row_h - 10) as f32) && my <= ((slider_y + row_h + 20) as f32);
+    bool delay_slider_hover = mx >= (slider_x as f32) && mx <= ((slider_x + slider_w) as f32) && my >= ((slider_y + row_h * 2 - 10) as f32) && my <= ((slider_y + row_h * 2 + 20) as f32);
     if slider_hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_bot_setup.index = 0;}
     if g_bot_setup.index == 0 && slider_hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
         f32 norm = (mx - (slider_x as f32)) / (slider_w as f32);
@@ -660,6 +688,10 @@ fun updateBotSetupScreen() >> void {
     if g_bot_setup.index == 1 && messiness_slider_hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
         g_bot_setup.garbage_messiness = ((mx - (slider_x as f32)) / (slider_w as f32)) * 100.0;
         clampBotGarbageMessiness();
+    }
+    if delay_slider_hover && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {g_bot_setup.index = 2;}
+    if g_bot_setup.index == 2 && delay_slider_hover && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        setBotGarbageDelayNorm((mx - (slider_x as f32)) / (slider_w as f32));
     }
     i32 burst_row = botSetupPanicRow();
     i32 start_row = botSetupStartRow();
@@ -686,6 +718,10 @@ fun updateBotSetupScreen() >> void {
         if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_messiness += 5.0;}
         clampBotGarbageMessiness();
     } else if g_bot_setup.index == 2 {
+        if IsKeyPressed(KEY_LEFT) {g_bot_setup.garbage_delay -= 0.25 as f32;}
+        if IsKeyPressed(KEY_RIGHT) {g_bot_setup.garbage_delay += 0.25 as f32;}
+        clampBotGarbageDelay();
+    } else if g_bot_setup.index == burst_row {
         if IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_RIGHT) {
             g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
         }
@@ -696,7 +732,7 @@ fun updateBotSetupScreen() >> void {
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
-        if g_bot_setup.index == 2 {
+        if g_bot_setup.index == burst_row {
             g_bot_setup.panic_burst_enabled = !g_bot_setup.panic_burst_enabled;
         }
         if BOTDEVMODE && g_bot_setup.index == weights_row {

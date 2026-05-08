@@ -306,11 +306,11 @@ fun updateDuelBot(dt: f32) >> void {
     for (g_bot.place_meter >= 1.0) {
         g_bot.place_meter -= 1.0;
 
-        if !botPerformPlannedAction() {
+        if !botPerformAsyncPlannedAction() {
             g_bot.game_over = true;
             break;
         }
-        g_bot.actions_taken += 1;
+        if g_bot_plan_index > 0 {g_bot.actions_taken += 1;}
         if g_bot.game_over {break;}
     }
 }
@@ -555,6 +555,7 @@ fun updateGameScreen() >> void {
     }
 
     if isOnlineDuelMode() {onlineUpdateRunningSession(dt);}
+    if isVersusMode() && g_duel_running {updateDelayedGarbageQueues(dt);}
 
     if isAgainstBotMode() && g_duel_running {updateDuelBot(dt);}
     if isVersusMode() && g_duel_running {
