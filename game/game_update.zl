@@ -16,6 +16,7 @@ use raylib
 
 #define DUEL_RESULT_PLAYER_WIN 1
 #define DUEL_RESULT_PLAYER_LOSE 2
+#define ONLINE_NET_STATE_RUNNING 5
 
 #define LINE_FX_BOARD_BOT 1
 
@@ -481,7 +482,7 @@ fun updateGameScreen() >> void {
         return;
     }
 
-    if (g_instant_restart && IsKeyPressed(KEY_R)) {
+    if (g_instant_restart && IsKeyPressed(KEY_R) && !(isOnlineDuelMode() && g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running)) {
         if isOnlineDuelMode() {
             onlineSetLocalRestartReady();
         } else {
@@ -555,10 +556,21 @@ fun updateGameScreen() >> void {
     }
 
     if isOnlineDuelMode() {onlineUpdateRunningSession(dt);}
+    if isOnlineDuelMode() && g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running {
+        g_online_round_result_timer += dt;
+        if g_online_round_result_timer >= 0.55 as f32 && IsKeyPressed(KEY_ENTER) {
+            enterMenuFromGame();
+        }
+        return;
+    }
     if isVersusMode() && g_duel_running {updateDelayedGarbageQueues(dt);}
 
+    if isOnlineDuelMode() && onlineLocalIsSpectator() {
+        return;
+    }
+
     if isAgainstBotMode() && g_duel_running {updateDuelBot(dt);}
-    if isVersusMode() && g_duel_running {
+    if isVersusMode() && !isOnlineDuelMode() && g_duel_running {
         if g_bot.game_over {
             g_duel_running = false;
             g_duel_result = DUEL_RESULT_PLAYER_WIN;

@@ -6,6 +6,7 @@ use std.string
 use zltris.ai
 use zltris.menu
 use zltris.scale
+use zltris.screen_transition
 use zltris.settings
 use zltris.sound
 use zltris.theme
@@ -39,6 +40,7 @@ use zltris.theme
 #define HOLD_MENU_SECONDS 2.08
 
 #define DUEL_RESULT_PLAYING 0
+#define ONLINE_NET_STATE_RUNNING 5
 #define RHYTHM_TARGET_MAX 8192
 #define RHYTHM_BASE_INPUT 0
 #define RHYTHM_BASE_DROP 1
@@ -573,15 +575,8 @@ fun resetRestartHoldState(clear_afterglow: bool) >> void {
 }
 
 fun enterMenuFromGame() >> void {
-    g_rt.restart_afterglow = 0.0;
-    g_music_playback_rate = 1.0 as f32;
-    if isOnlineDuelMode() {
-        onlineReturnToLobbyFromMatch(true);
-        return;
-    }
-    if isRhythmMode() {rhythmRestoreMusicPlaylistIfNeeded();}
-    g_game = g_game.with_screen(SCREEN_MENU);
-    menuInit();
+    if screenTransitionActive() {return;}
+    screenTransitionStart(screenTxGameOut(), menuActionExitToMenu());
 }
 
 fun triggerImmediateRestart(block_hold: bool) >> void {
@@ -591,8 +586,9 @@ fun triggerImmediateRestart(block_hold: bool) >> void {
 }
 
 fun canRestartNowByHotkey() >> bool {
+    if isOnlineDuelMode() && g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running {return false;}
     if g_play.game_over {return true;}
-    if isVersusMode() && !g_duel_running {return true;}
+    if isVersusMode() && !isOnlineDuelMode() && !g_duel_running {return true;}
     if modeUsesRoundState() && g_play.round_state == ROUND_FINISHED {return true;}
     return false;
 }

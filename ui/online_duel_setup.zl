@@ -6,8 +6,12 @@ use zltris.scale
 
 #define ONLINE_ROLE_HOST 0
 #define ONLINE_ROLE_CLIENT 1
+#define ONLINE_SEAT_PLAYER 0
+#define ONLINE_SEAT_SPECTATOR 1
 #define ONLINE_ADDR_MAX 128
 #define ONLINE_NAME_MAX 32
+#define ONLINE_MAX_PEERS 8
+#define ONLINE_PEER_NAME_TOTAL (ONLINE_NAME_MAX * ONLINE_MAX_PEERS)
 #define ONLINE_NET_STATE_IDLE 0
 #define ONLINE_NET_STATE_LISTENING 1
 #define ONLINE_NET_STATE_CONNECTING 2
@@ -25,26 +29,28 @@ use zltris.scale
 #define ONLINE_SETUP_ACTION_BACK 2
 
 #define ONLINE_ROW_NAME 0
-#define ONLINE_ROW_HOST 1
-#define ONLINE_ROW_PORT 2
-#define ONLINE_ROW_START_GRAVITY 3
-#define ONLINE_ROW_GRAVITY_RAMP 4
-#define ONLINE_ROW_BOARD_WIDTH 5
-#define ONLINE_ROW_BOARD_HEIGHT 6
-#define ONLINE_ROW_INFINITE_HOLD 7
-#define ONLINE_ROW_KICK_TABLE 8
-#define ONLINE_ROW_START_GARBAGE 9
-#define ONLINE_ROW_GARBAGE_DELAY 10
-#define ONLINE_ROW_EXTENDED_SKYLINE 11
-#define ONLINE_ROW_GUEST_EDIT 12
-#define ONLINE_ROW_START 13
-#define ONLINE_ROW_BACK 14
-#define ONLINE_ROW_COUNT 15
+#define ONLINE_ROW_SPECTATOR 1
+#define ONLINE_ROW_HOST 2
+#define ONLINE_ROW_PORT 3
+#define ONLINE_ROW_START_GRAVITY 4
+#define ONLINE_ROW_GRAVITY_RAMP 5
+#define ONLINE_ROW_BOARD_WIDTH 6
+#define ONLINE_ROW_BOARD_HEIGHT 7
+#define ONLINE_ROW_INFINITE_HOLD 8
+#define ONLINE_ROW_KICK_TABLE 9
+#define ONLINE_ROW_START_GARBAGE 10
+#define ONLINE_ROW_GARBAGE_DELAY 11
+#define ONLINE_ROW_EXTENDED_SKYLINE 12
+#define ONLINE_ROW_GUEST_EDIT 13
+#define ONLINE_ROW_START 14
+#define ONLINE_ROW_BACK 15
+#define ONLINE_ROW_COUNT 16
 #define ONLINE_VISIBLE_ROWS 6
 
 struct OnlineDuelSetupState {
     selected_row i32,
     scroll f32,
+    participant_scroll f32,
     mouse_last_x f32,
     mouse_last_y f32,
     keyboard_nav_lock bool,
@@ -75,6 +81,7 @@ fun onlineDuelSetupUiInit() >> void {
     g_online_setup.selected_row = ONLINE_ROW_START;
     if g_online_role == ONLINE_ROLE_CLIENT {g_online_setup.selected_row = ONLINE_ROW_START;} else {g_online_setup.selected_row = ONLINE_ROW_PORT;}
     g_online_setup.scroll = 0.0 as f32;
+    g_online_setup.participant_scroll = 0.0 as f32;
     g_online_setup.mouse_last_x = 0.0 as f32;
     g_online_setup.mouse_last_y = 0.0 as f32;
     g_online_setup.keyboard_nav_lock = false;
@@ -106,6 +113,7 @@ fun onlineClampf(v: f32, min_v: f32, max_v: f32) >> f32 {
 
 fun onlineRowVisible(row: i32) >> bool {
     if row == ONLINE_ROW_START || row == ONLINE_ROW_BACK || row == ONLINE_ROW_PORT {return true;}
+    if row == ONLINE_ROW_SPECTATOR {return g_online_role == ONLINE_ROLE_CLIENT;}
     if row == ONLINE_ROW_HOST {return g_online_role == ONLINE_ROLE_CLIENT;}
     if row == ONLINE_ROW_GUEST_EDIT {return true;}
     return true;
@@ -226,6 +234,10 @@ fun onlineKickLabel() >> ptr<u8> {
 
 fun onlineLabelText(row: i32) >> ptr<u8> {
     if row == ONLINE_ROW_NAME {return "Nickname";}
+    if row == ONLINE_ROW_SPECTATOR {
+        if g_online_spectator {return "JOIN AS PLAYER";}
+        return "JOIN AS SPECTATOR";
+    }
     if row == ONLINE_ROW_HOST {return "Host / Domain";}
     if row == ONLINE_ROW_PORT {return "Port";}
     if row == ONLINE_ROW_START_GRAVITY {return "Start Gravity";}
@@ -245,9 +257,12 @@ fun onlineLabelText(row: i32) >> ptr<u8> {
 fun onlineStartButtonLabel() >> ptr<u8> {
     if !g_online_start_requested {
         if g_online_role == ONLINE_ROLE_HOST {return "HOST MATCH";}
+        if g_online_spectator {return "CONNECT SPECTATOR";}
         return "CONNECT";
     }
+    if g_online_net_state == ONLINE_NET_STATE_CONNECTING || g_online_net_state == ONLINE_NET_STATE_HANDSHAKE || g_online_net_state == ONLINE_NET_STATE_LISTENING {return "CANCEL";}
     if onlineLobbyReady() {
+        if g_online_spectator {return "SPECTATING LOBBY";}
         if g_online_local_prep {return "CANCEL READY";}
         return "READY";
     }
@@ -559,7 +574,9 @@ fun drawOnlineButtonRow(font: Font, theme: Theme, row: i32) >> void {
     }
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92 as f32));
     strokeRect(118, y, 412, 62, stroke);
-    drawTextCenteredInRect(font, onlineLabelText(row), 118, y + 2, 412, 58, 15, theme.text_main);
+    u32 color = theme.text_main;
+    if row == ONLINE_ROW_SPECTATOR && g_online_spectator {color = theme.panel_stroke;}
+    drawTextCenteredInRect(font, onlineLabelText(row), 118, y + 2, 412, 58, 15, color);
 }
 
 fun onlineHostLen() >> i32 {
@@ -709,6 +726,7 @@ fun drawOnlineStatusLine(font: Font, theme: Theme) >> void {
 
     ptr<u8> role_text = "Role: HOST";
     if g_online_role == ONLINE_ROLE_CLIENT {role_text = "Role: CLIENT";}
+    if g_online_spectator {role_text = "Role: SPECTATOR";}
     drawTextColor(font, role_text, 118, 808, 11, theme.text_muted);
 
     drawTextColor(font, "UP/DOWN select  LEFT/RIGHT adjust", 118, 820, 11, theme.text_muted);
@@ -744,6 +762,8 @@ fun drawOnlinePlayerSlot(font: Font, theme: Theme, slot_y: i64, is_host_slot: bo
 
     ptr<u8> role = "CLIENT";
     if is_host_slot {role = "HOST";}
+    if !is_host_slot && onlineRemoteIsSpectator() {role = "SPECTATOR";}
+    if is_local && g_online_spectator {role = "SPECTATOR";}
     if is_local {drawTextColor(font, "YOU", 812, slot_y + 10, 10, theme.panel_stroke);} else {drawTextColor(font, "PEER", 806, slot_y + 10, 10, theme.text_muted);}
     drawTextColor(font, role, 636, slot_y + 30, 10, theme.text_muted);
 
@@ -751,31 +771,71 @@ fun drawOnlinePlayerSlot(font: Font, theme: Theme, slot_y: i64, is_host_slot: bo
     u32 status_color = theme.text_muted;
     bool prep = g_online_local_prep;
     if !is_local {prep = g_online_remote_prep;}
+    if (is_local && g_online_spectator) || (!is_local && onlineRemoteIsSpectator()) {status = "WATCHING"; prep = false;}
     if prep {status = "READY"; status_color = theme.panel_stroke;}
     drawTextColor(font, status, 746, slot_y + 30, 12, status_color);
+}
+
+fun onlineParticipantCount() >> i32 {
+    return 1 + onlinePeerListCount();
+}
+
+fun drawOnlineParticipantRow(font: Font, theme: Theme, index: i32, y: i64) >> void {
+    fillRect(620, y, 240, 56, alphaColor(theme.panel_bg, 0.92 as f32));
+    strokeRect(620, y, 240, 56, alphaColor(theme.panel_stroke, 0.42 as f32));
+
+    ptr<u8> name = &g_online_local_name[0];
+    ptr<u8> role = "HOST";
+    ptr<u8> tag = "YOU";
+    ptr<u8> status = "preparing";
+    u32 status_color = theme.text_muted;
+    bool prep = g_online_local_prep;
+    bool spectator = g_online_spectator;
+
+    if index > 0 {
+        i32 peer_idx = onlinePeerListSlotByOrder(index - 1);
+        if peer_idx >= 0 {
+            name = onlinePeerNamePtr(peer_idx);
+            if name[0] == 0 {name = "Guest";}
+            role = "CLIENT";
+            tag = "PEER";
+            prep = g_online_peer_prep[peer_idx];
+            spectator = g_online_peer_seats[peer_idx] == ONLINE_SEAT_SPECTATOR;
+        }
+    }
+
+    if spectator {role = "SPECTATOR"; status = "WATCHING"; prep = false;}
+    if prep {status = "READY"; status_color = theme.panel_stroke;}
+
+    drawTextColor(font, name, 636, y + 9, 14, theme.text_main);
+    drawTextColor(font, tag, 812, y + 9, 10, theme.panel_stroke);
+    drawTextColor(font, role, 636, y + 29, 10, theme.text_muted);
+    drawTextColor(font, status, 746, y + 29, 12, status_color);
 }
 
 fun drawOnlinePlayerList(font: Font, theme: Theme) >> void {
     fillRect(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86 as f32));
     strokeRect(600, 98, 280, 740, alphaColor(theme.panel_stroke, 0.90 as f32));
     
-    drawTextColor(font, "PLAYERS", 620, 132, 24, theme.text_main);
-    drawTextColor(font, "session layout", 620, 164, 11, theme.text_muted);
-     
-    i64 slot_y = 190;
-    drawOnlinePlayerSlot(font, theme, slot_y, true);
-    slot_y += 76;
-    drawOnlinePlayerSlot(font, theme, slot_y, false);
-    slot_y += 92;
+    drawTextColor(font, "PARTICIPANTS", 620, 132, 20, theme.text_main);
+    drawTextColor(font, TextFormat("%i connected", onlineParticipantCount()), 620, 164, 11, theme.text_muted);
 
-    drawTextColor(font, "NEXT SLOTS", 620, slot_y, 12, theme.text_muted);
-    slot_y += 28;
-    for i32 i = 0; i < 3; i++ {
-        fillRect(620, slot_y, 240, 42, alphaColor(theme.panel_bg, 0.48 as f32));
-        strokeRect(620, slot_y, 240, 42, alphaColor(theme.text_muted, 0.24 as f32));
-        drawTextColor(font, TextFormat("Player slot %i", i + 3), 636, slot_y + 13, 11, alphaColor(theme.text_muted, 0.58 as f32));
-        slot_y += 52;
+    i32 count = onlineParticipantCount();
+    i32 max_scroll = count - 9;
+    if max_scroll < 0 {max_scroll = 0;}
+    if g_online_setup.participant_scroll < 0.0 as f32 {g_online_setup.participant_scroll = 0.0 as f32;}
+    if g_online_setup.participant_scroll > (max_scroll as f32) {g_online_setup.participant_scroll = max_scroll as f32;}
+
+    BeginScissorMode(uiX(614), uiY(188), uiS(252), uiS(606));
+    i64 y0 = 190 - ((g_online_setup.participant_scroll * (64.0 as f32)) as i64);
+    for i32 i = 0; i < count; i++ {
+        i64 y = y0 + (i as i64) * 64;
+        if y < 130 || y > 810 {continue;}
+        drawOnlineParticipantRow(font, theme, i, y);
     }
+    EndScissorMode();
+
+    if max_scroll > 0 {drawTextColor(font, "mouse wheel to scroll", 620, 810, 10, theme.text_muted);}
 }
 
 fun drawOnlineDuelSetup(font: Font, theme: Theme) >> void {
@@ -888,7 +948,7 @@ fun onlineNameEditTick() >> void {
         g_online_setup.editing_name = false;
         if g_online_local_name[0] == 0 {copyFixed(&g_online_local_name[0], onlineDefaultNameForRole(g_online_role), ONLINE_NAME_MAX);}
         onlineClampNameCursor();
-        if g_online_conn_fd >= 0 {onlineSendLine(TextFormat("ZD1|HELLO|%i|%s\n", g_online_role, &g_online_local_name[0]));}
+        if g_online_conn_fd >= 0 {onlineSendLine(TextFormat("ZD1|HELLO|%i|%s|%i|%i|M1\n", g_online_role, &g_online_local_name[0], onlineLocalSeat(), g_online_local_player_id));}
         return;
     }
 
@@ -928,14 +988,9 @@ fun updateOnlineDuelSetup() >> i32 {
     onlineClampRules();
     if g_online_start_requested {onlineTickLobby();}
 
-    if g_online_setup.editing_host {
-        onlineHostEditTick();
-        return ONLINE_SETUP_ACTION_NONE;
-    }
-    if g_online_setup.editing_name {
-        onlineNameEditTick();
-        return ONLINE_SETUP_ACTION_NONE;
-    }
+    bool editing_text = g_online_setup.editing_host || g_online_setup.editing_name;
+    if g_online_setup.editing_host {onlineHostEditTick();}
+    if g_online_setup.editing_name {onlineNameEditTick();}
 
     Vector2 mouse = GetMousePosition();
     bool mouse_moved = absf(mouse.x - g_online_setup.mouse_last_x) > 0.5 as f32 || absf(mouse.y - g_online_setup.mouse_last_y) > 0.5 as f32;
@@ -943,17 +998,22 @@ fun updateOnlineDuelSetup() >> i32 {
     g_online_setup.mouse_last_x = mouse.x;
     g_online_setup.mouse_last_y = mouse.y;
 
-    if IsKeyPressed(KEY_ESCAPE) {return ONLINE_SETUP_ACTION_BACK;}
-    if IsKeyPressed(KEY_UP) {onlineMoveRow(-1); g_online_setup.keyboard_nav_lock = true;}
-    if IsKeyPressed(KEY_DOWN) {onlineMoveRow(1); g_online_setup.keyboard_nav_lock = true;}
-    if IsKeyPressed(KEY_LEFT) {onlineNudge(g_online_setup.selected_row, -1);}
-    if IsKeyPressed(KEY_RIGHT) {onlineNudge(g_online_setup.selected_row, 1);}
+    if !editing_text && IsKeyPressed(KEY_ESCAPE) {return ONLINE_SETUP_ACTION_BACK;}
+    if !editing_text && IsKeyPressed(KEY_UP) {onlineMoveRow(-1); g_online_setup.keyboard_nav_lock = true;}
+    if !editing_text && IsKeyPressed(KEY_DOWN) {onlineMoveRow(1); g_online_setup.keyboard_nav_lock = true;}
+    if !editing_text && IsKeyPressed(KEY_LEFT) {onlineNudge(g_online_setup.selected_row, -1);}
+    if !editing_text && IsKeyPressed(KEY_RIGHT) {onlineNudge(g_online_setup.selected_row, 1);}
 
     i32 max_scroll = onlineVisibleCount() - ONLINE_VISIBLE_ROWS;
     if max_scroll < 0 {max_scroll = 0;}
     f32 wheel = GetMouseWheelMove();
-    if wheel > 0.0 as f32 {g_online_setup.scroll -= 1.0 as f32;}
-    if wheel < 0.0 as f32 {g_online_setup.scroll += 1.0 as f32;}
+    if pointInBaseRect(mouse.x, mouse.y, 600, 98, 280, 740) {
+        if wheel > 0.0 as f32 {g_online_setup.participant_scroll -= 1.0 as f32;}
+        if wheel < 0.0 as f32 {g_online_setup.participant_scroll += 1.0 as f32;}
+    } else {
+        if wheel > 0.0 as f32 {g_online_setup.scroll -= 1.0 as f32;}
+        if wheel < 0.0 as f32 {g_online_setup.scroll += 1.0 as f32;}
+    }
     if g_online_setup.scroll < 0.0 as f32 {g_online_setup.scroll = 0.0 as f32;}
     if g_online_setup.scroll > (max_scroll as f32) {g_online_setup.scroll = max_scroll as f32;}
 
@@ -973,6 +1033,8 @@ fun updateOnlineDuelSetup() >> i32 {
             if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
                 g_online_setup.keyboard_nav_lock = false;
                 g_online_setup.selected_row = row;
+                if row != ONLINE_ROW_NAME {g_online_setup.editing_name = false;}
+                if row != ONLINE_ROW_HOST {g_online_setup.editing_host = false;}
                 if row == ONLINE_ROW_NAME {
                     g_online_setup.editing_name = true;
                     g_online_setup.name_cursor = onlineNameLen();
@@ -990,10 +1052,16 @@ fun updateOnlineDuelSetup() >> i32 {
                     g_online_setup.host_delete_repeat = 0.0 as f32;
                 }
                 if row == ONLINE_ROW_BACK {return ONLINE_SETUP_ACTION_BACK;}
+                if row == ONLINE_ROW_SPECTATOR && !g_online_start_requested {
+                    g_online_spectator = !g_online_spectator;
+                }
                 if row == ONLINE_ROW_START {
                     if !g_online_start_requested || g_online_net_state == ONLINE_NET_STATE_ERROR || g_online_net_state == ONLINE_NET_STATE_DISCONNECTED {
                         onlineBeginLobbyFromSettings();
-                    } else if onlineLobbyReady() {
+                    } else if g_online_net_state == ONLINE_NET_STATE_CONNECTING || g_online_net_state == ONLINE_NET_STATE_HANDSHAKE || g_online_net_state == ONLINE_NET_STATE_LISTENING {
+                        onlineAbortSession();
+                        onlineDuelSetupUiInit();
+                    } else if onlineLobbyReady() && !g_online_spectator {
                         g_online_local_prep = !g_online_local_prep;
                         onlineSendPrep(g_online_local_prep);
                     }
@@ -1011,7 +1079,7 @@ fun updateOnlineDuelSetup() >> i32 {
 
     onlineEnsureSelectedVisible();
 
-    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+    if !editing_text && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
         i32 sel = g_online_setup.selected_row;
         if sel == ONLINE_ROW_NAME {
             g_online_setup.editing_name = true;
@@ -1032,12 +1100,21 @@ fun updateOnlineDuelSetup() >> i32 {
             return ONLINE_SETUP_ACTION_NONE;
         }
         if sel == ONLINE_ROW_BACK {return ONLINE_SETUP_ACTION_BACK;}
+        if sel == ONLINE_ROW_SPECTATOR && !g_online_start_requested {
+            g_online_spectator = !g_online_spectator;
+            return ONLINE_SETUP_ACTION_NONE;
+        }
         if sel == ONLINE_ROW_START {
             if !g_online_start_requested || g_online_net_state == ONLINE_NET_STATE_ERROR || g_online_net_state == ONLINE_NET_STATE_DISCONNECTED {
                 onlineBeginLobbyFromSettings();
                 return ONLINE_SETUP_ACTION_NONE;
             }
-            if onlineLobbyReady() {
+            if g_online_net_state == ONLINE_NET_STATE_CONNECTING || g_online_net_state == ONLINE_NET_STATE_HANDSHAKE || g_online_net_state == ONLINE_NET_STATE_LISTENING {
+                onlineAbortSession();
+                onlineDuelSetupUiInit();
+                return ONLINE_SETUP_ACTION_NONE;
+            }
+            if onlineLobbyReady() && !g_online_spectator {
                 g_online_local_prep = !g_online_local_prep;
                 onlineSendPrep(g_online_local_prep);
             }
@@ -1047,7 +1124,7 @@ fun updateOnlineDuelSetup() >> i32 {
     }
 
     if g_online_start_requested && onlineLobbyReady() {
-        if g_online_local_prep && g_online_remote_prep {
+        if onlineAllPlayersReady() {
             return ONLINE_SETUP_ACTION_START;
         }
     }

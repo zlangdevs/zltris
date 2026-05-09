@@ -1,6 +1,7 @@
 module zltris;
 use raylib
 use zltris.scale
+use zltris.screen_transition
 use zltris.theme
 use zltris.ui
 
@@ -212,8 +213,8 @@ fun initBotSetupDefaults() >> void {
 }
 
 fun startBotDuel() >> void {
-    g_game = g_game.with_screen(SCREEN_GAME);
-    startGameMode(MODE_VS_BOT);
+    if screenTransitionActive() {return;}
+    screenTransitionStart(screenTxGameIn(), menuActionStartVsBot());
 }
 
 fun initBotArenaSide(side: i32, setup: BotSetupState, generation: i32) >> void {

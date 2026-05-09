@@ -47,6 +47,8 @@ use zltris.theme
 
 #define ONLINE_ROLE_HOST 0
 #define ONLINE_ROLE_CLIENT 1
+#define ONLINE_SEAT_PLAYER 0
+#define ONLINE_SEAT_SPECTATOR 1
 #define ONLINE_NET_STATE_IDLE 0
 #define ONLINE_NET_STATE_LISTENING 1
 #define ONLINE_NET_STATE_CONNECTING 2
@@ -57,7 +59,11 @@ use zltris.theme
 #define ONLINE_NET_STATE_DISCONNECTED 7
 #define ONLINE_ADDR_MAX 128
 #define ONLINE_NAME_MAX 32
+#define ONLINE_MAX_PEERS 8
 #define ONLINE_RX_BUF_MAX 32768
+#define ONLINE_PEER_RX_TOTAL (ONLINE_RX_BUF_MAX * ONLINE_MAX_PEERS)
+#define ONLINE_PEER_NAME_TOTAL (ONLINE_NAME_MAX * ONLINE_MAX_PEERS)
+#define ONLINE_PEER_BOARD_TOTAL (BOARD_CELLS * ONLINE_MAX_PEERS)
 
 #define RHYTHM_BASE_INPUT 0
 #define RHYTHM_BASE_DROP 1
@@ -351,6 +357,10 @@ bool g_challenge_extended_skyline = false;
 i32 g_combo_practice_pattern_index = -1;
 
 i32 g_online_role = ONLINE_ROLE_HOST;
+bool g_online_spectator = false;
+i32 g_online_local_player_id = 1;
+i32 g_online_remote_player_id = 2;
+i32 g_online_remote_seat = ONLINE_SEAT_PLAYER;
 arr<u8, ONLINE_ADDR_MAX> g_online_host = {0};
 arr<u8, ONLINE_NAME_MAX> g_online_local_name = {0};
 arr<u8, ONLINE_NAME_MAX> g_online_remote_name = {0};
@@ -367,6 +377,27 @@ bool g_online_extended_skyline = false;
 bool g_online_allow_guest_edit = false;
 i32 g_online_listen_fd = -1;
 i32 g_online_conn_fd = -1;
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_fds = {-1};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_rx_len = {0};
+arr<u8, ONLINE_PEER_RX_TOTAL> g_online_peer_rx_buf = {0};
+arr<u8, ONLINE_PEER_NAME_TOTAL> g_online_peer_names = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_ids = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_seats = {0};
+arr<bool, ONLINE_MAX_PEERS> g_online_peer_prep = {false};
+arr<i32, ONLINE_PEER_BOARD_TOTAL> g_online_peer_boards = {0};
+arr<bool, ONLINE_MAX_PEERS> g_online_peer_snapshot_valid = {false};
+arr<bool, ONLINE_MAX_PEERS> g_online_peer_finalist_visible = {false};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_score = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_lines = {0};
+arr<bool, ONLINE_MAX_PEERS> g_online_peer_over = {false};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_piece_kind = {-1};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_piece_rotation = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_piece_x = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_piece_y = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_board_w = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_peer_board_h = {0};
+arr<i32, ONLINE_MAX_PEERS> g_online_eliminated_ids = {0};
+i32 g_online_eliminated_count = 0;
 i32 g_online_net_state = ONLINE_NET_STATE_IDLE;
 i32 g_online_net_error = 0;
 i32 g_online_net_target_ip = 0;
@@ -386,6 +417,14 @@ bool g_online_local_restart_ready = false;
 bool g_online_remote_restart_ready = false;
 bool g_online_local_prep = false;
 bool g_online_remote_prep = false;
+i32 g_online_round_player_count = 0;
+i32 g_online_local_place = 0;
+i32 g_online_last_eliminated_player_id = 0;
+i32 g_online_round_winner_player_id = 0;
+i32 g_online_round_runner_up_player_id = 0;
+bool g_online_local_eliminated = false;
+bool g_online_local_finalist_visible = false;
+f32 g_online_round_result_timer = 0.0;
 
 i32 g_rhythm_song_index = 0;
 i32 g_rhythm_based = RHYTHM_BASE_INPUT;
