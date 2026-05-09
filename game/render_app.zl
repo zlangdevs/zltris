@@ -34,11 +34,16 @@ use zltris.ui
 
 #define ONLINE_ROLE_HOST 0
 #define ONLINE_ROLE_CLIENT 1
+#define ONLINE_SEAT_PLAYER 0
+#define ONLINE_SEAT_SPECTATOR 1
+#define ONLINE_MAX_PEERS 8
+#define ONLINE_NET_STATE_RUNNING 5
 
 #define MODE_FREE_PLAY 0
 #define MODE_40_LINES 1
 #define MODE_BLITZ 2
 #define MODE_COMBO_TRAINER 6
+#define MODE_VS_BOT 3
 #define MODE_CHALLENGE 5
 #define MODE_RHYTHM 7
 #define MODE_ONLINE_DUEL 8
@@ -227,7 +232,7 @@ fun drawApp(font: Font) >> void {
     bool use_vhs = g_post_shader_mode == SHADER_MODE_VHS && g_vhs_shader_ready;
     bool use_custom = g_post_shader_mode == SHADER_MODE_CUSTOM && g_custom_shader_ready;
     bool use_shader = use_light_crt || use_crt || use_vhs || use_custom;
-    bool use_layered_targets = use_custom && g_game.screen == SCREEN_GAME && !isBotDuelsMode();
+    bool use_layered_targets = use_custom && g_game.screen == SCREEN_GAME && !isBotDuelsMode() && !isOnlineDuelMode();
 
     if g_post_shader_mode == SHADER_MODE_CUSTOM && !g_custom_shader_ready && !g_custom_shader_warned {
         printf("[zltris] custom mode active but shader is not ready (name='%s')\n", &g_custom_shader_name[0]);
@@ -342,11 +347,27 @@ fun drawApp(font: Font) >> void {
     EndDrawing();
 }
 
+#define MENU_ACTION_EXIT_TO_MENU 99
+#define MENU_ACTION_START_CHALLENGE 100
+#define MENU_ACTION_START_RHYTHM 101
+#define MENU_ACTION_START_ONLINE_DUEL 102
+#define MENU_ACTION_START_VS_BOT 103
+
+fun menuActionExitToMenu() >> i32 {return MENU_ACTION_EXIT_TO_MENU;}
+fun menuActionStartChallenge() >> i32 {return MENU_ACTION_START_CHALLENGE;}
+fun menuActionStartRhythm() >> i32 {return MENU_ACTION_START_RHYTHM;}
+fun menuActionStartOnlineDuel() >> i32 {return MENU_ACTION_START_ONLINE_DUEL;}
+fun menuActionStartVsBot() >> i32 {return MENU_ACTION_START_VS_BOT;}
+
 fun menuActionUsesGameTransition(action: i32) >> bool {
     if action == menuActionStartFreePlay() {return true;}
     if action == menuActionStart40Lines() {return true;}
     if action == menuActionStartBlitz() {return true;}
     if action == menuActionStartComboTrainer() {return true;}
+    if action == MENU_ACTION_START_CHALLENGE {return true;}
+    if action == MENU_ACTION_START_RHYTHM {return true;}
+    if action == MENU_ACTION_START_ONLINE_DUEL {return true;}
+    if action == MENU_ACTION_START_VS_BOT {return true;}
     return false;
 }
 
@@ -391,7 +412,34 @@ fun applyMenuAction(action: i32) >> void {
         g_game = g_game.with_settings_return_screen(SCREEN_MENU);
         settingsInit();
         g_game = g_game.with_screen(SCREEN_SETTINGS);
+    } else if (action == MENU_ACTION_EXIT_TO_MENU) {
+        applyExitToMenu();
+    } else if (action == MENU_ACTION_START_CHALLENGE) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_CHALLENGE);
+    } else if (action == MENU_ACTION_START_RHYTHM) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_RHYTHM);
+    } else if (action == MENU_ACTION_START_ONLINE_DUEL) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_ONLINE_DUEL);
+        onlineMarkGameStarted();
+    } else if (action == MENU_ACTION_START_VS_BOT) {
+        g_game = g_game.with_screen(SCREEN_GAME);
+        startGameMode(MODE_VS_BOT);
     }
+}
+
+fun applyExitToMenu() >> void {
+    g_rt.restart_afterglow = 0.0;
+    g_music_playback_rate = 1.0 as f32;
+    if isOnlineDuelMode() {
+        onlineReturnToLobbyFromMatch(true);
+        return;
+    }
+    if isRhythmMode() {rhythmRestoreMusicPlaylistIfNeeded();}
+    g_game = g_game.with_screen(SCREEN_MENU);
+    menuInit();
 }
 
 fun updateApp() >> void {
@@ -437,7 +485,7 @@ fun updateApp() >> void {
     if (g_game.screen == SCREEN_MENU) {
         i32 action = menuUpdate();
         if menuActionUsesGameTransition(action) {
-            screenTransitionStart(screenTxBarsVert(), action);
+            screenTransitionStart(screenTxGameIn(), action);
             return;
         }
         if menuActionUsesSettingsTransition(action) {
@@ -469,8 +517,7 @@ fun updateApp() >> void {
             return;
         }
         if challenge_action == challengeActionStart() {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_CHALLENGE);
+            screenTransitionStart(screenTxGameIn(), MENU_ACTION_START_CHALLENGE);
             return;
         }
         return;
@@ -484,8 +531,7 @@ fun updateApp() >> void {
             return;
         }
         if rhythm_action == rhythmSetupActionStart() {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_RHYTHM);
+            screenTransitionStart(screenTxGameIn(), MENU_ACTION_START_RHYTHM);
             return;
         }
         return;
@@ -499,9 +545,7 @@ fun updateApp() >> void {
             return;
         }
         if online_action == onlineDuelSetupActionStart() {
-            g_game = g_game.with_screen(SCREEN_GAME);
-            startGameMode(MODE_ONLINE_DUEL);
-            onlineMarkGameStarted();
+            screenTransitionStart(screenTxGameIn(), MENU_ACTION_START_ONLINE_DUEL);
             return;
         }
         return;
@@ -513,8 +557,280 @@ fun updateApp() >> void {
 fun drawGameFrame(font: Font) >> void {
     Theme theme = currentTheme();
     drawGameBackgroundLayer(theme);
+    if isOnlineDuelMode() {
+        if onlineLocalBoardVisible() {drawBoard(theme);}
+        drawOnlineTiledBoards(font, theme);
+        if onlineLocalBoardAlive() {drawGameUiLayer(font, theme);}
+        drawOnlineRoundResultOverlay(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
     drawGameBlocksLayer(font, theme);
     drawGameUiLayer(font, theme);
+}
+
+fun onlineLocalBoardAlive() >> bool {
+    if onlineLocalIsSpectator() {return false;}
+    return !g_play.game_over;
+}
+
+fun onlineLocalBoardVisible() >> bool {
+    if onlineLocalBoardAlive() {return true;}
+    if g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running {
+        return g_online_local_player_id == g_online_round_winner_player_id || g_online_local_player_id == g_online_round_runner_up_player_id;
+    }
+    return g_online_local_finalist_visible;
+}
+
+fun onlinePeerBoardVisible(peer_slot: i32) >> bool {
+    if peer_slot < 0 || peer_slot >= ONLINE_MAX_PEERS {return false;}
+    if !g_online_peer_snapshot_valid[peer_slot] {return false;}
+    if g_online_peer_seats[peer_slot] != ONLINE_SEAT_PLAYER {return false;}
+    if g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running {
+        return g_online_peer_ids[peer_slot] == g_online_round_winner_player_id || g_online_peer_ids[peer_slot] == g_online_round_runner_up_player_id;
+    }
+    if onlinePlayerIdEliminated(g_online_peer_ids[peer_slot]) {return g_online_peer_finalist_visible[peer_slot];}
+    if !g_online_peer_over[peer_slot] {return true;}
+    return g_online_peer_finalist_visible[peer_slot];
+}
+
+fun onlineAliveBoardCount() >> i32 {
+    i32 count = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if !onlinePeerBoardVisible(i) {continue;}
+        count += 1;
+    }
+    return count;
+}
+
+fun onlineAlivePeerSlotByIndex(index: i32) >> i32 {
+    i32 seen = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if !onlinePeerBoardVisible(i) {continue;}
+        if seen == index {return i;}
+        seen += 1;
+    }
+    return -1;
+}
+
+fun onlineTiledColumns(count: i32) >> i32 {
+    if count <= 1 {return 1;}
+    if count <= 4 {return 2;}
+    if count <= 6 {return 3;}
+    return 4;
+}
+
+fun visibleBaseLeft() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return 0;}
+    return ((0 - uiOffsetX(scale)) as f32 / scale) as i64;
+}
+
+fun visibleBaseRight() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return scaleBaseWidth() as i64;}
+    return (((GetScreenWidth() - uiOffsetX(scale)) as f32) / scale) as i64;
+}
+
+fun visibleBaseTop() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return 0;}
+    return ((0 - uiOffsetY(scale)) as f32 / scale) as i64;
+}
+
+fun visibleBaseBottom() >> i64 {
+    f32 scale = uiScale();
+    if scale <= 0.0001 {return scaleBaseHeight() as i64;}
+    return (((GetScreenHeight() - uiOffsetY(scale)) as f32) / scale) as i64;
+}
+
+fun onlineBestTiledColumns(count: i32, region_w: i64, region_h: i64, board_w: i64, board_h: i64, gap: i64) >> i32 {
+    i32 best_cols = 1;
+    i64 best_cell = 0;
+    i64 tile_extra_w = 12;
+    i64 tile_extra_h = 34;
+    for i32 cols = 1; cols <= count; cols++ {
+        if cols > 4 {break;}
+        i32 rows = (count + cols - 1) / cols;
+        i64 avail_w = region_w - gap * ((cols - 1) as i64);
+        i64 avail_h = region_h - gap * ((rows - 1) as i64);
+        avail_w -= tile_extra_w * (cols as i64);
+        avail_h -= tile_extra_h * (rows as i64);
+        if avail_w <= 0 || avail_h <= 0 {continue;}
+        i64 cell_w = avail_w / ((cols as i64) * board_w);
+        i64 cell_h = avail_h / ((rows as i64) * board_h);
+        i64 cell = cell_w;
+        if cell_h < cell {cell = cell_h;}
+        if cell > best_cell {best_cell = cell; best_cols = cols;}
+    }
+    return best_cols;
+}
+
+fun drawOnlineCellAt(theme: Theme, x: i64, y: i64, cell: i64, value: i32) >> void {
+    i32 sx = uiX(x);
+    i32 sy = uiY(y);
+    i32 sw = uiS(cell);
+    i32 sh = uiS(cell);
+    if sw < 1 {sw = 1;}
+    if sh < 1 {sh = 1;}
+    DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+    if value == 8 {drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));}
+    else if value != 0 {drawCellPixels(sx, sy, sw, sh, pieceColor(theme, value - 1));}
+}
+
+fun drawOnlinePieceAt(theme: Theme, board_x: i64, board_y: i64, cell: i64, kind: i32, rot: i32, px: i32, py: i32, vis_start: i32) >> void {
+    if kind < 0 || kind > PIECE_Z {return;}
+    for i32 i = 0; i < 4; i++ {
+        i32 x = px + minoX(kind, rot, i);
+        i32 y = py + minoY(kind, rot, i);
+        if y < vis_start {continue;}
+        i32 sx = uiX(board_x + (x as i64) * cell);
+        i32 sy = uiY(board_y + ((y - vis_start) as i64) * cell);
+        i32 sw = uiS(cell);
+        i32 sh = uiS(cell);
+        drawCellPixels(sx, sy, sw, sh, pieceColor(theme, kind));
+    }
+}
+
+fun drawOnlineBoardTile(font: Font, theme: Theme, tile_index: i32, x: i64, y: i64, cell: i64, local: bool, peer_slot: i32) >> void {
+    i32 bw = boardWidth();
+    i32 bh = boardHeight();
+    i32 vis_start = boardVisibleStartRow();
+    ptr<u8> name = onlineLocalDisplayName();
+    i32 pk = g_piece_kind;
+    i32 pr = g_piece_rotation;
+    i32 px = g_piece_x;
+    i32 py = g_piece_y;
+    if !local {
+        bw = g_online_peer_board_w[peer_slot];
+        bh = g_online_peer_board_h[peer_slot];
+        if bw <= 0 {bw = boardWidth();}
+        if bh <= 0 {bh = boardHeight();}
+        vis_start = boardHiddenRows();
+        name = onlinePeerNamePtr(peer_slot);
+        if name[0] == 0 {name = "Peer";}
+        pk = g_online_peer_piece_kind[peer_slot];
+        pr = g_online_peer_piece_rotation[peer_slot];
+        px = g_online_peer_piece_x[peer_slot];
+        py = g_online_peer_piece_y[peer_slot];
+    }
+    i32 visible_rows = bh - vis_start;
+    if visible_rows < 1 {visible_rows = bh; vis_start = 0;}
+    i64 board_w = (bw as i64) * cell;
+    i64 board_h = (visible_rows as i64) * cell;
+    drawTextColor(font, name, x, y - 22, 14, theme.text_main);
+    fillRect(x - 6, y - 6, board_w + 12, board_h + 12, theme.board_bg);
+    strokeRect(x - 6, y - 6, board_w + 12, board_h + 12, theme.panel_stroke);
+    for i32 yy = vis_start; yy < bh; yy++ {
+        for i32 xx = 0; xx < bw; xx++ {
+            i32 value = 0;
+            if local {value = boardGet(xx, yy);} else {value = g_online_peer_boards[onlinePeerBoardIndex(peer_slot, yy * bw + xx)];}
+            drawOnlineCellAt(theme, x + (xx as i64) * cell, y + ((yy - vis_start) as i64) * cell, cell, value);
+        }
+    }
+    drawOnlinePieceAt(theme, x, y, cell, pk, pr, px, py, vis_start);
+}
+
+fun drawOnlineTiledBoards(font: Font, theme: Theme) >> void {
+    i32 count = onlineAliveBoardCount();
+    if count <= 0 {
+        if g_duel_running {drawTextCenteredInRect(font, "SPECTATING", 0, 360, viewportBaseWidth(), 80, 24, theme.text_main);}
+        return;
+    }
+    if onlineLocalBoardVisible() && count == 1 {
+        i32 only_peer = onlineAlivePeerSlotByIndex(0);
+        if only_peer >= 0 {
+            drawOnlineBoardTile(font, theme, 0, currentBotBoardLeft(), currentBoardTop(), boardCellSize(), false, only_peer);
+            return;
+        }
+    }
+    i64 gap = 22;
+    i64 margin_x = 18;
+    i64 margin_y = 30;
+    i64 visible_l = visibleBaseLeft();
+    i64 visible_r = visibleBaseRight();
+    i64 visible_t = visibleBaseTop();
+    i64 visible_b = visibleBaseBottom();
+    i64 region_x = visible_l + margin_x;
+    i64 region_w = visible_r - visible_l - margin_x * 2;
+    bool align_with_local = false;
+    if onlineLocalBoardVisible() {
+        region_x = currentCenterSidebarX() + 188;
+        if region_x < visible_l + margin_x {region_x = visible_l + margin_x;}
+        region_w = visible_r - region_x - margin_x;
+        if count <= 2 {align_with_local = true;}
+    }
+    i64 top = visible_t + margin_y + 32;
+    i64 bw = boardWidth() as i64;
+    i64 bh = boardVisibleRows() as i64;
+    i64 region_h = visible_b - top - margin_y;
+    if align_with_local {
+        top = currentBoardTop() + 26;
+        region_h = (boardVisibleRows() as i64) * boardCellSize() + 34;
+    }
+    if region_w < 80 {region_w = 80;}
+    if region_h < 80 {region_h = 80;}
+    i32 cols = onlineBestTiledColumns(count, region_w, region_h, bw, bh, gap);
+    if align_with_local {
+        i64 needed_w = (bw * boardCellSize() + 12) * (count as i64) + gap * ((count - 1) as i64);
+        if needed_w <= region_w {cols = count;}
+    }
+    i32 rows = (count + cols - 1) / cols;
+    i64 avail_w = region_w - gap * ((cols - 1) as i64);
+    i64 avail_h = region_h - gap * ((rows - 1) as i64);
+    avail_w -= 12 * (cols as i64);
+    avail_h -= 34 * (rows as i64);
+    i64 cell_w = avail_w / ((cols as i64) * bw);
+    i64 cell_h = avail_h / ((rows as i64) * bh);
+    i64 cell = cell_w;
+    if cell_h < cell {cell = cell_h;}
+    if cell < 3 {cell = 3;}
+    if cell > 32 {cell = 32;}
+    i64 tile_w = bw * cell;
+    i64 tile_h = bh * cell;
+    i64 tile_step_w = tile_w + 12;
+    i64 tile_step_h = tile_h + 34;
+    i64 grid_w = tile_step_w * (cols as i64) + gap * ((cols - 1) as i64);
+    i64 grid_h = tile_step_h * (rows as i64) + gap * ((rows - 1) as i64);
+    i64 start_x = region_x + (region_w - grid_w) / 2;
+    if start_x < region_x {start_x = region_x;}
+    i64 start_y = top + (region_h - grid_h) / 2;
+    if start_y < top {start_y = top;}
+    i32 draw_i = 0;
+    i32 peer_order = 0;
+    for (draw_i < count) {
+        i32 peer_slot = onlineAlivePeerSlotByIndex(peer_order);
+        peer_order += 1;
+        if peer_slot < 0 {break;}
+        i32 col = draw_i % cols;
+        i32 row = draw_i / cols;
+        drawOnlineBoardTile(font, theme, draw_i, start_x + (col as i64) * (tile_step_w + gap) + 6, start_y + (row as i64) * (tile_step_h + gap) + 28, cell, false, peer_slot);
+        draw_i += 1;
+    }
+}
+
+fun drawOnlineRoundResultOverlay(font: Font, theme: Theme) >> void {
+    if !isOnlineDuelMode() {return;}
+    if g_duel_running {return;}
+    if g_online_net_state != ONLINE_NET_STATE_RUNNING {return;}
+
+    i64 box_w = 330;
+    i64 box_h = 138;
+    i64 box_x = visibleBaseLeft() + (visibleBaseRight() - visibleBaseLeft() - box_w) / 2;
+    i64 box_y = visibleBaseTop() + (visibleBaseBottom() - visibleBaseTop() - box_h) / 2;
+    fillRect(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.90));
+    strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.92));
+
+    ptr<u8> title = "ROUND OVER";
+    if g_online_round_player_count <= 2 {
+        if g_online_local_place == 1 {title = "YOU WIN";} else {title = "YOU LOST";}
+    } else {
+        title = TextFormat("YOUR PLACE: %i", g_online_local_place);
+    }
+    drawTextCenteredInRect(font, title, box_x, box_y + 24, box_w, 44, 24, theme.text_main);
+    ptr<u8> hint = "press Enter";
+    if g_online_round_result_timer < 0.55 as f32 {hint = "settling...";}
+    drawTextCenteredInRect(font, hint, box_x, box_y + 78, box_w, 30, 14, theme.text_muted);
 }
 
 fun currentVisibleBoardWidthPx() >> i64 {
@@ -626,7 +942,7 @@ fun drawGameBackgroundLayer(theme: Theme) >> void {
 fun drawGameBlocksLayer(font: Font, theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     drawBoard(theme);
-    if isVersusMode() {drawBotBoard(theme, font);}
+    if isVersusMode() && !isOnlineDuelMode() {drawBotBoard(theme, font);}
 }
 
 fun drawGameUiLayer(font: Font, theme: Theme) >> void {
@@ -660,6 +976,10 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     i64 board_top = currentBoardTop();
     drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
+
+    if isOnlineDuelMode() {
+        return;
+    }
     
     if g_play.game_over && !(isVersusMode() && !g_duel_running) {
         i64 box_w = 272;
@@ -676,7 +996,7 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
     drawOpponentLeftOverlay(font, theme);
     drawThemeManagerOverlayPreview(font, theme);
 
-    if isVersusMode() && !g_duel_running {
+    if isVersusMode() && !isOnlineDuelMode() && !g_duel_running {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -685,9 +1005,7 @@ fun drawGameUiLayer(font: Font, theme: Theme) >> void {
         strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
         ptr<u8> footer = "R retry  ESC menu";
-        if isOnlineDuelMode() {footer = "R retry  ESC room";}
         drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
-        drawOnlineRestartReadyOverlay(font, theme, box_x, box_y, box_w);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}
@@ -881,7 +1199,7 @@ fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBackgroundTargetLayer(theme);
-    if isVersusMode() {drawBotBoardBackgroundTargetLayer(theme);}
+    if isVersusMode() && !isOnlineDuelMode() {drawBotBoardBackgroundTargetLayer(theme);}
     drawSidebarBackgroundTargetLayer(theme, split_layout);
 }
 
@@ -889,7 +1207,7 @@ fun drawGameBlocksTargetLayer(theme: Theme) >> void {
     if shouldDrawGameWidthPopup() {return;}
     bool split_layout = gameUsesSplitLayout();
     drawPlayerBoardBlocksTargetLayer(theme);
-    if isVersusMode() {drawBotBoardBlocksTargetLayer(theme);}
+    if isVersusMode() && !isOnlineDuelMode() {drawBotBoardBlocksTargetLayer(theme);}
     drawSidebarPiecesTargetLayer(theme, split_layout);
 }
 
@@ -905,7 +1223,7 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     }
 
     drawPlayerBoardUiTargetLayer(theme);
-    if isVersusMode() {drawBotBoardUiTargetLayer(theme, font);}
+    if isVersusMode() && !isOnlineDuelMode() {drawBotBoardUiTargetLayer(theme, font);}
     drawSidebarUiTargetLayer(font, theme, split_layout);
     if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
 
@@ -926,6 +1244,10 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     drawRhythmBoardPulse(theme, board_left, board_top);
     drawAllClearFxLabel(font, theme, board_left, board_top);
 
+    if isOnlineDuelMode() {
+        return;
+    }
+
     if g_play.game_over && !(isVersusMode() && !g_duel_running) {
         i64 box_w = 272;
         i64 box_h = 140;
@@ -941,7 +1263,7 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
     drawOpponentLeftOverlay(font, theme);
     drawThemeManagerOverlayPreview(font, theme);
 
-    if isVersusMode() && !g_duel_running {
+    if isVersusMode() && !isOnlineDuelMode() && !g_duel_running {
         i64 box_w = 272;
         i64 box_h = 140;
         i64 box_x = boardCenteredBoxX(board_left, box_w);
@@ -950,9 +1272,7 @@ fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
         strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
         if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
         ptr<u8> footer = "R retry  ESC menu";
-        if isOnlineDuelMode() {footer = "R retry  ESC room";}
         drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
-        drawOnlineRestartReadyOverlay(font, theme, box_x, box_y, box_w);
     }
 
     if g_debug_colors {drawColorDebugOverlay(font, theme);}

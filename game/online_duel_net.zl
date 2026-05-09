@@ -15,6 +15,8 @@ use zltris.net
 
 #define ONLINE_ROLE_HOST 0
 #define ONLINE_ROLE_CLIENT 1
+#define ONLINE_SEAT_PLAYER 0
+#define ONLINE_SEAT_SPECTATOR 1
 
 #define ONLINE_NET_STATE_IDLE 0
 #define ONLINE_NET_STATE_LISTENING 1
@@ -38,12 +40,24 @@ use zltris.net
 
 #define ONLINE_ADDR_MAX 128
 #define ONLINE_NAME_MAX 32
+#define ONLINE_MAX_PEERS 8
 #define ONLINE_RX_BUF_MAX 32768
+#define ONLINE_PEER_RX_TOTAL (ONLINE_RX_BUF_MAX * ONLINE_MAX_PEERS)
+#define ONLINE_PEER_NAME_TOTAL (ONLINE_NAME_MAX * ONLINE_MAX_PEERS)
+#define ONLINE_PEER_BOARD_TOTAL (BOARD_CELLS * ONLINE_MAX_PEERS)
 #define BOARD_CELLS 840
 
 fun onlineClampRules() >> void {
     if g_online_role < ONLINE_ROLE_HOST {g_online_role = ONLINE_ROLE_HOST;}
     if g_online_role > ONLINE_ROLE_CLIENT {g_online_role = ONLINE_ROLE_CLIENT;}
+    if g_online_role == ONLINE_ROLE_HOST {g_online_spectator = false;}
+    if g_online_role == ONLINE_ROLE_HOST {g_online_local_player_id = 1;} else if g_online_local_player_id <= 1 {g_online_local_player_id = 2;}
+    if g_online_role == ONLINE_ROLE_HOST {
+        if g_online_remote_player_id <= 1 {g_online_remote_player_id = 2;}
+    } else {
+        g_online_remote_player_id = 1;
+    }
+    if g_online_remote_seat < ONLINE_SEAT_PLAYER || g_online_remote_seat > ONLINE_SEAT_SPECTATOR {g_online_remote_seat = ONLINE_SEAT_PLAYER;}
 
     if g_online_port < 1 {g_online_port = 1;}
     if g_online_port > 65535 {g_online_port = 65535;}
@@ -70,6 +84,19 @@ fun onlineClampRules() >> void {
     if g_online_kick_table > CHALLENGE_KICK_NONE {g_online_kick_table = CHALLENGE_KICK_NONE;}
 }
 
+fun onlineLocalSeat() >> i32 {
+    if g_online_spectator {return ONLINE_SEAT_SPECTATOR;}
+    return ONLINE_SEAT_PLAYER;
+}
+
+fun onlineLocalIsSpectator() >> bool {
+    return onlineLocalSeat() == ONLINE_SEAT_SPECTATOR;
+}
+
+fun onlineRemoteIsSpectator() >> bool {
+    return g_online_remote_seat == ONLINE_SEAT_SPECTATOR;
+}
+
 fun onlineResetRemoteView() >> void {
     for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_board[i] = 0;}
     for i32 i = 0; i < QUEUE_CAP; i++ {g_bot_queue[i] = -1;}
@@ -86,9 +113,157 @@ fun onlineResetRemoteView() >> void {
 
 fun onlineCloseSockets() >> void {
     if g_online_conn_fd >= 0 {socketClose(g_online_conn_fd);}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] >= 0 {socketClose(g_online_peer_fds[i]);}
+        g_online_peer_fds[i] = -1;
+        g_online_peer_rx_len[i] = 0;
+        onlinePeerNamePtr(i)[0] = 0;
+        g_online_peer_ids[i] = 0;
+        g_online_peer_seats[i] = ONLINE_SEAT_PLAYER;
+        g_online_peer_prep[i] = false;
+        onlineClearPeerSnapshot(i);
+    }
     if g_online_listen_fd >= 0 {socketClose(g_online_listen_fd);}
     g_online_conn_fd = -1;
     g_online_listen_fd = -1;
+}
+
+fun onlinePeerCount() >> i32 {
+    i32 count = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] >= 0 {count += 1;}
+    }
+    return count;
+}
+
+fun onlinePeerListCount() >> i32 {
+    i32 count = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] >= 0 || g_online_peer_ids[i] > 0 {count += 1;}
+    }
+    return count;
+}
+
+fun onlinePeerListSlotByOrder(order: i32) >> i32 {
+    i32 seen = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] < 0 && g_online_peer_ids[i] <= 0 {continue;}
+        if seen == order {return i;}
+        seen += 1;
+    }
+    return -1;
+}
+
+fun onlinePeerRxIndex(peer_index: i32, offset: i32) >> i32 {
+    return peer_index * ONLINE_RX_BUF_MAX + offset;
+}
+
+fun onlinePeerNamePtr(peer_index: i32) >> ptr<u8> {
+    return &g_online_peer_names[peer_index * ONLINE_NAME_MAX];
+}
+
+fun onlinePeerBoardIndex(peer_index: i32, cell_index: i32) >> i32 {
+    return peer_index * BOARD_CELLS + cell_index;
+}
+
+fun onlineClearPeerSnapshot(index: i32) >> void {
+    if index < 0 || index >= ONLINE_MAX_PEERS {return;}
+    for i32 i = 0; i < BOARD_CELLS; i++ {g_online_peer_boards[onlinePeerBoardIndex(index, i)] = 0;}
+    g_online_peer_snapshot_valid[index] = false;
+    g_online_peer_finalist_visible[index] = false;
+    g_online_peer_score[index] = 0;
+    g_online_peer_lines[index] = 0;
+    g_online_peer_over[index] = false;
+    g_online_peer_piece_kind[index] = -1;
+    g_online_peer_piece_rotation[index] = 0;
+    g_online_peer_piece_x[index] = 0;
+    g_online_peer_piece_y[index] = 0;
+    g_online_peer_board_w[index] = 0;
+    g_online_peer_board_h[index] = 0;
+}
+
+fun onlineAddPeer(fd: i32) >> i32 {
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] < 0 {
+            g_online_peer_fds[i] = fd;
+            g_online_peer_rx_len[i] = 0;
+            g_online_peer_rx_buf[onlinePeerRxIndex(i, 0)] = 0;
+            onlinePeerNamePtr(i)[0] = 0;
+            g_online_peer_ids[i] = i + 2;
+            g_online_peer_seats[i] = ONLINE_SEAT_PLAYER;
+            g_online_peer_prep[i] = false;
+            onlineClearPeerSnapshot(i);
+            return i;
+        }
+    }
+    socketClose(fd);
+    return -1;
+}
+
+fun onlineRemovePeer(index: i32) >> void {
+    if index < 0 || index >= ONLINE_MAX_PEERS {return;}
+    if g_online_peer_fds[index] >= 0 {socketClose(g_online_peer_fds[index]);}
+    g_online_peer_fds[index] = -1;
+    g_online_peer_rx_len[index] = 0;
+    onlinePeerNamePtr(index)[0] = 0;
+    g_online_peer_ids[index] = 0;
+    g_online_peer_seats[index] = ONLINE_SEAT_PLAYER;
+    g_online_peer_prep[index] = false;
+    onlineClearPeerSnapshot(index);
+    onlineBroadcastParticipantList();
+}
+
+fun onlineClearPeerListOnly() >> void {
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_role == ONLINE_ROLE_HOST && g_online_peer_fds[i] >= 0 {continue;}
+        onlinePeerNamePtr(i)[0] = 0;
+        g_online_peer_ids[i] = 0;
+        g_online_peer_seats[i] = ONLINE_SEAT_PLAYER;
+        g_online_peer_prep[i] = false;
+        onlineClearPeerSnapshot(i);
+    }
+}
+
+fun onlineSetPeerListEntry(player_id: i32, seat: i32, prep: bool, name: ptr<u8>) >> void {
+    if player_id == g_online_local_player_id {return;}
+
+    i32 slot = -1;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] == player_id {slot = i; break;}
+    }
+    if slot < 0 {
+        for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+            if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {slot = i; break;}
+        }
+    }
+    if slot < 0 {return;}
+    g_online_peer_ids[slot] = player_id;
+    g_online_peer_seats[slot] = seat;
+    g_online_peer_prep[slot] = prep;
+    copyFixed(onlinePeerNamePtr(slot), name, ONLINE_NAME_MAX);
+}
+
+fun onlinePeerSlotForPlayerId(player_id: i32) >> i32 {
+    if player_id <= 0 || player_id == g_online_local_player_id {return -1;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] == player_id {return i;}
+    }
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {g_online_peer_ids[i] = player_id; return i;}
+    }
+    return -1;
+}
+
+fun onlineBroadcastParticipantList() >> void {
+    if g_online_role != ONLINE_ROLE_HOST {return;}
+    onlineSendLine("ZD1|PEERCLR\n");
+    onlineSendLine(TextFormat("ZD1|PEER|%i|%i|%i|%s\n", g_online_local_player_id, onlineLocalSeat(), g_online_local_prep as i32, &g_online_local_name[0]));
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_fds[i] < 0 {continue;}
+        ptr<u8> peer_name = onlinePeerNamePtr(i);
+        if peer_name[0] == 0 {peer_name = "Guest";}
+        onlineSendLine(TextFormat("ZD1|PEER|%i|%i|%i|%s\n", g_online_peer_ids[i], g_online_peer_seats[i], g_online_peer_prep[i] as i32, peer_name));
+    }
 }
 
 fun onlineSetState(state: i32) >> void {
@@ -108,8 +283,25 @@ fun onlineResetSessionFlowFlags() >> void {
     g_online_remote_restart_ready = false;
     g_online_local_prep = false;
     g_online_remote_prep = false;
+    g_online_round_player_count = 0;
+    g_online_local_place = 0;
+    g_online_last_eliminated_player_id = 0;
+    g_online_round_winner_player_id = 0;
+    g_online_round_runner_up_player_id = 0;
+    g_online_local_eliminated = false;
+    g_online_local_finalist_visible = false;
+    g_online_round_result_timer = 0.0;
+    g_online_eliminated_count = 0;
+    g_online_last_eliminated_player_id = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {g_online_eliminated_ids[i] = 0;}
+    g_online_remote_seat = ONLINE_SEAT_PLAYER;
     g_online_rx_len = 0;
     g_online_rx_buf[0] = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        g_online_peer_rx_len[i] = 0;
+        g_online_peer_prep[i] = false;
+        g_online_peer_finalist_visible[i] = false;
+    }
 }
 
 fun onlineDefaultNameForRole(role: i32) >> ptr<u8> {
@@ -197,7 +389,7 @@ fun onlineDuelSetupInit() >> void {
 
 fun onlineNetStatusText() >> ptr<u8> {
     if g_online_net_state == ONLINE_NET_STATE_IDLE {return "idle";}
-    if g_online_net_state == ONLINE_NET_STATE_LISTENING {return "host waiting for client";}
+    if g_online_net_state == ONLINE_NET_STATE_LISTENING {return TextFormat("host room open (%i peers)", onlinePeerCount());}
     if g_online_net_state == ONLINE_NET_STATE_CONNECTING {return "connecting to host";}
     if g_online_net_state == ONLINE_NET_STATE_HANDSHAKE {return "negotiating session";}
     if g_online_net_state == ONLINE_NET_STATE_READY {return "ready to start";}
@@ -224,25 +416,62 @@ fun onlineResetReadiness() >> void {
 }
 
 fun onlineLobbyReady() >> bool {
+    if g_online_role == ONLINE_ROLE_HOST && g_online_net_state == ONLINE_NET_STATE_LISTENING && onlinePeerCount() > 0 {return true;}
     return g_online_net_state == ONLINE_NET_STATE_READY;
 }
 
-fun onlineSendLine(line: ptr<u8>) >> bool {
-    if g_online_conn_fd < 0 {return false;}
+fun onlineSendLineToFd(fd: i32, line: ptr<u8>) >> bool {
+    if fd < 0 {return false;}
     i32 len = strlen(line) as i32;
     if len <= 0 {return true;}
-    i32 sent = socketSend(g_online_conn_fd, line, len, netMsgNoSignal());
+    i32 sent = socketSend(fd, line, len, netMsgNoSignal());
     if sent != len {
+        return false;
+    }
+    return true;
+}
+
+fun onlineSendLine(line: ptr<u8>) >> bool {
+    if g_online_role == ONLINE_ROLE_HOST {
+        bool ok = true;
+        for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+            if g_online_peer_fds[i] < 0 {continue;}
+            if !onlineSendLineToFd(g_online_peer_fds[i], line) {ok = false; onlineRemovePeer(i);}
+        }
+        return ok;
+    }
+    if !onlineSendLineToFd(g_online_conn_fd, line) {
         onlineSetError(ONLINE_ERR_SEND);
         return false;
     }
     return true;
 }
 
+fun onlineSendHelloToFd(fd: i32, assigned_player_id: i32) >> void {
+    onlineEnsureLocalName();
+    onlineSendLineToFd(fd, TextFormat("ZD1|HELLO|%i|%s|%i|%i|M1|%i\n", g_online_role, &g_online_local_name[0], onlineLocalSeat(), g_online_local_player_id, assigned_player_id));
+}
+
+fun onlineSendConfigToFd(fd: i32) >> void {
+    i32 hold_i = 0;
+    if g_online_infinite_hold {hold_i = 1;}
+    i32 guest_edit_i = 0;
+    if g_online_allow_guest_edit {guest_edit_i = 1;}
+    i32 sky_i = 0;
+    if g_online_extended_skyline {sky_i = 1;}
+    i32 g0 = (g_online_start_gravity * 100.0 as f32) as i32;
+    i32 gr = (g_online_gravity_ramp * 100.0 as f32) as i32;
+    i32 gd = (g_online_garbage_delay * 100.0 as f32) as i32;
+    onlineSendLineToFd(fd, TextFormat("ZD1|CFG|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i\n", g_online_board_width, g_online_board_height, g0, gr, hold_i, g_online_kick_table, g_online_start_garbage_lines, guest_edit_i, sky_i, gd));
+}
+
 fun onlineSendHello() >> void {
     if g_online_sent_hello {return;}
     onlineEnsureLocalName();
-    if onlineSendLine(TextFormat("ZD1|HELLO|%i|%s\n", g_online_role, &g_online_local_name[0])) {
+    if g_online_role == ONLINE_ROLE_HOST {
+        onlineSendLine(TextFormat("ZD1|HELLO|%i|%s|%i|%i|M1\n", g_online_role, &g_online_local_name[0], onlineLocalSeat(), g_online_local_player_id));
+        g_online_sent_hello = true;
+    } else if onlineSendLine(TextFormat("ZD1|HELLO|%i|%s|%i|%i|M1\n", g_online_role, &g_online_local_name[0], onlineLocalSeat(), g_online_local_player_id)) {
         g_online_sent_hello = true;
     }
 }
@@ -262,11 +491,204 @@ fun onlineSendConfig() >> void {
 }
 
 fun onlineSendPrep(ready: bool) >> void {
-    if ready {
-        onlineSendLine("ZD1|PRP|1\n");
-    } else {
-        onlineSendLine("ZD1|PRP|0\n");
+    if g_online_role == ONLINE_ROLE_HOST {
+        onlineBroadcastParticipantList();
+        return;
     }
+    if ready {
+        onlineSendLine(TextFormat("ZD1|PRP|1|%i|%i\n", g_online_local_player_id, onlineLocalSeat()));
+    } else {
+        onlineSendLine(TextFormat("ZD1|PRP|0|%i|%i\n", g_online_local_player_id, onlineLocalSeat()));
+    }
+}
+
+fun onlineAllPlayersReady() >> bool {
+    if !onlineLobbyReady() {return false;}
+
+    i32 player_count = 0;
+    if !onlineLocalIsSpectator() {
+        player_count += 1;
+        if !g_online_local_prep {return false;}
+    }
+
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        player_count += 1;
+        if !g_online_peer_prep[i] {return false;}
+    }
+
+    return player_count >= 2;
+}
+
+fun onlineRoundPlayerCount() >> i32 {
+    i32 count = 0;
+    if !onlineLocalIsSpectator() {count += 1;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        count += 1;
+    }
+    return count;
+}
+
+fun onlineAlivePlayerCount() >> i32 {
+    i32 count = 0;
+    if !onlineLocalIsSpectator() && !g_play.game_over && !onlinePlayerIdEliminated(g_online_local_player_id) {count += 1;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        if onlinePlayerIdEliminated(g_online_peer_ids[i]) {continue;}
+        if g_online_peer_over[i] {continue;}
+        count += 1;
+    }
+    return count;
+}
+
+fun onlinePlayerIdEliminated(player_id: i32) >> bool {
+    if player_id <= 0 {return false;}
+    for i32 i = 0; i < g_online_eliminated_count; i++ {
+        if g_online_eliminated_ids[i] == player_id {return true;}
+    }
+    return false;
+}
+
+fun onlineMarkPlayerEliminated(player_id: i32) >> void {
+    if player_id <= 0 {return;}
+    if player_id == g_online_local_player_id {g_online_local_eliminated = true; g_online_local_finalist_visible = false;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] == player_id {g_online_peer_over[i] = true; g_online_peer_finalist_visible[i] = false;}
+    }
+    if onlinePlayerIdEliminated(player_id) {return;}
+    if g_online_eliminated_count < ONLINE_MAX_PEERS {
+        g_online_eliminated_ids[g_online_eliminated_count] = player_id;
+        g_online_eliminated_count += 1;
+        g_online_last_eliminated_player_id = player_id;
+    }
+}
+
+fun onlineSetPlayerFinalistVisible(player_id: i32) >> void {
+    if player_id <= 0 {return;}
+    if player_id == g_online_local_player_id && !onlineLocalIsSpectator() {g_online_local_finalist_visible = true;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] == player_id && g_online_peer_seats[i] == ONLINE_SEAT_PLAYER {g_online_peer_finalist_visible[i] = true;}
+    }
+}
+
+fun onlinePlayerIdAlive(player_id: i32) >> bool {
+    if player_id <= 0 {return false;}
+    if onlinePlayerIdEliminated(player_id) {return false;}
+    if player_id == g_online_local_player_id {return !onlineLocalIsSpectator() && !g_play.game_over;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] != player_id {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {return false;}
+        return !g_online_peer_over[i];
+    }
+    return false;
+}
+
+fun onlineRandomAliveTargetId(exclude_player_id: i32) >> i32 {
+    i32 count = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_ids[i] == exclude_player_id {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        if g_online_peer_over[i] || onlinePlayerIdEliminated(g_online_peer_ids[i]) {continue;}
+        count += 1;
+    }
+    if g_online_local_player_id != exclude_player_id && !onlineLocalIsSpectator() && !g_play.game_over && !onlinePlayerIdEliminated(g_online_local_player_id) {count += 1;}
+    if count <= 0 {return 0;}
+
+    i32 pick = GetRandomValue(0, count - 1);
+    if g_online_local_player_id != exclude_player_id && !onlineLocalIsSpectator() && !g_play.game_over && !onlinePlayerIdEliminated(g_online_local_player_id) {
+        if pick == 0 {return g_online_local_player_id;}
+        pick -= 1;
+    }
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_ids[i] == exclude_player_id {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        if g_online_peer_over[i] || onlinePlayerIdEliminated(g_online_peer_ids[i]) {continue;}
+        if pick == 0 {return g_online_peer_ids[i];}
+        pick -= 1;
+    }
+    return 0;
+}
+
+fun onlineMarkFinalistBoards(include_local: bool, include_peer_slot: i32) >> void {
+    if include_local {g_online_local_finalist_visible = true;}
+    else if !onlineLocalIsSpectator() && !g_play.game_over && !onlinePlayerIdEliminated(g_online_local_player_id) {g_online_local_finalist_visible = true;}
+
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        if onlinePlayerIdEliminated(g_online_peer_ids[i]) && i != include_peer_slot {continue;}
+        if !g_online_peer_over[i] || i == include_peer_slot {g_online_peer_finalist_visible[i] = true;}
+    }
+}
+
+fun onlineMarkFinalistsIfNeeded() >> void {
+    if g_online_round_player_count <= 2 || onlineAlivePlayerCount() <= 2 {onlineMarkFinalistBoards(false, -1);}
+}
+
+fun onlineCurrentEliminationIsTopTwo() >> bool {
+    if g_online_round_player_count <= 2 {return true;}
+    i32 before_top_two = g_online_round_player_count - 2;
+    if before_top_two < 0 {before_top_two = 0;}
+    return g_online_eliminated_count >= before_top_two;
+}
+
+fun onlineMarkLocalEliminatedIfNeeded() >> void {
+    if onlineLocalIsSpectator() {return;}
+    if !g_play.game_over {return;}
+    if g_online_local_eliminated {return;}
+    bool top_two_elimination = onlineCurrentEliminationIsTopTwo();
+    onlineMarkPlayerEliminated(g_online_local_player_id);
+    if top_two_elimination {onlineMarkFinalistBoards(true, -1);}
+    if g_online_round_player_count > 2 {
+        g_online_local_place = onlineAlivePlayerCount() + 1;
+    } else {
+        g_online_local_place = 2;
+    }
+}
+
+fun onlineWinnerPlayerId() >> i32 {
+    if !onlineLocalIsSpectator() && !g_play.game_over && !onlinePlayerIdEliminated(g_online_local_player_id) {return g_online_local_player_id;}
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {
+        if g_online_peer_ids[i] <= 0 && g_online_peer_fds[i] < 0 {continue;}
+        if g_online_peer_seats[i] == ONLINE_SEAT_SPECTATOR {continue;}
+        if onlinePlayerIdEliminated(g_online_peer_ids[i]) {continue;}
+        if !g_online_peer_over[i] {return g_online_peer_ids[i];}
+    }
+    return 0;
+}
+
+fun onlineApplyRoundEnd(winner_id: i32, runner_up_id: i32) >> void {
+    if runner_up_id <= 0 {runner_up_id = g_online_last_eliminated_player_id;}
+    g_online_round_winner_player_id = winner_id;
+    g_online_round_runner_up_player_id = runner_up_id;
+    onlineSetPlayerFinalistVisible(winner_id);
+    onlineSetPlayerFinalistVisible(runner_up_id);
+    g_duel_running = false;
+    if winner_id == g_online_local_player_id && !onlineLocalIsSpectator() {
+        g_online_local_place = 1;
+        g_duel_result = DUEL_RESULT_PLAYER_WIN;
+    } else {
+        if runner_up_id == g_online_local_player_id && g_online_local_place <= 0 {g_online_local_place = 2;}
+        if g_online_local_place <= 0 {g_online_local_place = g_online_round_player_count;}
+        g_duel_result = DUEL_RESULT_PLAYER_LOSE;
+    }
+    g_online_round_result_timer = 0.0;
+}
+
+fun onlineFinishRoundIfNeeded() >> void {
+    if !g_duel_running {return;}
+    if g_online_round_player_count < 2 {return;}
+    if onlineAlivePlayerCount() > 1 {return;}
+    i32 winner_id = onlineWinnerPlayerId();
+    i32 runner_up_id = g_online_last_eliminated_player_id;
+    onlineApplyRoundEnd(winner_id, runner_up_id);
+    if g_online_role == ONLINE_ROLE_HOST {onlineSendLine(TextFormat("ZD1|END|%i|%i\n", winner_id, runner_up_id));}
 }
 
 fun onlineReturnToLobbyFromMatch(notify_peer: bool) >> void {
@@ -283,6 +705,12 @@ fun onlineReturnToLobbyFromMatch(notify_peer: bool) >> void {
     g_online_last_attack_sent = 0;
     g_online_local_restart_ready = false;
     g_online_remote_restart_ready = false;
+    g_online_round_result_timer = 0.0;
+    g_online_eliminated_count = 0;
+    g_online_last_eliminated_player_id = 0;
+    g_online_round_winner_player_id = 0;
+    g_online_round_runner_up_player_id = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {g_online_eliminated_ids[i] = 0;}
 
     if g_online_local_prep {
         g_online_local_prep = false;
@@ -317,14 +745,16 @@ fun onlineHandlePeerLeftMatch() >> void {
 
 fun onlineSendReady() >> void {
     if g_online_sent_ready {return;}
-    if onlineSendLine("ZD1|READY\n") {
+    if onlineLocalIsSpectator() {return;}
+    if onlineSendLine(TextFormat("ZD1|READY|%i|%i\n", g_online_local_player_id, onlineLocalSeat())) {
         g_online_sent_ready = true;
     }
 }
 
 fun onlineSendStart() >> void {
     if g_online_sent_start {return;}
-    if onlineSendLine("ZD1|START\n") {
+    if onlineRemoteIsSpectator() {return;}
+    if onlineSendLine(TextFormat("ZD1|START|%i|%i\n", g_online_local_player_id, g_online_remote_player_id)) {
         g_online_sent_start = true;
         onlineSetState(ONLINE_NET_STATE_READY);
     }
@@ -461,7 +891,8 @@ fun onlineTokenToInt(line: ptr<u8>, token_index: i32, fallback: i32) >> i32 {
     return atoi(&tmp[0]);
 }
 
-fun onlineApplySnapshot(line: ptr<u8>) >> void {
+fun onlineApplySnapshotToPeer(line: ptr<u8>, peer_slot: i32) >> void {
+    if peer_slot < 0 || peer_slot >= ONLINE_MAX_PEERS {return;}
     i32 snap_score = onlineTokenToInt(line, 2, g_bot.score);
     i32 snap_lines = onlineTokenToInt(line, 3, g_bot.lines);
     i32 snap_over = onlineTokenToInt(line, 4, 0);
@@ -476,8 +907,10 @@ fun onlineApplySnapshot(line: ptr<u8>) >> void {
     if snap_h < 1 {snap_h = 1;}
     if snap_w > 20 {snap_w = 20;}
     if snap_h > 42 {snap_h = 42;}
+    for (snap_rot < 0) {snap_rot += 4;}
+    for (snap_rot >= 4) {snap_rot -= 4;}
 
-    for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_board[i] = 0;}
+    for i32 i = 0; i < BOARD_CELLS; i++ {g_online_peer_boards[onlinePeerBoardIndex(peer_slot, i)] = 0;}
 
     i32 board_start = 0;
     i32 board_len = 0;
@@ -500,16 +933,34 @@ fun onlineApplySnapshot(line: ptr<u8>) >> void {
 
             i32 v = (line[board_start + idx] as i32) - ('0' as i32);
             if v < 0 || v > 8 {v = 0;}
-            botBoardSet(x, y, v);
+            g_online_peer_boards[onlinePeerBoardIndex(peer_slot, y * snap_w + x)] = v;
         }
     }
+
+    g_online_peer_snapshot_valid[peer_slot] = true;
+    g_online_peer_score[peer_slot] = snap_score;
+    g_online_peer_lines[peer_slot] = snap_lines;
+    if snap_over != 0 {
+        bool already_eliminated = onlinePlayerIdEliminated(g_online_peer_ids[peer_slot]);
+        bool top_two_elimination = onlineCurrentEliminationIsTopTwo();
+        onlineMarkPlayerEliminated(g_online_peer_ids[peer_slot]);
+        if !already_eliminated && top_two_elimination {onlineMarkFinalistBoards(false, peer_slot);}
+    }
+    g_online_peer_piece_kind[peer_slot] = snap_kind;
+    g_online_peer_piece_rotation[peer_slot] = snap_rot;
+    g_online_peer_piece_x[peer_slot] = snap_x;
+    g_online_peer_piece_y[peer_slot] = snap_y;
+    g_online_peer_board_w[peer_slot] = snap_w;
+    g_online_peer_board_h[peer_slot] = snap_h;
+
+    if snap_over != 0 {return;}
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {g_bot_board[i] = g_online_peer_boards[onlinePeerBoardIndex(peer_slot, i)];}
 
     g_bot.score = snap_score;
     g_bot.lines = snap_lines;
     g_bot.game_over = snap_over != 0;
     g_bot.piece_kind = snap_kind;
-    for (snap_rot < 0) {snap_rot += 4;}
-    for (snap_rot >= 4) {snap_rot -= 4;}
     g_bot.piece_rotation = snap_rot;
     if snap_x < -4 {snap_x = -4;}
     if snap_x > botBoardWidth() + 4 {snap_x = botBoardWidth() + 4;}
@@ -517,6 +968,13 @@ fun onlineApplySnapshot(line: ptr<u8>) >> void {
     if snap_y > botBoardHeight() + 6 {snap_y = botBoardHeight() + 6;}
     g_bot.piece_x = snap_x;
     g_bot.piece_y = snap_y;
+}
+
+fun onlineApplySnapshot(line: ptr<u8>) >> void {
+    i32 pid = onlineTokenToInt(line, 12, g_online_remote_player_id);
+    if pid == g_online_local_player_id {return;}
+    i32 slot = onlinePeerSlotForPlayerId(pid);
+    onlineApplySnapshotToPeer(line, slot);
 }
 
 fun onlineCheckRestart() >> void {
@@ -537,7 +995,7 @@ fun onlineSetLocalRestartReady() >> void {
     }
 }
 
-fun onlineProcessLine(line: ptr<u8>) >> void {
+fun onlineProcessLineFromPeer(line: ptr<u8>, peer_index: i32) >> void {
     if !onlineTokenEq(line, 0, "ZD1") {return;}
 
     if onlineTokenEq(line, 1, "HELLO") {
@@ -545,6 +1003,33 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
         if !onlineCopyTokenTo(line, 3, &g_online_remote_name[0], ONLINE_NAME_MAX) || g_online_remote_name[0] == 0 {
             copyFixed(&g_online_remote_name[0], onlineFallbackRemoteName(), ONLINE_NAME_MAX);
         }
+        g_online_remote_seat = onlineTokenToInt(line, 4, ONLINE_SEAT_PLAYER);
+        if g_online_remote_seat < ONLINE_SEAT_PLAYER || g_online_remote_seat > ONLINE_SEAT_SPECTATOR {g_online_remote_seat = ONLINE_SEAT_PLAYER;}
+        g_online_remote_player_id = onlineTokenToInt(line, 5, g_online_remote_player_id);
+        if g_online_role == ONLINE_ROLE_CLIENT && g_online_peer_role == ONLINE_ROLE_HOST {
+            g_online_local_player_id = onlineTokenToInt(line, 7, g_online_local_player_id);
+        }
+        if peer_index >= 0 && peer_index < ONLINE_MAX_PEERS {
+            copyFixed(onlinePeerNamePtr(peer_index), &g_online_remote_name[0], ONLINE_NAME_MAX);
+            g_online_peer_seats[peer_index] = g_online_remote_seat;
+            if g_online_role != ONLINE_ROLE_HOST {g_online_peer_ids[peer_index] = g_online_remote_player_id;}
+            onlineBroadcastParticipantList();
+        }
+        return;
+    }
+
+    if onlineTokenEq(line, 1, "PEERCLR") {
+        onlineClearPeerListOnly();
+        return;
+    }
+
+    if onlineTokenEq(line, 1, "PEER") {
+        i32 pid = onlineTokenToInt(line, 2, 0);
+        i32 seat = onlineTokenToInt(line, 3, ONLINE_SEAT_PLAYER);
+        bool prep = onlineTokenToInt(line, 4, 0) != 0;
+        arr<u8, ONLINE_NAME_MAX> peer_name = {0};
+        if !onlineCopyTokenTo(line, 5, &peer_name[0], ONLINE_NAME_MAX) || peer_name[0] == 0 {copyFixed(&peer_name[0], "Peer", ONLINE_NAME_MAX);}
+        onlineSetPeerListEntry(pid, seat, prep, &peer_name[0]);
         return;
     }
 
@@ -575,6 +1060,8 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
             
             if g_online_role == ONLINE_ROLE_HOST {
                 onlineSendConfig();
+            } else if onlineLocalIsSpectator() {
+                onlineSetState(ONLINE_NET_STATE_READY);
             } else {
                 onlineSendReady();
             }
@@ -583,27 +1070,57 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
     }
 
     if onlineTokenEq(line, 1, "READY") {
-        if g_online_role == ONLINE_ROLE_HOST {
-            onlineSendStart();
+        if peer_index >= 0 && peer_index < ONLINE_MAX_PEERS {
+            if g_online_role != ONLINE_ROLE_HOST {g_online_peer_ids[peer_index] = onlineTokenToInt(line, 2, g_online_peer_ids[peer_index]);}
+            g_online_peer_seats[peer_index] = onlineTokenToInt(line, 3, g_online_peer_seats[peer_index]);
+        }
+        if g_online_role == ONLINE_ROLE_HOST && peer_index >= 0 && peer_index < ONLINE_MAX_PEERS && g_online_peer_seats[peer_index] != ONLINE_SEAT_SPECTATOR {
+            onlineSendLineToFd(g_online_peer_fds[peer_index], TextFormat("ZD1|START|%i|%i\n", g_online_local_player_id, g_online_peer_ids[peer_index]));
+            onlineBroadcastParticipantList();
         }
         return;
     }
 
     if onlineTokenEq(line, 1, "START") {
+        g_online_remote_player_id = onlineTokenToInt(line, 2, g_online_remote_player_id);
+        if g_online_role == ONLINE_ROLE_CLIENT {g_online_local_player_id = onlineTokenToInt(line, 3, g_online_local_player_id);}
         onlineSetState(ONLINE_NET_STATE_READY);
         return;
     }
 
     if onlineTokenEq(line, 1, "ATK") {
         i32 amt = onlineTokenToInt(line, 2, 0);
-        if amt > 0 && isOnlineDuelMode() && g_duel_running {
+        i32 from_id = onlineTokenToInt(line, 3, g_online_remote_player_id);
+        i32 target_id = onlineTokenToInt(line, 4, g_online_local_player_id);
+        if g_online_role == ONLINE_ROLE_HOST && peer_index >= 0 && peer_index < ONLINE_MAX_PEERS {from_id = g_online_peer_ids[peer_index];}
+        if g_online_role == ONLINE_ROLE_HOST {
+            if !onlinePlayerIdAlive(target_id) || target_id == from_id {target_id = onlineRandomAliveTargetId(from_id);}
+            if amt > 0 && target_id > 0 {onlineSendLine(TextFormat("ZD1|ATK|%i|%i|%i\n", amt, from_id, target_id));}
+        }
+        if amt > 0 && target_id == g_online_local_player_id && isOnlineDuelMode() && g_duel_running && !g_play.game_over {
             queuePlayerGarbage(amt);
         }
         return;
     }
 
     if onlineTokenEq(line, 1, "OVR") {
-        if isOnlineDuelMode() {g_bot.game_over = true;}
+        i32 pid = onlineTokenToInt(line, 2, g_online_remote_player_id);
+        i32 slot = onlinePeerSlotForPlayerId(pid);
+        if g_online_role == ONLINE_ROLE_HOST && peer_index >= 0 && peer_index < ONLINE_MAX_PEERS {
+            slot = peer_index;
+            pid = g_online_peer_ids[peer_index];
+        }
+        bool already_eliminated = onlinePlayerIdEliminated(pid);
+        bool top_two_elimination = onlineCurrentEliminationIsTopTwo();
+        onlineMarkPlayerEliminated(pid);
+        if !already_eliminated && top_two_elimination {onlineMarkFinalistBoards(false, slot);}
+        if g_online_role == ONLINE_ROLE_HOST && pid > 0 {onlineSendLine(TextFormat("ZD1|OVR|%i\n", pid));}
+        if isOnlineDuelMode() && g_online_round_player_count <= 2 {g_bot.game_over = true;}
+        return;
+    }
+
+    if onlineTokenEq(line, 1, "END") {
+        onlineApplyRoundEnd(onlineTokenToInt(line, 2, 0), onlineTokenToInt(line, 3, 0));
         return;
     }
 
@@ -621,13 +1138,26 @@ fun onlineProcessLine(line: ptr<u8>) >> void {
     if onlineTokenEq(line, 1, "PRP") {
         i32 prep_val = onlineTokenToInt(line, 2, 0);
         g_online_remote_prep = prep_val != 0;
+        g_online_remote_player_id = onlineTokenToInt(line, 3, g_online_remote_player_id);
+        g_online_remote_seat = onlineTokenToInt(line, 4, g_online_remote_seat);
+        if peer_index >= 0 && peer_index < ONLINE_MAX_PEERS {
+            g_online_peer_prep[peer_index] = prep_val != 0;
+            if g_online_role != ONLINE_ROLE_HOST {g_online_peer_ids[peer_index] = g_online_remote_player_id;}
+            g_online_peer_seats[peer_index] = g_online_remote_seat;
+        }
+        if g_online_role == ONLINE_ROLE_HOST {onlineBroadcastParticipantList();}
         return;
     }
     
     if onlineTokenEq(line, 1, "SNP") {
         if isOnlineDuelMode() {onlineApplySnapshot(line);}
+        if g_online_role == ONLINE_ROLE_HOST {onlineSendLine(line); onlineSendLine("\n");}
         return;
     }
+}
+
+fun onlineProcessLine(line: ptr<u8>) >> void {
+    onlineProcessLineFromPeer(line, -1);
 }
 
 fun onlinePumpIncoming() >> void {
@@ -679,25 +1209,84 @@ fun onlinePumpIncoming() >> void {
     }
 }
 
+fun onlinePumpPeerIncoming(peer_index: i32) >> void {
+    if peer_index < 0 || peer_index >= ONLINE_MAX_PEERS {return;}
+    i32 fd = g_online_peer_fds[peer_index];
+    if fd < 0 {return;}
+
+    arr<u8, 2048> chunk = {0};
+    for (true) {
+        i32 n = socketRecv(fd, &chunk[0], 2047, netMsgDontWait());
+        if n == 0 {onlineRemovePeer(peer_index); return;}
+        if n < 0 {
+            i32 err = socketErrno();
+            if err == netErrAgain() || err == netErrWouldBlock() {break;}
+            onlineRemovePeer(peer_index);
+            return;
+        }
+
+        if g_online_peer_rx_len[peer_index] + n >= ONLINE_RX_BUF_MAX - 1 {
+            onlineRemovePeer(peer_index);
+            return;
+        }
+
+        for i32 i = 0; i < n; i++ {
+            g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, g_online_peer_rx_len[peer_index] + i)] = chunk[i];
+        }
+        g_online_peer_rx_len[peer_index] += n;
+        g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, g_online_peer_rx_len[peer_index])] = 0;
+    }
+
+    i32 consumed = 0;
+    for i32 i = 0; i < g_online_peer_rx_len[peer_index]; i++ {
+        if g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, i)] == ('\n' as u8) {
+            g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, i)] = 0;
+            onlineProcessLineFromPeer(&g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, consumed)], peer_index);
+            consumed = i + 1;
+        }
+    }
+
+    if consumed > 0 {
+        i32 remain = g_online_peer_rx_len[peer_index] - consumed;
+        for i32 i = 0; i < remain; i++ {
+            g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, i)] = g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, consumed + i)];
+        }
+        g_online_peer_rx_len[peer_index] = remain;
+        g_online_peer_rx_buf[onlinePeerRxIndex(peer_index, g_online_peer_rx_len[peer_index])] = 0;
+    }
+}
+
+fun onlinePumpHostPeers() >> void {
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {onlinePumpPeerIncoming(i);}
+}
+
+fun onlineAcceptPendingPeers() >> void {
+    if g_online_listen_fd < 0 {return;}
+    for (true) {
+        i32 accepted = socketAccept(g_online_listen_fd);
+        if accepted >= 0 {
+            socketSetNonBlocking(accepted);
+            i32 peer_idx = onlineAddPeer(accepted);
+            if peer_idx >= 0 {
+                if g_online_conn_fd < 0 {g_online_conn_fd = accepted;}
+                onlineSendHelloToFd(accepted, g_online_peer_ids[peer_idx]);
+                onlineSendConfigToFd(accepted);
+            }
+            continue;
+        }
+        i32 err = socketErrno();
+        if err != netErrAgain() && err != netErrWouldBlock() {onlineSetError(ONLINE_ERR_DISCONNECT);}
+        break;
+    }
+}
+
 fun onlineTickLobby() >> void {
     if !g_online_start_requested {return;}
 
     if g_online_net_state == ONLINE_NET_STATE_LISTENING {
-        i32 accepted = socketAccept(g_online_listen_fd);
-        if accepted >= 0 {
-            socketSetNonBlocking(accepted);
-            socketClose(g_online_listen_fd);
-            g_online_listen_fd = -1;
-            g_online_conn_fd = accepted;
-            onlineSetState(ONLINE_NET_STATE_HANDSHAKE);
-            onlineSendHello();
-            onlineSendConfig();
-        } else {
-            i32 err = socketErrno();
-            if err != netErrAgain() && err != netErrWouldBlock() {
-                onlineSetError(ONLINE_ERR_DISCONNECT);
-            }
-        }
+        onlineAcceptPendingPeers();
+        onlinePumpHostPeers();
+        if onlinePeerCount() > 0 {onlineSetState(ONLINE_NET_STATE_READY);}
         return;
     }
 
@@ -722,6 +1311,11 @@ fun onlineTickLobby() >> void {
     }
 
     if g_online_net_state == ONLINE_NET_STATE_HANDSHAKE || g_online_net_state == ONLINE_NET_STATE_READY {
+        if g_online_role == ONLINE_ROLE_HOST {
+            onlineAcceptPendingPeers();
+            onlinePumpHostPeers();
+            return;
+        }
         if g_online_role == ONLINE_ROLE_CLIENT && g_online_net_state == ONLINE_NET_STATE_HANDSHAKE {onlineSendHello();}
         onlinePumpIncoming();
         return;
@@ -735,12 +1329,33 @@ fun onlinePrepareMatchRuntime() >> void {
     g_online_sent_game_over = false;
     g_online_local_restart_ready = false;
     g_online_remote_restart_ready = false;
+    g_online_round_player_count = onlineRoundPlayerCount();
+    g_online_local_place = 0;
+    g_online_local_eliminated = false;
+    g_online_round_result_timer = 0.0;
+    g_online_local_finalist_visible = false;
+    g_online_eliminated_count = 0;
+    g_online_last_eliminated_player_id = 0;
+    g_online_round_winner_player_id = 0;
+    g_online_round_runner_up_player_id = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {g_online_peer_finalist_visible[i] = false; g_online_eliminated_ids[i] = 0;}
 }
 
 fun onlineMarkGameStarted() >> void {
     g_online_last_attack_sent = g_rt.attack_sent;
     g_online_snapshot_timer = 0.0;
     g_online_sent_game_over = false;
+    g_online_round_player_count = onlineRoundPlayerCount();
+    g_online_local_place = 0;
+    g_online_local_eliminated = false;
+    g_online_round_result_timer = 0.0;
+    g_online_local_finalist_visible = false;
+    g_online_eliminated_count = 0;
+    g_online_last_eliminated_player_id = 0;
+    g_online_round_winner_player_id = 0;
+    g_online_round_runner_up_player_id = 0;
+    for i32 i = 0; i < ONLINE_MAX_PEERS; i++ {g_online_peer_finalist_visible[i] = false; g_online_eliminated_ids[i] = 0;}
+    if g_online_round_player_count <= 2 {onlineMarkFinalistBoards(false, -1);}
     onlineSetState(ONLINE_NET_STATE_RUNNING);
 }
 
@@ -772,7 +1387,7 @@ fun onlineSendSnapshot() >> void {
 
     i32 game_over_i = 0;
     if g_play.game_over {game_over_i = 1;}
-    if !onlineSendLine(TextFormat("ZD1|SNP|%i|%i|%i|%i|%i|%i|%i|%i|%i|%s\n", g_play.score, g_play.lines, game_over_i, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, boardWidth(), boardHeight(), &board_txt[0])) {
+    if !onlineSendLine(TextFormat("ZD1|SNP|%i|%i|%i|%i|%i|%i|%i|%i|%i|%s|%i|%i\n", g_play.score, g_play.lines, game_over_i, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, boardWidth(), boardHeight(), &board_txt[0], g_online_local_player_id, onlineLocalSeat())) {
         onlineSetDisconnected(ONLINE_ERR_SEND);
     }
 }
@@ -780,8 +1395,12 @@ fun onlineSendSnapshot() >> void {
 fun onlineQueueOutgoingAttack(lines: i32) >> void {
     if lines <= 0 {return;}
     if !isOnlineDuelMode() {return;}
+    if onlineLocalIsSpectator() {return;}
+    if g_play.game_over {return;}
     if g_online_net_state != ONLINE_NET_STATE_RUNNING {return;}
-    if !onlineSendLine(TextFormat("ZD1|ATK|%i\n", lines)) {
+    i32 target_id = onlineRandomAliveTargetId(g_online_local_player_id);
+    if target_id <= 0 {return;}
+    if !onlineSendLine(TextFormat("ZD1|ATK|%i|%i|%i\n", lines, g_online_local_player_id, target_id)) {
         onlineSetDisconnected(ONLINE_ERR_SEND);
     }
 }
@@ -790,23 +1409,31 @@ fun onlineUpdateRunningSession(dt: f32) >> void {
     if !isOnlineDuelMode() {return;}
     if g_online_net_state != ONLINE_NET_STATE_RUNNING {return;}
 
-    onlinePumpIncoming();
+    if g_online_role == ONLINE_ROLE_HOST {
+        onlineAcceptPendingPeers();
+        onlinePumpHostPeers();
+    } else {
+        onlinePumpIncoming();
+    }
     if g_online_net_state == ONLINE_NET_STATE_ERROR || g_online_net_state == ONLINE_NET_STATE_DISCONNECTED {
         g_duel_running = false;
         g_duel_result = DUEL_RESULT_PLAYER_LOSE;
         return;
     }
 
+    onlineMarkFinalistsIfNeeded();
     g_online_snapshot_timer += dt;
-    if g_online_snapshot_timer >= 0.10 as f32 {
+    if !onlineLocalIsSpectator() && g_online_snapshot_timer >= 0.10 as f32 {
         g_online_snapshot_timer = 0.0;
         onlineSendSnapshot();
     }
 
-    if g_play.game_over && !g_online_sent_game_over {
+    onlineMarkLocalEliminatedIfNeeded();
+    if !onlineLocalIsSpectator() && g_play.game_over && !g_online_sent_game_over {
         g_online_sent_game_over = true;
-        if !onlineSendLine("ZD1|OVR\n") {
+        if !onlineSendLine(TextFormat("ZD1|OVR|%i\n", g_online_local_player_id)) {
             onlineSetDisconnected(ONLINE_ERR_SEND);
         }
     }
+    onlineFinishRoundIfNeeded();
 }
