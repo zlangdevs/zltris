@@ -1,0 +1,555 @@
+module zltris.ai;
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define BOARD_CELLS 220
+
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
+
+fun boardIndex(x: i32, y: i32) >> i32 {
+    return y * BOARD_W + x;
+}
+
+fun normalizeRotation(rotation: i32) >> i32 {
+    i32 r = rotation % 4;
+    if r < 0 {r += 4;}
+    return r;
+}
+
+fun rotationCount(kind: i32) >> i32 {
+    if kind == PIECE_O {return 1;}
+    return 4;
+}
+
+fun rotationStepDistance(from: i32, to: i32) >> i32 {
+    i32 diff = normalizeRotation(to - from);
+    if diff > 2 {diff = 4 - diff;}
+    return diff;
+}
+
+fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if kind == PIECE_I {
+        if rot == 0 {return idx;}
+        if rot == 1 {return 2;}
+        if rot == 2 {return idx;}
+        return 1;
+    }
+
+    if kind == PIECE_O {
+        if idx == 0 || idx == 2 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_T {
+        if rot == 0 {
+            if idx == 0 {return 1;}
+            return idx - 1;
+        }
+        if rot == 1 {
+            if idx == 2 {return 2;}
+            return 1;
+        }
+        if rot == 2 {
+            if idx == 3 {return 1;}
+            return idx;
+        }
+        if idx == 1 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_J {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return idx - 1;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 2 || idx == 3 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if idx == 2 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_L {
+        if rot == 0 {
+            if idx == 0 {return 2;}
+            return idx - 1;
+        }
+        if rot == 1 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if rot == 2 {
+            if idx == 3 {return 0;}
+            return idx;
+        }
+        if idx == 0 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_S {
+        if rot == 0 {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 0 || idx == 3 {return 1;}
+            if idx == 1 {return 2;}
+            return 0;
+        }
+        if idx == 0 || idx == 1 {return 0;}
+        return 1;
+    }
+
+    if rot == 0 {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if rot == 1 {
+        if idx == 0 || idx == 2 {return 2;}
+        return 1;
+    }
+    if rot == 2 {
+        if idx == 0 {return 0;}
+        if idx == 1 || idx == 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 || idx == 2 {return 1;}
+    return 0;
+}
+
+fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
+    i32 rot = normalizeRotation(rotation);
+
+    if kind == PIECE_I {
+        if rot == 0 {return 1;}
+        if rot == 1 {return idx;}
+        if rot == 2 {return 2;}
+        return idx;
+    }
+
+    if kind == PIECE_O {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+
+    if kind == PIECE_T {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 3 {return 2;}
+            if idx == 2 {return 1;}
+            return idx;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if kind == PIECE_J {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 0 || idx == 1 {return 0;}
+            if idx == 2 {return 1;}
+            return 2;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx == 0 {return 0;}
+        if idx == 1 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_L {
+        if rot == 0 {
+            if idx == 0 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 3 {return 2;}
+            return idx;
+        }
+        if rot == 2 {
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if idx < 2 {return 0;}
+        if idx == 2 {return 1;}
+        return 2;
+    }
+
+    if kind == PIECE_S {
+        if rot == 0 {
+            if idx < 2 {return 0;}
+            return 1;
+        }
+        if rot == 1 {
+            if idx == 0 {return 0;}
+            if idx == 3 {return 2;}
+            return 1;
+        }
+        if rot == 2 {
+            if idx < 2 {return 1;}
+            return 2;
+        }
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+
+    if rot == 0 {
+        if idx < 2 {return 0;}
+        return 1;
+    }
+    if rot == 1 {
+        if idx == 0 {return 0;}
+        if idx == 3 {return 2;}
+        return 1;
+    }
+    if rot == 2 {
+        if idx < 2 {return 1;}
+        return 2;
+    }
+    if idx == 0 {return 0;}
+    if idx == 3 {return 2;}
+    return 1;
+}
+
+fun pieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+    for i32 i = 0; i < 4; i++ {
+        i32 mx = x + minoX(kind, rotation, i);
+        i32 my = y + minoY(kind, rotation, i);
+        if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
+        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
+    }
+    return true;
+}
+
+fun dropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32) >> i32 {
+    i32 y = spawn_y;
+    if !pieceFits(board, kind, rotation, x, y) {return -9999;}
+    for (pieceFits(board, kind, rotation, x, y + 1)) {y += 1;}
+    return y;
+}
+
+fun clearLinesLocal(board: ptr<i32>) >> i32 {
+    i32 cleared = 0;
+    for i32 y = BOARD_H - 1; y >= 0; y-- {
+        bool full = true;
+        for i32 x = 0; x < BOARD_W; x++ {
+            if board[boardIndex(x, y)] == 0 {full = false;}
+        }
+        if (full) {
+            cleared += 1;
+            for i32 pull = y; pull > 0; pull-- {
+                for i32 x = 0; x < BOARD_W; x++ {
+                    board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];
+                }
+            }
+            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
+            y += 1;
+        }
+    }
+    return cleared;
+}
+
+fun boardIsEmptyLocal(board: ptr<i32>) >> bool {
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        if board[i] != 0 {return false;}
+    }
+    return true;
+}
+
+fun boardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
+    if x < 0 || x >= BOARD_W {return true;}
+    if y >= BOARD_H {return true;}
+    if y < 0 {return false;}
+    return board[boardIndex(x, y)] != 0;
+}
+
+fun isTSpinPlacement(board_after_place: ptr<i32>, kind: i32, x: i32, y: i32) >> bool {
+    if kind != PIECE_T {return false;}
+    i32 cx = x + 1;
+    i32 cy = y + 1;
+    i32 corners = 0;
+    if boardCellBlocked(board_after_place, cx - 1, cy - 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx + 1, cy - 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx - 1, cy + 1) {corners += 1;}
+    if boardCellBlocked(board_after_place, cx + 1, cy + 1) {corners += 1;}
+    return corners >= 3;
+}
+
+fun absi(v: i32) >> i32 {
+    if v < 0 {return -v;}
+    return v;
+}
+
+fun minI(a: i32, b: i32) >> i32 {
+    if a < b {return a;}
+    return b;
+}
+
+fun maxI(a: i32, b: i32) >> i32 {
+    if a > b {return a;}
+    return b;
+}
+
+fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
+    if test == 0 {return 0;}
+
+    if from == 0 && to == 1 {
+        if test == 1 {return -1;}
+        if test == 2 {return -1;}
+        if test == 3 {return 0;}
+        return -1;
+    }
+    if from == 1 && to == 0 {
+        if test == 1 {return 1;}
+        if test == 2 {return 1;}
+        if test == 3 {return 0;}
+        return 1;
+    }
+    if from == 1 && to == 2 {
+        if test == 1 {return 1;}
+        if test == 2 {return 1;}
+        if test == 3 {return 0;}
+        return 1;
+    }
+    if from == 2 && to == 1 {
+        if test == 1 {return -1;}
+        if test == 2 {return -1;}
+        if test == 3 {return 0;}
+        return -1;
+    }
+    if from == 2 && to == 3 {
+        if test == 1 {return 1;}
+        if test == 2 {return 1;}
+        if test == 3 {return 0;}
+        return 1;
+    }
+    if from == 3 && to == 2 {
+        if test == 1 {return -1;}
+        if test == 2 {return -1;}
+        if test == 3 {return 0;}
+        return -1;
+    }
+    if from == 3 && to == 0 {
+        if test == 1 {return -1;}
+        if test == 2 {return -1;}
+        if test == 3 {return 0;}
+        return -1;
+    }
+    if from == 0 && to == 3 {
+        if test == 1 {return 1;}
+        if test == 2 {return 1;}
+        if test == 3 {return 0;}
+        return 1;
+    }
+
+    return 0;
+}
+
+fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
+    if test == 0 {return 0;}
+
+    if from == 0 && to == 1 {
+        if test == 1 {return 0;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return -2;
+    }
+    if from == 1 && to == 0 {
+        if test == 1 {return 0;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return 2;
+    }
+    if from == 1 && to == 2 {
+        if test == 1 {return 0;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return 2;
+    }
+    if from == 2 && to == 1 {
+        if test == 1 {return 0;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return -2;
+    }
+    if from == 2 && to == 3 {
+        if test == 1 {return 0;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return -2;
+    }
+    if from == 3 && to == 2 {
+        if test == 1 {return 0;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return 2;
+    }
+    if from == 3 && to == 0 {
+        if test == 1 {return 0;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return 2;
+    }
+    if from == 0 && to == 3 {
+        if test == 1 {return 0;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return -2;
+    }
+
+    return 0;
+}
+
+fun iKickX(from: i32, to: i32, test: i32) >> i32 {
+    if test == 0 {return 0;}
+
+    if from == 0 && to == 1 {
+        if test == 1 {return -2;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return 1;
+    }
+    if from == 1 && to == 0 {
+        if test == 1 {return 2;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return -1;
+    }
+    if from == 1 && to == 2 {
+        if test == 1 {return -1;}
+        if test == 2 {return 2;}
+        if test == 3 {return -1;}
+        return 2;
+    }
+    if from == 2 && to == 1 {
+        if test == 1 {return 1;}
+        if test == 2 {return -2;}
+        if test == 3 {return 1;}
+        return -2;
+    }
+    if from == 2 && to == 3 {
+        if test == 1 {return 2;}
+        if test == 2 {return -1;}
+        if test == 3 {return 2;}
+        return -1;
+    }
+    if from == 3 && to == 2 {
+        if test == 1 {return -2;}
+        if test == 2 {return 1;}
+        if test == 3 {return -2;}
+        return 1;
+    }
+    if from == 3 && to == 0 {
+        if test == 1 {return 1;}
+        if test == 2 {return -2;}
+        if test == 3 {return 1;}
+        return -2;
+    }
+    if from == 0 && to == 3 {
+        if test == 1 {return -1;}
+        if test == 2 {return 2;}
+        if test == 3 {return -1;}
+        return 2;
+    }
+
+    return 0;
+}
+
+fun iKickY(from: i32, to: i32, test: i32) >> i32 {
+    if test == 0 {return 0;}
+
+    if from == 0 && to == 1 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return -1;}
+        return 2;
+    }
+    if from == 1 && to == 0 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return 1;}
+        return -2;
+    }
+    if from == 1 && to == 2 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return 2;}
+        return -1;
+    }
+    if from == 2 && to == 1 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return -2;}
+        return 1;
+    }
+    if from == 2 && to == 3 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return 1;}
+        return -2;
+    }
+    if from == 3 && to == 2 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return -1;}
+        return 2;
+    }
+    if from == 3 && to == 0 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return 2;}
+        return -1;
+    }
+    if from == 0 && to == 3 {
+        if test == 1 {return 0;}
+        if test == 2 {return 0;}
+        if test == 3 {return -2;}
+        return 1;
+    }
+
+    return 0;
+}
+
+fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_O {return 0;}
+    if kind == PIECE_I {return iKickX(from, to, test);}
+    return jlstzKickX(from, to, test);
+}
+
+fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_O {return 0;}
+    if kind == PIECE_I {return iKickY(from, to, test);}
+    return jlstzKickY(from, to, test);
+}

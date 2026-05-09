@@ -1,0 +1,173 @@
+#flag -lws2_32
+module zltris.net;
+
+struct in_addr {
+    s_addr u32,
+}
+
+struct sockaddr {
+    sa_family u16,
+    sa_data arr<u8, 14>,
+}
+
+struct sockaddr_in {
+    sin_family u16,
+    sin_port u16,
+    sin_addr in_addr,
+    sin_zero arr<u8, 8>,
+}
+
+struct addrinfo {
+    ai_flags i32,
+    ai_family i32,
+    ai_socktype i32,
+    ai_protocol i32,
+    ai_addrlen u64,
+    ai_canonname ptr<u8>,
+    ai_addr ptr<sockaddr>,
+    ai_next ptr<addrinfo>,
+}
+
+struct WsaData {
+    wVersion u16,
+    wHighVersion u16,
+    szDescription arr<u8, 257>,
+    szSystemStatus arr<u8, 129>,
+    iMaxSockets u16,
+    iMaxUdpDg u16,
+    lpVendorInfo ptr<u8>,
+}
+
+wrap @socket(p0: i32, p1: i32, p2: i32) >> i32;
+wrap @bind(p0: i32, p1: ptr<sockaddr>, p2: i32) >> i32;
+wrap @listen(p0: i32, p1: i32) >> i32;
+wrap @accept(p0: i32, p1: ptr<sockaddr>, p2: ptr<i32>) >> i32;
+wrap @connect(p0: i32, p1: ptr<sockaddr>, p2: i32) >> i32;
+wrap @ioctlsocket(p0: i32, p1: i64, p2: ptr<u32>) >> i32;
+wrap @setsockopt(p0: i32, p1: i32, p2: i32, p3: ptr<void>, p4: i32) >> i32;
+wrap @sendto(p0: i32, p1: ptr<void>, p2: i32, p3: i32, p4: ptr<sockaddr>, p5: i32) >> i32;
+wrap @recvfrom(p0: i32, p1: ptr<void>, p2: i32, p3: i32, p4: ptr<sockaddr>, p5: ptr<i32>) >> i32;
+wrap @getaddrinfo(p0: ptr<u8>, p1: ptr<u8>, p2: ptr<addrinfo>, p3: ptr<ptr<addrinfo>>) >> i32;
+wrap @freeaddrinfo(p0: ptr<addrinfo>) >> void;
+wrap @closesocket(p0: i32) >> i32;
+wrap @WSAGetLastError() >> i32;
+wrap @WSAStartup(p0: u16, p1: ptr<WsaData>) >> i32;
+
+bool g_net_started = false;
+
+fun netAfInet() >> i32 { return 2; }
+fun netSockStream() >> i32 { return 1; }
+fun netIpProtoTcp() >> i32 { return 6; }
+fun netSolSocket() >> i32 { return 0xFFFF; }
+fun netSoReuseAddr() >> i32 { return 0x0004; }
+fun netMsgDontWait() >> i32 { return 0; }
+fun netMsgNoSignal() >> i32 { return 0; }
+fun netFionBio() >> i64 { return 0x8004667E; }
+fun netErrAgain() >> i32 { return 10035; }
+fun netErrWouldBlock() >> i32 { return 10035; }
+fun netErrInProgress() >> i32 { return 10036; }
+fun netErrAlready() >> i32 { return 10037; }
+fun netErrIsConn() >> i32 { return 10056; }
+
+fun ensureNetStarted() >> bool {
+    if g_net_started {return true;}
+    WsaData data = {0};
+    i32 rc = @WSAStartup(0x0202 as u16, &data);
+    if rc != 0 {return false;}
+    g_net_started = true;
+    return true;
+}
+
+fun socketErrno() >> i32 {
+    return @WSAGetLastError();
+}
+
+fun netHtons(v: i32) >> u16 {
+    u32 x = (v as u32) & 0xFFFF;
+    return (((x & 0x00FF) << 8) | ((x & 0xFF00) >> 8)) as u16;
+}
+
+fun socketClose(fd: i32) >> void {
+    if fd >= 0 {@closesocket(fd);}
+}
+
+fun socketSetNonBlocking(fd: i32) >> bool {
+    u32 one = 1 as u32;
+    if @ioctlsocket(fd, netFionBio(), &one) != 0 {return false;}
+    return true;
+}
+
+fun socketSetReuseAddr(fd: i32) >> bool {
+    i32 one = 1;
+    if @setsockopt(fd, netSolSocket(), netSoReuseAddr(), (&one) as ptr<void>, 4) < 0 {return false;}
+    return true;
+}
+
+fun socketSend(fd: i32, data: ptr<u8>, len: i32, flags: i32) >> i32 {
+    if len <= 0 {return 0;}
+    return @sendto(fd, (data) as ptr<void>, len, flags, 0 as ptr<sockaddr>, 0);
+}
+
+fun socketRecv(fd: i32, data: ptr<u8>, cap: i32, flags: i32) >> i32 {
+    if cap <= 0 {return 0;}
+    return @recvfrom(fd, (data) as ptr<void>, cap, flags, 0 as ptr<sockaddr>, 0 as ptr<i32>);
+}
+
+fun socketCreateTcp() >> i32 {
+    if !ensureNetStarted() {return -1;}
+    return @socket(netAfInet(), netSockStream(), netIpProtoTcp());
+}
+
+fun socketBindIpv4(fd: i32, ipv4_net: u32, port_host: i32) >> i32 {
+    sockaddr_in addr = {0};
+    addr.sin_family = netAfInet() as u16;
+    addr.sin_port = netHtons(port_host);
+    addr.sin_addr.s_addr = ipv4_net;
+    return @bind(fd, (&addr) as ptr<sockaddr>, 16);
+}
+
+fun socketListen(fd: i32, backlog: i32) >> i32 {
+    return @listen(fd, backlog);
+}
+
+fun socketAccept(fd: i32) >> i32 {
+    sockaddr_in addr = {0};
+    i32 len = 16;
+    return @accept(fd, (&addr) as ptr<sockaddr>, &len);
+}
+
+fun socketConnectIpv4(fd: i32, ipv4_net: u32, port_host: i32) >> i32 {
+    sockaddr_in addr = {0};
+    addr.sin_family = netAfInet() as u16;
+    addr.sin_port = netHtons(port_host);
+    addr.sin_addr.s_addr = ipv4_net;
+    return @connect(fd, (&addr) as ptr<sockaddr>, 16);
+}
+
+fun socketResolveIpv4(host: ptr<u8>, out_ipv4_net: ptr<u32>) >> bool {
+    if host == 0 as ptr<u8> {return false;}
+    if !ensureNetStarted() {return false;}
+
+    addrinfo hints = {0};
+    hints.ai_family = netAfInet();
+    hints.ai_socktype = netSockStream();
+    hints.ai_protocol = netIpProtoTcp();
+
+    ptr<addrinfo> result = 0 as ptr<addrinfo>;
+    i32 rc = @getaddrinfo(host, 0 as ptr<u8>, &hints, &result);
+    if rc != 0 {return false;}
+
+    ptr<addrinfo> cur = result;
+    for (cur != 0 as ptr<addrinfo>) {
+        if cur.ai_family == netAfInet() && cur.ai_addr != 0 as ptr<sockaddr> {
+            ptr<sockaddr_in> sa = cur.ai_addr as ptr<sockaddr_in>;
+            out_ipv4_net[0] = sa.sin_addr.s_addr;
+            @freeaddrinfo(result);
+            return true;
+        }
+        cur = cur.ai_next;
+    }
+
+    @freeaddrinfo(result);
+    return false;
+}

@@ -1,0 +1,155 @@
+module zltris;
+use std.thread
+
+#define BOARD_CELLS 220
+#define QUEUE_CAP 14
+
+struct AiWorkerRequest {
+    request_id i32,
+    piece_kind i32,
+    piece_y i32,
+    lookahead_count i32,
+    combo i32,
+    b2b bool,
+    level i32,
+    board arr<i32, BOARD_CELLS>,
+    queue arr<i32, QUEUE_CAP>,
+}
+
+struct AiWorkerResult {
+    request_id i32,
+    move AiMove,
+}
+
+Mutex g_ai_worker_mutex = {0};
+CondVar g_ai_worker_cond = {0};
+Thread g_ai_worker_thread = {0};
+
+bool g_ai_worker_init = false;
+bool g_ai_worker_running = false;
+bool g_ai_worker_stop = false;
+
+bool g_ai_worker_has_request = false;
+AiWorkerRequest g_ai_worker_request = {0};
+
+bool g_ai_worker_has_result = false;
+AiWorkerResult g_ai_worker_result = {0};
+
+fun aiWorkerThreadMain(arg: ptr<void>) >> ptr<void> {
+    for true {
+        mutexLock(&g_ai_worker_mutex);
+        for (!g_ai_worker_stop && !g_ai_worker_has_request) {
+            condWait(&g_ai_worker_cond, &g_ai_worker_mutex);
+        }
+
+        if g_ai_worker_stop {
+            mutexUnlock(&g_ai_worker_mutex);
+            break;
+        }
+
+        AiWorkerRequest req = g_ai_worker_request;
+        g_ai_worker_has_request = false;
+        mutexUnlock(&g_ai_worker_mutex);
+
+        AiMove move = findBestMove(&req.board[0], req.piece_kind, req.piece_y, &req.queue[0], req.lookahead_count, req.combo, req.b2b, req.level, 0, 0, 0);
+
+        mutexLock(&g_ai_worker_mutex);
+        g_ai_worker_result.request_id = req.request_id;
+        g_ai_worker_result.move = move;
+        g_ai_worker_has_result = true;
+        mutexUnlock(&g_ai_worker_mutex);
+    }
+
+    return arg;
+}
+
+fun aiWorkerEnsureStarted() >> void {
+    if g_ai_worker_running {return;}
+
+    if !g_ai_worker_init {
+        mutexInit(&g_ai_worker_mutex);
+        condInit(&g_ai_worker_cond);
+        g_ai_worker_init = true;
+    }
+
+    g_ai_worker_stop = false;
+    g_ai_worker_has_request = false;
+    g_ai_worker_has_result = false;
+    if threadCreate(&g_ai_worker_thread, aiWorkerThreadMain, null) {
+        g_ai_worker_running = true;
+    }
+}
+
+fun aiWorkerShutdown() >> void {
+    if !g_ai_worker_running {return;}
+
+    mutexLock(&g_ai_worker_mutex);
+    g_ai_worker_stop = true;
+    condBroadcast(&g_ai_worker_cond);
+    mutexUnlock(&g_ai_worker_mutex);
+
+    threadJoin(g_ai_worker_thread);
+    g_ai_worker_running = false;
+}
+
+fun aiWorkerResetQueue() >> void {
+    g_ai_worker_pending_request = 0;
+    g_ai_worker_pending_piece_kind = -1;
+
+    if !g_ai_worker_running {return;}
+    mutexLock(&g_ai_worker_mutex);
+    g_ai_worker_has_request = false;
+    g_ai_worker_has_result = false;
+    mutexUnlock(&g_ai_worker_mutex);
+}
+
+fun aiWorkerSubmitCurrentState() >> i32 {
+    if !g_ai_worker_running {return 0;}
+
+    i32 request_id = g_ai_worker_next_request;
+    g_ai_worker_next_request += 1;
+    if g_ai_worker_next_request < 1 {g_ai_worker_next_request = 1;}
+
+    AiWorkerRequest req = {0};
+    req.request_id = request_id;
+    req.piece_kind = g_piece_kind;
+    req.piece_y = g_piece_y;
+    req.lookahead_count = g_play.queue_count;
+    if req.lookahead_count < 0 {req.lookahead_count = 0;}
+    if req.lookahead_count > QUEUE_CAP {req.lookahead_count = QUEUE_CAP;}
+    req.combo = g_rt.combo;
+    req.b2b = g_rt.back_to_back_count > 0;
+    req.level = (g_play.lines / 10) + 1;
+
+    for i32 i = 0; i < BOARD_CELLS; i++ {
+        req.board[i] = g_board[i];
+    }
+    for i32 i = 0; i < QUEUE_CAP; i++ {
+        req.queue[i] = g_queue[i];
+    }
+
+    mutexLock(&g_ai_worker_mutex);
+    g_ai_worker_request = req;
+    g_ai_worker_has_request = true;
+    condSignal(&g_ai_worker_cond);
+    mutexUnlock(&g_ai_worker_mutex);
+
+    g_ai_worker_pending_request = request_id;
+    g_ai_worker_pending_piece_kind = g_piece_kind;
+    return request_id;
+}
+
+fun aiWorkerTryConsumeResult(out_move: ptr<AiMove>, out_request_id: ptr<i32>) >> bool {
+    if !g_ai_worker_running {return false;}
+
+    bool has = false;
+    mutexLock(&g_ai_worker_mutex);
+    if g_ai_worker_has_result {
+        has = true;
+        out_move[0] = g_ai_worker_result.move;
+        out_request_id[0] = g_ai_worker_result.request_id;
+        g_ai_worker_has_result = false;
+    }
+    mutexUnlock(&g_ai_worker_mutex);
+    return has;
+}

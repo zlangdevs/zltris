@@ -1,11 +1,16 @@
 #flag -L../bin
 #flag -lraylib
-#flag -lGL
+#flag -ltextshim
+#flag -lopengl32
+#flag -lgdi32
+#flag -lwinmm
+#flag -lshell32
+#flag -luser32
+#flag -lkernel32
+#flag -Wl,-Bstatic
+#flag -lwinpthread
+#flag -Wl,-Bdynamic
 #flag -lm
-#flag -lpthread
-#flag -ldl
-#flag -lrt
-#flag -lX11
 module raylib;
 
 struct rAudioBuffer {
@@ -788,7 +793,10 @@ wrap @BeginMode3D(p0: Camera3D) >> void;
 wrap @EndMode3D() >> void;
 wrap @BeginTextureMode(p0: RenderTexture) >> void;
 wrap @EndTextureMode() >> void;
-wrap @BeginShaderMode(p0: Shader) >> void;
+wrap @zltris_begin_shader_mode(p0: u32, p1: ptr<i32>) >> void;
+fun BeginShaderMode(p0: Shader) >> void {
+    @zltris_begin_shader_mode(p0.id, p0.locs);
+}
 wrap @EndShaderMode() >> void;
 wrap @BeginBlendMode(p0: i32) >> void;
 wrap @EndBlendMode() >> void;
@@ -804,16 +812,43 @@ wrap @BeginVrStereoMode(p0: VrStereoConfig) >> void;
 wrap @EndVrStereoMode() >> void;
 wrap @LoadVrStereoConfig(p0: VrDeviceInfo) >> VrStereoConfig;
 wrap @UnloadVrStereoConfig(p0: VrStereoConfig) >> void;
-wrap @LoadShader(p0: ptr<u8>, p1: ptr<u8>) >> Shader;
+fun @LoadShader(p0: ptr<u8>, p1: ptr<u8>) >> Shader;
+wrap @zltris_load_shader_out(p0: ptr<u8>, p1: ptr<u8>, p2: ptr<u32>, p3: ptr<ptr<i32>>) >> void;
+fun LoadShader(p0: ptr<u8>, p1: ptr<u8>) >> Shader {
+    Shader s = {0};
+    @zltris_load_shader_out(p0, p1, &s.id, &s.locs);
+    return s;
+}
 wrap @LoadShaderFromMemory(p0: ptr<u8>, p1: ptr<u8>) >> Shader;
-wrap @IsShaderValid(p0: Shader) >> bool;
-wrap @GetShaderLocation(p0: Shader, p1: ptr<u8>) >> i32;
-wrap @GetShaderLocationAttrib(p0: Shader, p1: ptr<u8>) >> i32;
-wrap @SetShaderValue(p0: Shader, p1: i32, p2: ptr<void>, p3: i32) >> void;
-wrap @SetShaderValueV(p0: Shader, p1: i32, p2: ptr<void>, p3: i32, p4: i32) >> void;
+wrap @zltris_is_shader_valid(p0: u32, p1: ptr<i32>) >> bool;
+fun IsShaderValid(p0: Shader) >> bool {
+    return @zltris_is_shader_valid(p0.id, p0.locs);
+}
+wrap @zltris_get_shader_location(p0: u32, p1: ptr<i32>, p2: ptr<u8>) >> i32;
+fun GetShaderLocation(p0: Shader, p1: ptr<u8>) >> i32 {
+    return @zltris_get_shader_location(p0.id, p0.locs, p1);
+}
+wrap @zltris_get_shader_location_attrib(p0: u32, p1: ptr<i32>, p2: ptr<u8>) >> i32;
+fun GetShaderLocationAttrib(p0: Shader, p1: ptr<u8>) >> i32 {
+    return @zltris_get_shader_location_attrib(p0.id, p0.locs, p1);
+}
+wrap @zltris_set_shader_value(p0: u32, p1: ptr<i32>, p2: i32, p3: ptr<void>, p4: i32) >> void;
+fun SetShaderValue(p0: Shader, p1: i32, p2: ptr<void>, p3: i32) >> void {
+    @zltris_set_shader_value(p0.id, p0.locs, p1, p2, p3);
+}
+wrap @zltris_set_shader_value_v(p0: u32, p1: ptr<i32>, p2: i32, p3: ptr<void>, p4: i32, p5: i32) >> void;
+fun SetShaderValueV(p0: Shader, p1: i32, p2: ptr<void>, p3: i32, p4: i32) >> void {
+    @zltris_set_shader_value_v(p0.id, p0.locs, p1, p2, p3, p4);
+}
 wrap @SetShaderValueMatrix(p0: Shader, p1: i32, p2: Matrix) >> void;
-wrap @SetShaderValueTexture(p0: Shader, p1: i32, p2: Texture) >> void;
-wrap @UnloadShader(p0: Shader) >> void;
+wrap @zltris_set_shader_value_texture(p0: u32, p1: ptr<i32>, p2: i32, p3: Texture) >> void;
+fun SetShaderValueTexture(p0: Shader, p1: i32, p2: Texture) >> void {
+    @zltris_set_shader_value_texture(p0.id, p0.locs, p1, p2);
+}
+wrap @zltris_unload_shader(p0: u32, p1: ptr<i32>) >> void;
+fun UnloadShader(p0: Shader) >> void {
+    @zltris_unload_shader(p0.id, p0.locs);
+}
 fun @GetScreenToWorldRay(p0: simd<f32, 2>, p1: Camera3D) >> Ray;
 
 fun @GetScreenToWorldRayEx(p0: simd<f32, 2>, p1: Camera3D, p2: i32, p3: i32) >> Ray;
@@ -928,14 +963,18 @@ wrap @IsMouseButtonReleased(p0: i32) >> bool;
 wrap @IsMouseButtonUp(p0: i32) >> bool;
 wrap @GetMouseX() >> i32;
 wrap @GetMouseY() >> i32;
-fun @GetMousePosition() >> simd<f32, 2>;
+wrap @zltris_get_mouse_position_xy(p0: ptr<f32>, p1: ptr<f32>) >> void;
 fun GetMousePosition() >> Vector2 {
-    return __abi_unpack_Vector2(@GetMousePosition());
+    Vector2 out = {0};
+    @zltris_get_mouse_position_xy(&out.x, &out.y);
+    return out;
 }
 
-fun @GetMouseDelta() >> simd<f32, 2>;
+wrap @zltris_get_mouse_delta_xy(p0: ptr<f32>, p1: ptr<f32>) >> void;
 fun GetMouseDelta() >> Vector2 {
-    return __abi_unpack_Vector2(@GetMouseDelta());
+    Vector2 out = {0};
+    @zltris_get_mouse_delta_xy(&out.x, &out.y);
+    return out;
 }
 
 wrap @SetMousePosition(p0: i32, p1: i32) >> void;
@@ -950,9 +989,11 @@ fun GetMouseWheelMoveV() >> Vector2 {
 wrap @SetMouseCursor(p0: i32) >> void;
 wrap @GetTouchX() >> i32;
 wrap @GetTouchY() >> i32;
-fun @GetTouchPosition(p0: i32) >> simd<f32, 2>;
+wrap @zltris_get_touch_position_xy(p0: i32, p1: ptr<f32>, p2: ptr<f32>) >> void;
 fun GetTouchPosition(p0: i32) >> Vector2 {
-    return __abi_unpack_Vector2(@GetTouchPosition(p0));
+    Vector2 out = {0};
+    @zltris_get_touch_position_xy(p0, &out.x, &out.y);
+    return out;
 }
 
 wrap @GetTouchPointId(p0: i32) >> i32;
@@ -1625,13 +1666,14 @@ fun DrawText(p0: ptr<u8>, p1: i32, p2: i32, p3: i32, p4: Color) >> void {
     @DrawText(p0, p1, p2, p3, __abi_pack_Color(p4));
 }
 
-fun @DrawTextEx(p0: Font, p1: ptr<u8>, p2: simd<f32, 2>, p3: f32, p4: f32, p5: u32) >> void;
+fun @DrawTextEx(p0: Font, p1: ptr<u8>, p2: Vector2, p3: f32, p4: f32, p5: u32) >> void;
 fun DrawTextExV(p0: Font, p1: ptr<u8>, p2: Vector2, p3: f32, p4: f32, p5: Color) >> void {
-    @DrawTextEx(p0, p1, __abi_pack_Vector2(p2), p3, p4, __abi_pack_Color(p5));
+    @DrawTextEx(p0, p1, p2, p3, p4, __abi_pack_Color(p5));
 }
+wrap @zltris_draw_text_ex_xy(p0: ptr<Font>, p1: ptr<u8>, p2: f32, p3: f32, p4: f32, p5: f32, p6: u32) >> void;
 fun DrawTextExXY(p0: Font, p1: ptr<u8>, x: f32, y: f32, p3: f32, p4: f32, p5: Color) >> void {
-    simd<f32, 2> pos = {x, y};
-    @DrawTextEx(p0, p1, pos, p3, p4, __abi_pack_Color(p5));
+    Font f = p0;
+    @zltris_draw_text_ex_xy(&f, p1, x, y, p3, p4, __abi_pack_Color(p5));
 }
 
 fun @DrawTextPro(p0: Font, p1: ptr<u8>, p2: simd<f32, 2>, p3: simd<f32, 2>, p4: f32, p5: f32, p6: f32, p7: u32) >> void;
@@ -1642,9 +1684,17 @@ fun @DrawTextCodepoints(p0: Font, p1: ptr<i32>, p2: i32, p3: simd<f32, 2>, p4: f
 
 wrap @SetTextLineSpacing(p0: i32) >> void;
 wrap @MeasureText(p0: ptr<u8>, p1: i32) >> i32;
-fun @MeasureTextEx(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> simd<f32, 2>;
+fun @MeasureTextEx(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> Vector2;
+wrap @zltris_measure_text_ex_xy(p0: ptr<Font>, p1: ptr<u8>, p2: f32, p3: f32, p4: ptr<f32>, p5: ptr<f32>) >> void;
 fun MeasureTextExSize(p0: Font, p1: ptr<u8>, p2: f32, p3: f32) >> Vector2 {
-    return __abi_unpack_Vector2(@MeasureTextEx(p0, p1, p2, p3));
+    Font f = p0;
+    f32 w = 0.0;
+    f32 h = 0.0;
+    @zltris_measure_text_ex_xy(&f, p1, p2, p3, &w, &h);
+    Vector2 out = {0};
+    out.x = w;
+    out.y = h;
+    return out;
 }
 
 wrap @GetGlyphIndex(p0: Font, p1: i32) >> i32;
@@ -1823,22 +1873,68 @@ wrap @WaveCrop(p0: ptr<Wave>, p1: i32, p2: i32) >> void;
 wrap @WaveFormat(p0: ptr<Wave>, p1: i32, p2: i32, p3: i32) >> void;
 wrap @LoadWaveSamples(p0: Wave) >> ptr<f32>;
 wrap @UnloadWaveSamples(p0: ptr<f32>) >> void;
-wrap @LoadMusicStream(p0: ptr<u8>) >> Music;
+fun @LoadMusicStream(p0: ptr<u8>) >> Music;
+wrap @zltris_load_music_stream_out(p0: ptr<u8>, p1: ptr<Music>) >> void;
+fun LoadMusicStream(p0: ptr<u8>) >> Music {
+    Music m = {0};
+    @zltris_load_music_stream_out(p0, &m);
+    return m;
+}
 wrap @LoadMusicStreamFromMemory(p0: ptr<u8>, p1: ptr<u8>, p2: i32) >> Music;
-wrap @IsMusicValid(p0: Music) >> bool;
-wrap @UnloadMusicStream(p0: Music) >> void;
-wrap @PlayMusicStream(p0: Music) >> void;
-wrap @IsMusicStreamPlaying(p0: Music) >> bool;
-wrap @UpdateMusicStream(p0: Music) >> void;
-wrap @StopMusicStream(p0: Music) >> void;
+wrap @zltris_is_music_valid(p0: ptr<Music>) >> bool;
+fun IsMusicValid(p0: Music) >> bool {
+    Music m = p0;
+    return @zltris_is_music_valid(&m);
+}
+wrap @zltris_unload_music_stream(p0: ptr<Music>) >> void;
+fun UnloadMusicStream(p0: Music) >> void {
+    Music m = p0;
+    @zltris_unload_music_stream(&m);
+}
+wrap @zltris_play_music_stream(p0: ptr<Music>) >> void;
+fun PlayMusicStream(p0: Music) >> void {
+    Music m = p0;
+    @zltris_play_music_stream(&m);
+}
+wrap @zltris_is_music_stream_playing(p0: ptr<Music>) >> bool;
+fun IsMusicStreamPlaying(p0: Music) >> bool {
+    Music m = p0;
+    return @zltris_is_music_stream_playing(&m);
+}
+wrap @zltris_update_music_stream(p0: ptr<Music>) >> void;
+fun UpdateMusicStream(p0: Music) >> void {
+    Music m = p0;
+    @zltris_update_music_stream(&m);
+}
+wrap @zltris_stop_music_stream(p0: ptr<Music>) >> void;
+fun StopMusicStream(p0: Music) >> void {
+    Music m = p0;
+    @zltris_stop_music_stream(&m);
+}
 wrap @PauseMusicStream(p0: Music) >> void;
 wrap @ResumeMusicStream(p0: Music) >> void;
 wrap @SeekMusicStream(p0: Music, p1: f32) >> void;
-wrap @SetMusicVolume(p0: Music, p1: f32) >> void;
-wrap @SetMusicPitch(p0: Music, p1: f32) >> void;
+wrap @zltris_set_music_volume(p0: ptr<Music>, p1: f32) >> void;
+fun SetMusicVolume(p0: Music, p1: f32) >> void {
+    Music m = p0;
+    @zltris_set_music_volume(&m, p1);
+}
+wrap @zltris_set_music_pitch(p0: ptr<Music>, p1: f32) >> void;
+fun SetMusicPitch(p0: Music, p1: f32) >> void {
+    Music m = p0;
+    @zltris_set_music_pitch(&m, p1);
+}
 wrap @SetMusicPan(p0: Music, p1: f32) >> void;
-wrap @GetMusicTimeLength(p0: Music) >> f32;
-wrap @GetMusicTimePlayed(p0: Music) >> f32;
+wrap @zltris_get_music_time_length(p0: ptr<Music>) >> f32;
+fun GetMusicTimeLength(p0: Music) >> f32 {
+    Music m = p0;
+    return @zltris_get_music_time_length(&m);
+}
+wrap @zltris_get_music_time_played(p0: ptr<Music>) >> f32;
+fun GetMusicTimePlayed(p0: Music) >> f32 {
+    Music m = p0;
+    return @zltris_get_music_time_played(&m);
+}
 wrap @LoadAudioStream(p0: u32, p1: u32, p2: u32) >> AudioStream;
 wrap @IsAudioStreamValid(p0: AudioStream) >> bool;
 wrap @UnloadAudioStream(p0: AudioStream) >> void;

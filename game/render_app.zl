@@ -1,0 +1,1506 @@
+module zltris;
+use raylib
+use std.string
+use zltris.menu
+use zltris.scale
+use zltris.settings
+use zltris.theme
+use zltris.ui
+
+#define BOARD_W 10
+#define BOARD_H 22
+#define CELL 32
+#define PREVIEW_COUNT 5
+#define SIDEBAR_X 422
+#define PIECE_I 0
+#define PIECE_O 1
+#define PIECE_T 2
+#define PIECE_J 3
+#define PIECE_L 4
+#define PIECE_S 5
+#define PIECE_Z 6
+#define LINE_FX_BOARD_PLAYER 0
+#define LINE_FX_BOARD_BOT 1
+
+#define BOTDEVMODE false
+#define SCREEN_MENU 0
+#define SCREEN_GAME 1
+#define SCREEN_SETTINGS 2
+#define SCREEN_BOT_SETUP 3
+#define SCREEN_CHALLENGE_SETUP 4
+#define SCREEN_RHYTHM_SETUP 5
+#define SCREEN_ONLINE_DUEL_SETUP 6
+
+#define ONLINE_ROLE_HOST 0
+#define ONLINE_ROLE_CLIENT 1
+
+#define MODE_FREE_PLAY 0
+#define MODE_40_LINES 1
+#define MODE_BLITZ 2
+#define MODE_COMBO_TRAINER 6
+#define MODE_CHALLENGE 5
+#define MODE_RHYTHM 7
+#define MODE_ONLINE_DUEL 8
+
+#define WINDOW_W 960
+#define WINDOW_H 920
+#define UI_BASE_W 648
+#define UI_BASE_H 920
+#define THEME_EDITOR_BASE_W 1160
+
+#define ROUND_RUNNING 0
+#define ROUND_COUNTDOWN 1
+#define ROUND_FINISHED 2
+
+#define DUEL_RESULT_PLAYER_WIN 1
+#define ONLINE_ERR_LEFT 9
+
+#define SHADER_MODE_LIGHT_CRT 1
+#define SHADER_MODE_CRT 2
+#define SHADER_MODE_VHS 3
+#define SHADER_MODE_CUSTOM 4
+#define CUSTOM_SHADER_NAME_MAX 96
+
+fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
+    if (split_layout) {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = currentCenterSidebarX();
+        if isVersusMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        fillRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
+        strokeRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", left_panel_x + 20, 230, 14, theme.text_main);
+        fillRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
+        strokeRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78));
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, left_panel_x + 36, 256, 112, 112, 16);}
+
+        drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
+        drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
+        drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
+        if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
+        if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+        if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+
+        fillRect(right_panel_x, 120, 178, 510, theme.panel_bg);
+        strokeRect(right_panel_x, 120, 178, 510, theme.panel_stroke);
+        drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            i64 piece_size = 13;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+                piece_size = 18;
+            }
+            fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+            strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+            drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+        }
+
+        if isVersusMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+
+            fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
+            strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
+            drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                i64 piece_size = 13;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                    piece_size = 18;
+                }
+                fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+                strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+                if g_bot_queue[i] >= 0 {drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);}
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
+    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
+
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    fillRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    strokeRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), sidebar_x + 20, 320, 10, theme.panel_stroke);}
+
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        i64 panel_x = sidebar_x + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        i64 piece_size = 12;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = sidebar_x + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+            piece_size = 16;
+        }
+        fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.board_bg, 0.86));
+        strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+        drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+    }
+
+    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), sidebar_x + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), sidebar_x + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), sidebar_x + 20, 772, 11, theme.panel_stroke);}
+}
+
+fun drawColorDebugOverlay(font: Font, theme: Theme) >> void {
+    fillRect(28, 76, 504, 674, alphaColor(theme.bg_outer, 0.95));
+    strokeRect(28, 76, 504, 674, theme.panel_stroke);
+
+    drawTextColor(font, "COLOR DEBUG (F3)", 52, 104, 19, theme.text_main);
+    drawTextColor(font, TextFormat("theme: %s idx:%i", themeName(g_game.theme_index), g_game.theme_index), 52, 136, 14, theme.text_muted);
+
+    for i32 i = 0; i < 7; i++ {
+        u32 c = pieceColor(theme, i);
+        i64 y = 176 + (i as i64) * 68;
+        fillRect(52, y, 42, 42, c);
+        strokeRect(52, y, 42, 42, alphaColor(c, 0.45));
+        drawTextColor(
+            font,
+            TextFormat("kind %i 0x%08X rgb(%i,%i,%i)", i, c, colorR(c), colorG(c), colorB(c)),
+            108,
+            y + 13,
+            12,
+            theme.text_main
+        );
+    }
+
+    drawTextColor(
+        font,
+        TextFormat("current kind %i  color 0x%08X", g_piece_kind, pieceColor(theme, g_piece_kind)),
+        52,
+        654,
+        14,
+        theme.panel_stroke
+    );
+    ??drawTextColor(font, "If swatch is purple but piece is cyan, bug is in draw path.", 52, 684, 12, theme.text_muted);
+    ??drawTextColor(font, "If swatch itself is cyan, bug is in theme/color path.", 52, 706, 12, theme.text_muted);
+}
+
+fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
+    if !modeUsesRoundState() {return;}
+
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+
+    if (g_play.round_state == ROUND_COUNTDOWN) {
+        ptr<u8> text = "3";
+        i64 size = 86;
+        i64 box_w = 196;
+        i64 box_h = 196;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        f32 seg = g_rt.countdown_timer - 3.0;
+
+        if (g_rt.countdown_timer <= 3.0 && g_rt.countdown_timer > 2.0) {
+            text = "2";
+            seg = g_rt.countdown_timer - 2.0;
+        } else if (g_rt.countdown_timer <= 2.0 && g_rt.countdown_timer > 1.0) {
+            text = "1";
+            seg = g_rt.countdown_timer - 1.0;
+        } else if (g_rt.countdown_timer <= 1.0) {
+            text = "BUILD";
+            size = 46;
+            box_w = 272;
+            box_h = 152;
+            box_x = boardCenteredBoxX(board_left, box_w);
+            box_y = boardCenteredBoxY(board_top, box_h);
+            seg = g_rt.countdown_timer;
+        }
+
+        if seg < 0.0 {seg = 0.0;}
+        if seg > 1.0 {seg = 1.0;}
+        f32 fade = 0.18 + seg * 0.82;
+
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.86));
+        strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.90));
+        drawTextCenteredInRect(font, text, box_x, box_y, box_w, box_h, size, alphaColor(theme.text_main, fade));
+        return;
+    }
+
+    if (g_play.round_state == ROUND_FINISHED) {
+        i64 box_w = 284;
+        i64 box_h = 178;
+        if isRhythmMode() {box_h = 226;}
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        if (isFortyLinesMode()) {
+            drawTextColor(font, "40 DONE", box_x + 58, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), box_x + 44, box_y + 70, 14, theme.panel_stroke);
+        }
+        if (isBlitzMode()) {
+            drawTextColor(font, "BLITZ END", box_x + 42, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("SCORE %i", g_play.score), box_x + 44, box_y + 70, 14, theme.panel_stroke);
+        }
+        if (isRhythmMode()) {
+            drawTextColor(font, "RHYTHM END", box_x + 28, box_y + 24, 24, theme.text_main);
+            drawTextColor(font, TextFormat("SCORE %i", g_rhythm_score), box_x + 44, box_y + 68, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("MISSED %i", g_rhythm_missed_beats), box_x + 44, box_y + 98, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("AVG %.0f ms", rhythmAverageAccuracyMs()), box_x + 44, box_y + 128, 13, theme.panel_stroke);
+        }
+        i64 retry_y = box_y + 110;
+        if isRhythmMode() {retry_y = box_y + 186;}
+        drawTextColor(font, "R retry  ESC menu", box_x + 44, retry_y, 12, theme.text_muted);
+    }
+}
+
+fun drawRhythmBoardPulse(theme: Theme, board_left: i64, board_top: i64) >> void {
+    if !isRhythmMode() {return;}
+    if g_play.round_state != ROUND_RUNNING {return;}
+
+    f32 pulse = rhythmPulseAlpha();
+    f32 marker = rhythmIndicatorLevel();
+    f32 strength = pulse;
+    if marker > strength {strength = marker;}
+    if strength <= 0.0 as f32 {return;}
+
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 outer_x = board_left - 12;
+    i64 outer_y = board_top - 12;
+    i64 outer_w = board_w + 24;
+    i64 outer_h = board_h + 24;
+
+    u32 glow = alphaColor(theme.text_main, (0.12 as f32) + strength * (0.56 as f32));
+    u32 pulse_stroke = alphaColor(theme.panel_stroke, (0.18 as f32) + strength * (0.74 as f32));
+    strokeRect(outer_x, outer_y, outer_w, outer_h, glow);
+    strokeRect(outer_x + 1, outer_y + 1, outer_w - 2, outer_h - 2, pulse_stroke);
+
+    i64 edge_thickness = (2.0 as f32 + marker * (2.0 as f32)) as i64;
+    if edge_thickness < 2 {edge_thickness = 2;}
+    u32 beat_edge = alphaColor(theme.text_main, (0.22 as f32) + marker * (0.76 as f32));
+    fillRect(outer_x, outer_y, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y + outer_h - edge_thickness, outer_w, edge_thickness, beat_edge);
+    fillRect(outer_x, outer_y, edge_thickness, outer_h, beat_edge);
+    fillRect(outer_x + outer_w - edge_thickness, outer_y, edge_thickness, outer_h, beat_edge);
+
+    u32 inner_tint = alphaColor(theme.panel_stroke, marker * (0.10 as f32));
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, inner_tint);
+
+    u32 hot = alphaColor(theme.text_main, marker * marker * (0.88 as f32));
+    strokeRect(outer_x - 2, outer_y - 2, outer_w + 4, outer_h + 4, hot);
+}
+
+fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
+    if !isRhythmMode() {return;}
+
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+
+    i64 panel_w = board_w;
+    i64 panel_h = 68;
+    i64 panel_x = board_left;
+    i64 panel_y = board_top + board_h + 16;
+
+    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84 as f32));
+    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.86 as f32));
+    drawTextColor(font, "RHYTHM", panel_x + 10, panel_y + 8, 10, theme.text_muted);
+
+    i64 lane_x = panel_x + 10;
+    i64 lane_w = panel_w - 20;
+    i64 lane_y = panel_y + 44;
+    fillRect(lane_x, lane_y - 1, lane_w, 2, alphaColor(theme.text_muted, 0.44 as f32));
+
+    f32 speed = g_rhythm_music_speed;
+    if speed < 0.75 as f32 {speed = 0.75 as f32;}
+    if speed > 1.50 as f32 {speed = 1.50 as f32;}
+    f32 stretch = (1.0 as f32) / speed;
+    f32 left_window = (0.36 as f32) * stretch;
+    f32 right_window = (1.64 as f32) * stretch;
+    f32 total_window = left_window + right_window;
+    i64 hit_x = lane_x + (((lane_w as f32) * (left_window / total_window)) as i64);
+
+    f32 marker = rhythmIndicatorLevel();
+    bool beat_active = g_play.round_state == ROUND_RUNNING && g_rhythm_target_index >= 0 && g_rhythm_target_index < g_rhythm_target_count;
+    bool beat_required = false;
+    if beat_active {beat_required = g_rhythm_target_times[g_rhythm_target_index] > g_rhythm_ignore_until_time;}
+    bool beat_pending = beat_active && beat_required && g_rhythm_target_index != g_rhythm_last_scored_target_index;
+
+    f32 pending = 0.0 as f32;
+    if beat_pending {
+        pending = 0.74 as f32;
+    } else {
+        pending = 0.06 as f32 + marker * (0.18 as f32);
+    }
+
+    if beat_pending {
+        f32 dt_next = g_rhythm_target_times[g_rhythm_target_index] - rhythmClockTime();
+        if dt_next < -left_window {dt_next = -left_window;}
+        if dt_next > right_window {dt_next = right_window;}
+        f32 x01_next = (dt_next + left_window) / total_window;
+        if x01_next < 0.0 as f32 {x01_next = 0.0 as f32;}
+        if x01_next > 1.0 as f32 {x01_next = 1.0 as f32;}
+        i64 next_x = lane_x + ((lane_w as f32 * x01_next) as i64);
+
+        i64 seg_l = hit_x;
+        i64 seg_r = next_x;
+        if seg_l > seg_r {
+            i64 tmp = seg_l;
+            seg_l = seg_r;
+            seg_r = tmp;
+        }
+        i64 seg_w = seg_r - seg_l + 1;
+        if seg_w < 2 {seg_w = 2;}
+
+        fillRect(seg_l, lane_y - 4, seg_w, 8, alphaColor(theme.panel_stroke, 0.46 as f32));
+        fillRect(seg_l, lane_y - 2, seg_w, 4, alphaColor(theme.text_main, 0.66 as f32));
+    }
+
+    u32 line_col = alphaColor(theme.text_main, (0.38 as f32) + marker * (0.36 as f32) + pending * (0.22 as f32));
+    fillRect(hit_x - 1, lane_y - 22, 3, 44, line_col);
+    u32 line_glow = alphaColor(theme.panel_stroke, pending * (0.66 as f32));
+    fillRect(hit_x - 4, lane_y - 24, 9, 48, line_glow);
+    fillRect(hit_x - 7, lane_y - 21, 15, 42, alphaColor(theme.panel_stroke, pending * (0.32 as f32)));
+    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, (0.52 as f32) + marker * (0.44 as f32) + pending * (0.10 as f32)));
+
+    if beat_pending {
+        f32 t = GetTime() as f32;
+        for i32 i = 0; i < 14; i++ {
+            f32 phase = t * ((0.86 as f32) + (i as f32) * (0.04 as f32)) + (i as f32) * (0.37 as f32);
+            f32 frac = phase - (phase as i32) as f32;
+            if frac < 0.0 as f32 {frac += 1.0 as f32;}
+            i32 side = 1;
+            if i % 2 == 0 {side = -1;}
+            i64 band = 6 + ((i % 4) as i64) * 4;
+            i64 drift = ((phase * (11.0 as f32)) as i32 % 5) as i64;
+            i64 px = hit_x + (side as i64) * band + (side as i64) * drift;
+            i64 py = lane_y + 18 - (frac * (56.0 as f32)) as i64;
+            i64 pr = 2 + (i % 3);
+            f32 a = pending * ((0.24 as f32) + ((1.0 as f32) - frac) * (0.66 as f32));
+            u32 pc = alphaColor(theme.text_main, a);
+            DrawCircle(uiX(px), uiY(py), uiS(pr) as f32, toColor(pc));
+            DrawCircleLines(uiX(px), uiY(py), uiS(pr + 1) as f32, toColor(alphaColor(theme.panel_stroke, a * (0.58 as f32))));
+        }
+    }
+
+    if g_rhythm_target_count <= 0 {
+        drawTextColor(font, "no beat map", panel_x + 10, panel_y + 52, 10, theme.text_muted);
+        return;
+    }
+
+    f32 now = rhythmClockTime();
+    i32 start = g_rhythm_target_index - 24;
+    if start < 0 {start = 0;}
+    i32 end = g_rhythm_target_index + 96;
+    if end > g_rhythm_target_count {end = g_rhythm_target_count;}
+
+    for i32 i = start; i < end; i++ {
+        f32 dt = g_rhythm_target_times[i] - now;
+        if dt < -left_window || dt > right_window {continue;}
+
+        f32 x01 = (dt + left_window) / total_window;
+        if x01 < 0.0 as f32 {x01 = 0.0 as f32;}
+        if x01 > 1.0 as f32 {x01 = 1.0 as f32;}
+        i64 cx = lane_x + ((lane_w as f32 * x01) as i64);
+
+        f32 near = 1.0 as f32 - absf(dt) / (0.40 as f32 + right_window * (0.26 as f32));
+        if near < 0.0 as f32 {near = 0.0 as f32;}
+        i64 r = 3 + (near * (3.0 as f32)) as i64;
+
+        u32 dot_col = alphaColor(theme.panel_stroke, (0.30 as f32) + near * (0.48 as f32));
+        if i == g_rhythm_target_index {
+            dot_col = alphaColor(theme.text_main, (0.56 as f32) + marker * (0.40 as f32));
+            r += 1;
+        }
+
+        DrawCircle(uiX(cx), uiY(lane_y), uiS(r) as f32, toColor(dot_col));
+        DrawCircleLines(uiX(cx), uiY(lane_y), uiS(r + 1) as f32, toColor(alphaColor(theme.board_bg, 0.80 as f32)));
+    }
+}
+
+fun drawAppContent(font: Font, theme: Theme) >> void {
+    if (g_game.screen == SCREEN_MENU) {
+        drawMenu(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_SETTINGS) {
+        if settingsThemeManagerOpen() {
+            DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+            drawImpulseGridBackground(font, theme);
+
+            i64 preview_zone_x = 0;
+            i64 preview_zone_y = 0;
+            i64 preview_zone_w = 0;
+            i64 preview_zone_h = 0;
+            themeManagerPreviewRect(&preview_zone_x, &preview_zone_y, &preview_zone_w, &preview_zone_h);
+
+            fillRect(preview_zone_x - 10, preview_zone_y - 10, preview_zone_w + 20, preview_zone_h + 20, alphaColor(theme.panel_bg, 0.70 as f32));
+            strokeRect(preview_zone_x - 10, preview_zone_y - 10, preview_zone_w + 20, preview_zone_h + 20, alphaColor(theme.panel_stroke, 0.88 as f32));
+
+            BeginScissorMode(uiX(preview_zone_x), uiY(preview_zone_y), uiS(preview_zone_w), uiS(preview_zone_h));
+            DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+            drawBackgroundStars(theme);
+            EndScissorMode();
+
+            strokeRect(preview_zone_x, preview_zone_y, preview_zone_w, preview_zone_h, alphaColor(theme.text_muted, 0.60 as f32));
+
+            i64 board_w = (boardWidth() as i64) * boardCellSize();
+            i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+            i64 desired_board_left = preview_zone_x + (preview_zone_w - board_w) / 2;
+            i64 desired_board_top = preview_zone_y + (preview_zone_h - board_h) / 2;
+
+            i64 field_frame_pad = 16;
+            fillRect(desired_board_left - field_frame_pad, desired_board_top - field_frame_pad, board_w + field_frame_pad * 2, board_h + field_frame_pad * 2, alphaColor(theme.bg_outer, 0.22 as f32));
+            strokeRect(desired_board_left - field_frame_pad, desired_board_top - field_frame_pad, board_w + field_frame_pad * 2, board_h + field_frame_pad * 2, alphaColor(theme.panel_stroke, 0.74 as f32));
+
+            drawThemePreviewBoard(theme, desired_board_left, desired_board_top);
+
+            drawThemeManagerStandalone(font, theme);
+            return;
+        }
+
+        drawSettings(font, theme, g_game.theme_index, g_post_shader_mode, g_crt_curvature, g_crt_brightness, g_vhs_waves, g_vhs_damage, g_arr_frames, g_das_frames, g_dcd_frames, g_sdf_multiplier, g_music_volume, g_board_bounciness, g_bg_stars_amount, g_bg_star_react_mode, g_star_peak_target_dps, g_star_intensity, g_star_music_intensity, g_star_music_style, g_double_row_ui, g_instant_restart, g_hard_drop_ring, g_high_contrast_blocks, g_big_first_bag_preview, g_fullscreen_mode, &g_custom_shader_name[0], g_music_mode, g_music_shuffle);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_BOT_SETUP) {
+        drawBotSetupScreen(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_CHALLENGE_SETUP) {
+        drawChallengeSetup(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_RHYTHM_SETUP) {
+        drawRhythmSetup(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_ONLINE_DUEL_SETUP) {
+        drawOnlineDuelSetup(font, theme);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    if isBotDuelsMode() {drawBotDuelsFrame(font);} else {drawGameFrame(font);}
+}
+
+fun applyUiScaleBaseForScreen() >> void {
+    if g_game.screen == SCREEN_SETTINGS && settingsThemeManagerOpen() {
+        setScaleBase(THEME_EDITOR_BASE_W, UI_BASE_H);
+        return;
+    }
+
+    if g_game.screen == SCREEN_GAME && isVersusMode() {
+        setScaleBase(1100, UI_BASE_H);
+        return;
+    }
+
+    if g_game.screen == SCREEN_ONLINE_DUEL_SETUP {
+        setScaleBase(900, UI_BASE_H);
+        return;
+    }
+
+    setScaleBase(UI_BASE_W, UI_BASE_H);
+}
+
+fun drawApp(font: Font) >> void {
+    g_game = g_game.refresh_screen_size();
+    applyUiScaleBaseForScreen();
+    setScaleAlignX(scaleAlignCenter());
+    i32 shake_x = 0;
+    i32 shake_y = 0;
+    if g_game.screen == SCREEN_GAME {
+        shake_x = boardShakeX();
+        shake_y = boardShakeY();
+    }
+    if (g_game.screen == SCREEN_GAME && (isVersusMode() || isBotDuelsMode())) {
+        setScaleExtraX(vsBotLayoutExtraX() + shake_x);
+    } else if (g_game.screen == SCREEN_GAME && gameUsesSplitLayout()) {
+        i32 split_offset_x = ((splitLayoutExtraXBase() as f32) * uiScale()) as i32;
+        setScaleExtraX(split_offset_x + shake_x);
+    } else {
+        setScaleExtraX(shake_x);
+    }
+    setScaleExtraY(shake_y);
+
+    Theme theme = currentTheme();
+    bool use_light_crt = g_post_shader_mode == SHADER_MODE_LIGHT_CRT && g_light_crt_shader_ready;
+    bool use_crt = g_post_shader_mode == SHADER_MODE_CRT && g_crt_shader_ready;
+    bool use_vhs = g_post_shader_mode == SHADER_MODE_VHS && g_vhs_shader_ready;
+    bool use_custom = g_post_shader_mode == SHADER_MODE_CUSTOM && g_custom_shader_ready;
+    bool use_shader = use_light_crt || use_crt || use_vhs || use_custom;
+    bool use_layered_targets = use_custom && g_game.screen == SCREEN_GAME && !isBotDuelsMode();
+
+    if g_post_shader_mode == SHADER_MODE_CUSTOM && !g_custom_shader_ready && !g_custom_shader_warned {
+        printf("[zltris] custom mode active but shader is not ready (name='%s')\n", &g_custom_shader_name[0]);
+        g_custom_shader_warned = true;
+    }
+
+    BeginDrawing();
+    if !use_shader {
+        clearWithColor(theme.bg_outer);
+        drawAppContent(font, theme);
+        EndDrawing();
+        return;
+    }
+
+    ensurePostFxTarget(GetScreenWidth(), GetScreenHeight());
+    if !g_post_fx_target_ready {
+        clearWithColor(theme.bg_outer);
+        drawAppContent(font, theme);
+        EndDrawing();
+        return;
+    }
+
+    if use_custom {
+        SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_POINT);
+    } else {
+        SetTextureFilter(g_post_fx_target.texture, TEXTURE_FILTER_BILINEAR);
+    }
+
+    BeginTextureMode(g_post_fx_target);
+    clearWithColor(theme.bg_outer);
+    drawAppContent(font, theme);
+    EndTextureMode();
+
+    if use_layered_targets {
+        ensureLayerTargets(GetScreenWidth(), GetScreenHeight());
+        if g_layer_targets_ready {
+            BeginTextureMode(g_layer_bg_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameBackgroundTargetLayer(theme);
+            EndTextureMode();
+
+            BeginTextureMode(g_layer_blocks_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameBlocksTargetLayer(theme);
+            EndTextureMode();
+
+            BeginTextureMode(g_layer_ui_target);
+            clearWithColor(rgba(0, 0, 0, 0));
+            drawGameUiTargetLayer(font, theme);
+            EndTextureMode();
+        }
+    }
+
+    clearWithColor(theme.bg_outer);
+    if use_crt && g_crt_curvature_loc >= 0 {
+        f32 curvature = g_crt_curvature;
+        SetShaderValue(g_crt_shader, g_crt_curvature_loc, (&curvature) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+    if use_crt && g_crt_brightness_loc >= 0 {
+        f32 brightness = g_crt_brightness;
+        SetShaderValue(g_crt_shader, g_crt_brightness_loc, (&brightness) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+    if use_vhs && g_vhs_time_loc >= 0 {
+        f32 t = GetTime() as f32;
+        SetShaderValue(g_vhs_shader, g_vhs_time_loc, (&t) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+    if use_vhs && g_vhs_waves_loc >= 0 {
+        f32 waves = g_vhs_waves;
+        SetShaderValue(g_vhs_shader, g_vhs_waves_loc, (&waves) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+    if use_vhs && g_vhs_damage_loc >= 0 {
+        f32 damage = g_vhs_damage;
+        SetShaderValue(g_vhs_shader, g_vhs_damage_loc, (&damage) as ptr<void>, SHADER_UNIFORM_FLOAT as i32);
+    }
+    if use_light_crt {
+        setShaderCommonUniforms(g_light_crt_shader);
+        BeginShaderMode(g_light_crt_shader);
+    } else if use_vhs {
+        setShaderCommonUniforms(g_vhs_shader);
+        BeginShaderMode(g_vhs_shader);
+    } else if use_custom {
+        BeginShaderMode(g_custom_shader);
+        setShaderCommonUniforms(g_custom_shader);
+        i32 layered_flag = 0;
+        if use_layered_targets && g_layer_targets_ready {layered_flag = 1;}
+        if g_custom_layered_loc >= 0 {
+            SetShaderValue(g_custom_shader, g_custom_layered_loc, (&layered_flag) as ptr<void>, SHADER_UNIFORM_INT as i32);
+        }
+
+        if layered_flag != 0 {
+            if g_custom_bg_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_bg_tex_loc, g_layer_bg_target.texture);}
+            if g_custom_blocks_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_blocks_tex_loc, g_layer_blocks_target.texture);}
+            if g_custom_ui_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_ui_tex_loc, g_layer_ui_target.texture);}
+        } else {
+            ensureLayerFallbackTexture();
+            Texture empty_tex = g_post_fx_target.texture;
+            if g_layer_empty_texture_ready {empty_tex = g_layer_empty_texture;}
+            if g_custom_bg_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_bg_tex_loc, g_post_fx_target.texture);}
+            if g_custom_blocks_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_blocks_tex_loc, empty_tex);}
+            if g_custom_ui_tex_loc >= 0 {SetShaderValueTexture(g_custom_shader, g_custom_ui_tex_loc, g_post_fx_target.texture);}
+        }
+        if g_game.screen == SCREEN_GAME && !g_custom_sampler_warned && g_custom_blocks_tex_loc < 0 {
+            printf("[zltris] custom shader has no uBlocksTex (name='%s')\n", &g_custom_shader_name[0]);
+            g_custom_sampler_warned = true;
+        }
+    } else {
+        setShaderCommonUniforms(g_crt_shader);
+        BeginShaderMode(g_crt_shader);
+    }
+    @DrawTexture(g_post_fx_target.texture, 0, 0, rgba(255, 255, 255, 255));
+    EndShaderMode();
+    EndDrawing();
+}
+
+fun updateApp() >> void {
+    g_game = g_game.refresh_screen_size();
+    applyUiScaleBaseForScreen();
+    updateStarMusicPlayback();
+
+    if (g_debug_colors && IsKeyPressed(KEY_G)) {
+        g_ai_armed = true;
+        printf("[zltris] AI armed (close F3 to start)\n");
+    }
+
+    if (IsKeyPressed(KEY_F3)) {
+        bool was_debug_open = g_debug_colors;
+        g_debug_colors = !g_debug_colors;
+        Theme theme = currentTheme();
+        if (g_debug_colors) {
+            printf("[zltris] F3 debug ON\n");
+            printColorDebug(theme);
+        } else {
+            printf("[zltris] F3 debug OFF\n");
+            printColorDebug(theme);
+        }
+
+        if (was_debug_open && !g_debug_colors && g_ai_armed) {
+            g_ai_enabled = true;
+            g_ai_armed = false;
+            printf("[zltris] AI bot started\n");
+        }
+    }
+
+    if (g_game.screen == SCREEN_MENU) {
+        i32 action = menuUpdate();
+        if (action == menuActionStartFreePlay()) {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_FREE_PLAY);
+        } else if (action == menuActionStart40Lines()) {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_40_LINES);
+        } else if (action == menuActionStartBlitz()) {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_BLITZ);
+        } else if (action == menuActionOpenChallengeSetup()) {
+            challengeInit();
+            g_game = g_game.with_screen(SCREEN_CHALLENGE_SETUP);
+        } else if (action == menuActionOpenRhythmSetup()) {
+            rhythmPrepareCustomMusicPlaylist();
+            rhythmSetupInit();
+            g_game = g_game.with_screen(SCREEN_RHYTHM_SETUP);
+        } else if (action == menuActionStartComboTrainer()) {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_COMBO_TRAINER);
+        } else if (action == menuActionOpenBotSetup()) {
+            initBotSetupDefaults();
+            g_game = g_game.with_screen(SCREEN_BOT_SETUP);
+        } else if (action == menuActionOpenOnlineDuelHost()) {
+            g_online_role = ONLINE_ROLE_HOST;
+            onlineDuelSetupInit();
+            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
+        } else if (action == menuActionOpenOnlineDuelJoin()) {
+            g_online_role = ONLINE_ROLE_CLIENT;
+            onlineDuelSetupInit();
+            g_game = g_game.with_screen(SCREEN_ONLINE_DUEL_SETUP);
+        } else if (action == menuActionStartBotDuels()) {
+            if BOTDEVMODE {startBotDuelsMode();}
+        } else if (action == menuActionOpenSettings()) {
+            g_game = g_game.with_settings_return_screen(SCREEN_MENU);
+            settingsInit();
+            g_game = g_game.with_screen(SCREEN_SETTINGS);
+        }
+        return;
+    }
+
+    if (g_game.screen == SCREEN_SETTINGS) {
+        i32 prev_theme = g_game.theme_index;
+        f32 prev_arr = g_arr_frames;
+        f32 prev_das = g_das_frames;
+        f32 prev_dcd = g_dcd_frames;
+        f32 prev_sdf = g_sdf_multiplier;
+        i32 prev_board_bounciness = g_board_bounciness;
+        i32 prev_bg_amount = g_bg_stars_amount;
+        i32 prev_bg_mode = g_bg_star_react_mode;
+        f32 prev_peak = g_star_peak_target_dps;
+        f32 prev_intensity = g_star_intensity;
+        f32 prev_music_intensity = g_star_music_intensity;
+        i32 prev_music_style = g_star_music_style;
+        f32 prev_music_volume = g_music_volume;
+        i32 prev_shader_mode = g_post_shader_mode;
+        f32 prev_crt_curvature = g_crt_curvature;
+        f32 prev_crt_brightness = g_crt_brightness;
+        f32 prev_vhs_waves = g_vhs_waves;
+        f32 prev_vhs_damage = g_vhs_damage;
+        bool prev_double_row = g_double_row_ui;
+        bool prev_instant_restart = g_instant_restart;
+        bool prev_hard_drop_ring = g_hard_drop_ring;
+        bool prev_high_contrast_blocks = g_high_contrast_blocks;
+        bool prev_big_first_bag_preview = g_big_first_bag_preview;
+        bool prev_fullscreen_mode = g_fullscreen_mode;
+        arr<u8, CUSTOM_SHADER_NAME_MAX> prev_custom_shader_name = {0};
+        copyCustomShaderName(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
+        i32 prev_music_mode = g_music_mode;
+        bool prev_music_shuffle = g_music_shuffle;
+        bool prev_settings_controls_open = g_settings_controls_expanded;
+        bool prev_settings_video_open = g_settings_video_expanded;
+        bool prev_settings_audio_open = g_settings_audio_expanded;
+        i32 prev_custom_theme_rev = customThemeRevision();
+
+        i32 settings_action = settingsUpdate(&g_game.theme_index, &g_post_shader_mode, &g_crt_curvature, &g_crt_brightness, &g_vhs_waves, &g_vhs_damage, &g_arr_frames, &g_das_frames, &g_dcd_frames, &g_sdf_multiplier, &g_music_volume, &g_board_bounciness, &g_bg_stars_amount, &g_bg_star_react_mode, &g_star_peak_target_dps, &g_star_intensity, &g_star_music_intensity, &g_star_music_style, &g_double_row_ui, &g_instant_restart, &g_hard_drop_ring, &g_high_contrast_blocks, &g_big_first_bag_preview, &g_fullscreen_mode, &g_custom_shader_name[0], &g_music_mode, &g_music_shuffle);
+        bool custom_shader_changed = !strEq(&prev_custom_shader_name[0], &g_custom_shader_name[0]);
+        if prev_shader_mode != g_post_shader_mode {g_custom_shader_warned = false;}
+        if (prev_theme != g_game.theme_index ||
+            prev_shader_mode != g_post_shader_mode ||
+            prev_crt_curvature != g_crt_curvature ||
+            prev_crt_brightness != g_crt_brightness ||
+            prev_vhs_waves != g_vhs_waves ||
+            prev_vhs_damage != g_vhs_damage ||
+            prev_arr != g_arr_frames ||
+            prev_das != g_das_frames ||
+            prev_dcd != g_dcd_frames ||
+            prev_sdf != g_sdf_multiplier ||
+            prev_board_bounciness != g_board_bounciness ||
+            prev_bg_amount != g_bg_stars_amount ||
+            prev_bg_mode != g_bg_star_react_mode ||
+            prev_peak != g_star_peak_target_dps ||
+            prev_intensity != g_star_intensity ||
+            prev_music_intensity != g_star_music_intensity ||
+            prev_music_style != g_star_music_style ||
+            prev_music_volume != g_music_volume ||
+            prev_double_row != g_double_row_ui ||
+            prev_instant_restart != g_instant_restart ||
+            prev_hard_drop_ring != g_hard_drop_ring ||
+            prev_high_contrast_blocks != g_high_contrast_blocks ||
+            prev_big_first_bag_preview != g_big_first_bag_preview ||
+            prev_fullscreen_mode != g_fullscreen_mode ||
+            custom_shader_changed ||
+            prev_music_mode != g_music_mode ||
+            prev_music_shuffle != g_music_shuffle ||
+            prev_custom_theme_rev != customThemeRevision() ||
+            prev_settings_controls_open != g_settings_controls_expanded ||
+            prev_settings_video_open != g_settings_video_expanded ||
+            prev_settings_audio_open != g_settings_audio_expanded ||
+            g_songs_modified) {
+            clampSettings();
+            if prev_shader_mode != g_post_shader_mode || custom_shader_changed {loadPostEffects();}
+            if prev_fullscreen_mode != g_fullscreen_mode {
+                if g_fullscreen_mode {
+                    if !IsWindowFullscreen() && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+                        ToggleBorderlessWindowed();
+                    }
+                    i32 mon = GetCurrentMonitor();
+                    SetWindowSize(GetMonitorWidth(mon), GetMonitorHeight(mon));
+                } else {
+                    if IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE as u32) {
+                        ToggleBorderlessWindowed();
+                    } else if IsWindowFullscreen() {
+                        ToggleFullscreen();
+                    }
+                    SetWindowSize(WINDOW_W, WINDOW_H);
+                }
+                g_game = g_game.refresh_screen_size();
+                ensurePostFxTarget(GetScreenWidth(), GetScreenHeight());
+                ensureLayerTargets(GetScreenWidth(), GetScreenHeight());
+            }
+            if prev_music_mode != g_music_mode {
+                buildMusicPlaylist();
+                if g_star_music_track_count > 0 {
+                    loadStarMusicTrack(getRandomEnabledTrack());
+                }
+            }
+            if g_songs_modified {
+                g_songs_modified = false;
+                if g_star_music_track_index >= 0 && g_star_music_track_index < g_star_music_track_count && g_star_music_track_disabled[g_star_music_track_index] {
+                    loadStarMusicTrack(getRandomEnabledTrack());
+                }
+            }
+            saveSettingsFile();
+        }
+        if settings_action == settingsActionBack() {g_game = g_game.with_screen(g_game.settings_return_screen);}
+        return;
+    }
+
+    if (g_game.screen == SCREEN_BOT_SETUP) {
+        updateBotSetupScreen();
+        return;
+    }
+
+    if (g_game.screen == SCREEN_CHALLENGE_SETUP) {
+        i32 challenge_action = updateChallengeSetup();
+        if challenge_action == challengeActionBack() {
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if challenge_action == challengeActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_CHALLENGE);
+            return;
+        }
+        return;
+    }
+
+    if (g_game.screen == SCREEN_RHYTHM_SETUP) {
+        i32 rhythm_action = updateRhythmSetup();
+        if rhythm_action == rhythmSetupActionBack() {
+            rhythmRestoreMusicPlaylistIfNeeded();
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if rhythm_action == rhythmSetupActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_RHYTHM);
+            return;
+        }
+        return;
+    }
+
+    if (g_game.screen == SCREEN_ONLINE_DUEL_SETUP) {
+        i32 online_action = updateOnlineDuelSetup();
+        if online_action == onlineDuelSetupActionBack() {
+            onlineAbortSession();
+            g_game = g_game.with_screen(SCREEN_MENU);
+            return;
+        }
+        if online_action == onlineDuelSetupActionStart() {
+            g_game = g_game.with_screen(SCREEN_GAME);
+            startGameMode(MODE_ONLINE_DUEL);
+            onlineMarkGameStarted();
+            return;
+        }
+        return;
+    }
+
+    updateGameScreen();
+}
+
+fun drawGameFrame(font: Font) >> void {
+    Theme theme = currentTheme();
+    drawGameBackgroundLayer(theme);
+    drawGameBlocksLayer(font, theme);
+    drawGameUiLayer(font, theme);
+}
+
+fun currentVisibleBoardWidthPx() >> i64 {
+    return (boardWidth() as i64) * boardCellSize();
+}
+
+fun currentVisibleBoardHeightPx() >> i64 {
+    return (boardVisibleRows() as i64) * boardCellSize();
+}
+
+fun boardCenteredBoxX(board_left: i64, box_w: i64) >> i64 {
+    return board_left + (currentVisibleBoardWidthPx() - box_w) / 2;
+}
+
+fun boardCenteredBoxY(board_top: i64, box_h: i64) >> i64 {
+    return board_top + (currentVisibleBoardHeightPx() - box_h) / 2;
+}
+
+fun drawOpponentLeftOverlay(font: Font, theme: Theme) >> void {
+    if !isOnlineDuelMode() {return;}
+    if g_duel_running {return;}
+    if g_online_disconnect_reason != ONLINE_ERR_LEFT {return;}
+
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+    i64 box_w = board_w - 32;
+    if box_w < 172 {box_w = 172;}
+    i64 box_h = 74;
+    i64 box_x = board_x + (board_w - box_w) / 2;
+    i64 box_y = board_y + (board_h - box_h) / 2;
+
+    fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.90));
+    strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.88));
+    drawTextCenteredInRect(font, "left the game", box_x, box_y, box_w, box_h, 16, theme.text_main);
+}
+
+fun controlsHintY() >> i64 {
+    return currentBoardTop() + currentVisibleBoardHeightPx() + 84;
+}
+
+fun controlsHintY2() >> i64 {
+    return controlsHintY() + 25;
+}
+
+fun measureBaseTextWidth(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    Vector2 m = MeasureTextExSize(font, text, uiS(size) as f32, 0.0 as f32);
+    return (m.x / uiScale()) as i64;
+}
+
+fun boardCenteredTextX(font: Font, text: ptr<u8>, size: i64) >> i64 {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_w = currentVisibleBoardWidthPx();
+    i64 text_w = measureBaseTextWidth(font, text, size);
+    i64 x = board_left + (board_w - text_w) / 2;
+    if x < 12 {x = 12;}
+    i64 max_x = viewportBaseWidth() - text_w - 12;
+    if x > max_x {x = max_x;}
+    return x;
+}
+
+fun shouldDrawGameWidthPopup() >> bool {
+    return (isAgainstBotMode() || isBotDuelsMode()) && !canOpenBotSetupUi();
+}
+
+fun drawGameBackgroundLayer(theme: Theme) >> void {
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), toColor(theme.bg_inner), toColor(theme.bg_outer));
+    drawBackgroundStars(theme);
+}
+
+fun drawGameBlocksLayer(font: Font, theme: Theme) >> void {
+    if shouldDrawGameWidthPopup() {return;}
+    drawBoard(theme);
+    if isVersusMode() {drawBotBoard(theme, font);}
+}
+
+fun drawGameUiLayer(font: Font, theme: Theme) >> void {
+    bool split_layout = gameUsesSplitLayout();
+    f32 hint_alpha = 1.0;
+    if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
+
+    if shouldDrawGameWidthPopup() {
+        drawBotWidthPopup(font, theme, false);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    drawSidebar(font, theme, split_layout);
+    if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
+
+    if !(isAgainstBotMode() && g_bot_setup.high_stack_tolerance) {
+        i64 controls_top_x = currentPlayerBoardLeft();
+        drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
+        drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
+        i64 controls_y = controlsHintY();
+        i64 controls_y2 = controlsHintY2();
+        ptr<u8> controls_line_1 = "UP/X rotate CW   Z rotate CCW";
+        ptr<u8> controls_line_2 = "DOWN soft  SPACE hard  C hold";
+        drawTextColor(font, controls_line_1, boardCenteredTextX(font, controls_line_1, 12), controls_y, 12, alphaColor(theme.text_muted, hint_alpha));
+        drawTextColor(font, controls_line_2, boardCenteredTextX(font, controls_line_2, 12), controls_y2, 12, alphaColor(theme.text_muted, hint_alpha));
+    }
+    drawRhythmBeatIndicator(font, theme);
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    drawRhythmBoardPulse(theme, board_left, board_top);
+    drawAllClearFxLabel(font, theme, board_left, board_top);
+    
+    if g_play.game_over && !(isVersusMode() && !g_duel_running) {
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", box_x + 26, box_y + 32, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", box_x + 16, box_y + 80, 14, theme.text_muted);
+    }
+
+    drawFortyLinesOverlay(font, theme);
+    drawOpponentLeftOverlay(font, theme);
+
+    if isVersusMode() && !g_duel_running {
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
+        ptr<u8> footer = "R retry  ESC menu";
+        if isOnlineDuelMode() {footer = "R retry  ESC room";}
+        drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
+    }
+
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
+}
+
+fun drawThemePreviewBoard(theme: Theme, board_left: i64, board_top: i64) >> void {
+    i32 bw = boardWidth();
+    i32 bh = boardHeight();
+    i32 y0 = boardVisibleStartRow();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
+    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+
+    for i32 y = y0; y < bh; y++ {
+        for i32 x = 0; x < bw; x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+
+    i32 px = 0;
+    i32 py = y0 + 1;
+    for i32 kind = 0; kind <= PIECE_Z; kind++ {
+        if px + 4 > bw {
+            px = 0;
+            py += 4;
+        }
+        if py + 3 >= bh {break;}
+        drawPieceAtBoard(kind, 0, px, py, board_left, board_top, pieceColor(theme, kind));
+        px += 3;
+    }
+}
+
+fun drawPlayerBoardBackgroundTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    drawHighStackSpawnZone(theme, board_left, board_top);
+    fillRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.board_bg);
+}
+
+fun drawPlayerBoardUiTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    i64 board_w = (boardWidth() as i64) * boardCellSize();
+    i64 board_h = (boardVisibleRows() as i64) * boardCellSize();
+    strokeRect(board_left - 8, board_top - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+
+    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+}
+
+fun drawPlayerBoardBlocksTargetLayer(theme: Theme) >> void {
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+
+    for i32 y = boardVisibleStartRow(); y < boardHeight(); y++ {
+        for i32 x = 0; x < boardWidth(); x++ {
+            i32 cell = boardGet(x, y);
+            if cell == 0 {continue;}
+
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_left, board_top, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !g_play.game_over {
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, currentGhostY(), ghostColor(pieceColor(theme, g_piece_kind)));
+        drawPieceAt(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y, pieceColor(theme, g_piece_kind));
+    }
+
+    drawRestartBoardEffects(board_left, board_top);
+    drawHardDropImpactRings(board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawAllClearFx(theme, board_left, board_top);
+    drawQuadClearFx(theme, board_left, board_top);
+    drawLockEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+    drawLineClearEffects(theme, board_left, board_top, LINE_FX_BOARD_PLAYER);
+}
+
+fun drawBotBoardBackgroundTargetLayer(theme: Theme) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+
+    drawHighStackSpawnZone(theme, board_x, board_y);
+    fillRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.board_bg);
+}
+
+fun drawBotBoardUiTargetLayer(theme: Theme, font: Font) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+    i64 board_w = (botBoardWidth() as i64) * boardCellSize();
+    i64 board_h = (botBoardHeight() as i64) * boardCellSize();
+
+    strokeRect(board_x - 8, board_y - 8, board_w + 16, board_h + 16, theme.panel_stroke);
+    ptr<u8> opp_title = "OPPONENT";
+    if isAgainstBotMode() {opp_title = "BOT";}
+    drawTextColor(font, opp_title, board_x + 120, board_y - 42, 16, theme.text_main);
+
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            DrawRectangleLines(sx, sy, sw, sh, toColor(theme.board_grid));
+        }
+    }
+
+    f32 bot_apm = 0.0;
+    if g_rt.run_timer > 0.001 {bot_apm = ((g_bot.attack_sent as f32) * 60.0) / g_rt.run_timer;}
+    drawTextColor(font, TextFormat("APM %.1f / %.1f", bot_apm, g_bot_setup.target_apm), board_x + 30, board_y + board_h + 14, 10, theme.panel_stroke);
+    drawTextColor(font, TextFormat("LINES %i", g_bot.lines), board_x + 102, board_y + board_h + 34, 10, theme.text_muted);
+}
+
+fun drawSidebarBackgroundTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = currentCenterSidebarX();
+        if isVersusMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        fillRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
+        fillRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.board_bg, 0.92));
+
+        fillRect(right_panel_x, 120, 178, 510, theme.panel_bg);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            fillRect(right_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+            fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                fillRect(bot_panel_x + 35, panel_y, 108, 72, alphaColor(theme.board_bg, 0.86));
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
+    fillRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.board_bg, 0.9));
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        fillRect(sidebar_x + 20, panel_y, 88, 70, alphaColor(theme.board_bg, 0.86));
+    }
+}
+
+fun drawBotBoardBlocksTargetLayer(theme: Theme) >> void {
+    i64 board_x = currentBotBoardLeft();
+    i64 board_y = currentBotBoardTop();
+
+    for i32 y = 0; y < botBoardHeight(); y++ {
+        for i32 x = 0; x < botBoardWidth(); x++ {
+            i32 cell = botBoardGet(x, y);
+            if cell == 0 {continue;}
+
+            i32 sx = 0;
+            i32 sy = 0;
+            i32 sw = 0;
+            i32 sh = 0;
+            boardCellRectPixels(board_x, board_y, x as i64, y as i64, &sx, &sy, &sw, &sh);
+            if cell == 8 {
+                drawCellPixels(sx, sy, sw, sh, garbageCellColor(theme));
+            } else {
+                drawCellPixels(sx, sy, sw, sh, pieceColor(theme, cell - 1));
+            }
+        }
+    }
+
+    if !g_bot.game_over && g_bot.piece_kind >= 0 {
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, botGhostY() as i64, board_x, board_y, ghostColor(pieceColor(theme, g_bot.piece_kind)));
+        drawPieceAtBoard(g_bot.piece_kind, g_bot.piece_rotation, g_bot.piece_x as i64, g_bot.piece_y as i64, board_x, board_y, pieceColor(theme, g_bot.piece_kind));
+    }
+
+    drawHardDropImpactRings(board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLockEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+    drawLineClearEffects(theme, board_x, board_y, LINE_FX_BOARD_BOT);
+}
+
+fun drawSidebarPiecesTargetLayer(theme: Theme, split_layout: bool) >> void {
+    if split_layout {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = currentCenterSidebarX();
+        if isVersusMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, left_panel_x + 36, 256, 112, 112, 16);}
+
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            i64 piece_size = 13;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+                piece_size = 18;
+            }
+            drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                i64 piece_size = 13;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                    piece_size = 18;
+                }
+                if g_bot_queue[i] >= 0 {drawMiniPieceCentered(theme, g_bot_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);}
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    if g_hold_kind >= 0 {drawMiniPieceCentered(theme, g_hold_kind, sidebar_x + 20, 216, 88, 88, 14);}
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        i64 panel_x = sidebar_x + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        i64 piece_size = 12;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = sidebar_x + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+            piece_size = 16;
+        }
+        drawMiniPieceCentered(theme, g_queue[i], panel_x, panel_y, panel_w, panel_h, piece_size);
+    }
+}
+
+fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> void {
+    if (split_layout) {
+        i64 left_panel_x = -214;
+        i64 right_panel_x = currentCenterSidebarX();
+        if isVersusMode() {
+            left_panel_x = vsBotPlayerLeftPanelX();
+            right_panel_x = currentCenterSidebarX();
+        }
+
+        strokeRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
+        drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
+
+        drawTextColor(font, "HOLD", left_panel_x + 20, 230, 14, theme.text_main);
+        strokeRect(left_panel_x + 36, 256, 112, 112, alphaColor(theme.panel_stroke, 0.78));
+
+        drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), left_panel_x + 20, 404, 16, theme.text_main);
+        drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), left_panel_x + 20, 468, 16, theme.text_main);
+        drawTextColor(font, TextFormat("PPS: %.2f", currentPps()), left_panel_x + 20, 532, 16, theme.text_main);
+        if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() || isVersusMode() {drawTextColor(font, TextFormat("APM: %.1f", currentApm()), left_panel_x + 20, 548, 12, theme.panel_stroke);}
+        if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), left_panel_x + 20, 557, 14, theme.panel_stroke);}
+        if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), left_panel_x + 20, 574, 11, theme.panel_stroke);}
+        if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+        if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
+
+        strokeRect(right_panel_x, 120, 178, 510, theme.panel_stroke);
+        drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
+        for i32 i = 0; i < PREVIEW_COUNT; i++ {
+            i64 panel_y = 186 + (i as i64) * 88;
+            i64 panel_x = right_panel_x + 35;
+            i64 panel_w = 108;
+            i64 panel_h = 72;
+            if i == 0 && g_big_first_bag_preview {
+                panel_x = right_panel_x + 26;
+                panel_y -= 10;
+                panel_w = 126;
+                panel_h = 92;
+            }
+            strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+        }
+
+        if isAgainstBotMode() {
+            i64 bot_panel_x = vsBotBotPanelX();
+
+            strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
+            drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
+            for i32 i = 0; i < PREVIEW_COUNT; i++ {
+                i64 panel_y = 186 + (i as i64) * 88;
+                i64 panel_x = bot_panel_x + 35;
+                i64 panel_w = 108;
+                i64 panel_h = 72;
+                if i == 0 && g_big_first_bag_preview {
+                    panel_x = bot_panel_x + 26;
+                    panel_y -= 10;
+                    panel_w = 126;
+                    panel_h = 92;
+                }
+                strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+            }
+        }
+        return;
+    }
+
+    i64 sidebar_x = currentCenterSidebarX();
+    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
+
+    drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
+    drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
+
+    drawTextColor(font, "HOLD", sidebar_x + 20, 190, 14, theme.text_main);
+    if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    if isBlitzMode() {drawTextColor(font, TextFormat("LEFT %02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), sidebar_x + 20, 166, 11, theme.panel_stroke);}
+    strokeRect(sidebar_x + 20, 216, 88, 88, alphaColor(theme.panel_stroke, 0.8));
+    if g_rt.combo > 0 {drawTextColor(font, TextFormat("COMBO x%i", g_rt.combo), sidebar_x + 20, 304, 13, theme.panel_stroke);}
+    if g_rt.back_to_back_count > 0 {drawTextColor(font, TextFormat("B2B x%i", g_rt.back_to_back_count), sidebar_x + 20, 320, 10, theme.panel_stroke);}
+
+    drawTextColor(font, "NEXT", sidebar_x + 20, 334, 14, theme.text_main);
+    for i32 i = 0; i < PREVIEW_COUNT; i++ {
+        i64 panel_y = 360 + (i as i64) * 82;
+        i64 panel_x = sidebar_x + 20;
+        i64 panel_w = 88;
+        i64 panel_h = 70;
+        if i == 0 && g_big_first_bag_preview {
+            panel_x = sidebar_x + 12;
+            panel_y -= 7;
+            panel_w = 104;
+            panel_h = 82;
+        }
+        strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.55));
+    }
+
+    drawTextColor(font, TextFormat("SCORE\n%i", g_play.score), sidebar_x + 7, 796, 16, theme.text_main);
+    drawTextColor(font, TextFormat("LINES\n%i", g_play.lines), sidebar_x + 95, 796, 16, theme.text_main);
+    if isFreePlayMode() || isChallengeMode() || isComboTrainerMode() {drawTextColor(font, TextFormat("APM %.1f", currentApm()), sidebar_x + 20, 772, 11, theme.panel_stroke);}
+}
+
+fun drawGameBackgroundTargetLayer(theme: Theme) >> void {
+    drawGameBackgroundLayer(theme);
+    if shouldDrawGameWidthPopup() {return;}
+    bool split_layout = gameUsesSplitLayout();
+    drawPlayerBoardBackgroundTargetLayer(theme);
+    if isVersusMode() {drawBotBoardBackgroundTargetLayer(theme);}
+    drawSidebarBackgroundTargetLayer(theme, split_layout);
+}
+
+fun drawGameBlocksTargetLayer(theme: Theme) >> void {
+    if shouldDrawGameWidthPopup() {return;}
+    bool split_layout = gameUsesSplitLayout();
+    drawPlayerBoardBlocksTargetLayer(theme);
+    if isVersusMode() {drawBotBoardBlocksTargetLayer(theme);}
+    drawSidebarPiecesTargetLayer(theme, split_layout);
+}
+
+fun drawGameUiTargetLayer(font: Font, theme: Theme) >> void {
+    bool split_layout = gameUsesSplitLayout();
+    f32 hint_alpha = 1.0;
+    if canShowHoldRestartEffect() {hint_alpha = restartHintAlpha();}
+
+    if shouldDrawGameWidthPopup() {
+        drawBotWidthPopup(font, theme, false);
+        if g_debug_colors {drawColorDebugOverlay(font, theme);}
+        return;
+    }
+
+    drawPlayerBoardUiTargetLayer(theme);
+    if isVersusMode() {drawBotBoardUiTargetLayer(theme, font);}
+    drawSidebarUiTargetLayer(font, theme, split_layout);
+    if canShowHoldRestartEffect() {drawRestartCharge(font, theme);}
+
+    if !(isAgainstBotMode() && g_bot_setup.high_stack_tolerance) {
+        i64 controls_top_x = currentPlayerBoardLeft();
+        drawTextColor(font, "LEFT/RIGHT move", controls_top_x, 24, 12, theme.text_muted);
+        drawTextColor(font, "TAB settings  F3 color debug", controls_top_x, 42, 12, theme.text_muted);
+        i64 controls_y = controlsHintY();
+        i64 controls_y2 = controlsHintY2();
+        ptr<u8> controls_line_1 = "UP/X rotate CW   Z rotate CCW";
+        ptr<u8> controls_line_2 = "DOWN soft  SPACE hard  C hold";
+        drawTextColor(font, controls_line_1, boardCenteredTextX(font, controls_line_1, 12), controls_y, 12, alphaColor(theme.text_muted, hint_alpha));
+        drawTextColor(font, controls_line_2, boardCenteredTextX(font, controls_line_2, 12), controls_y2, 12, alphaColor(theme.text_muted, hint_alpha));
+    }
+    drawRhythmBeatIndicator(font, theme);
+    i64 board_left = currentPlayerBoardLeft();
+    i64 board_top = currentBoardTop();
+    drawRhythmBoardPulse(theme, board_left, board_top);
+    drawAllClearFxLabel(font, theme, board_left, board_top);
+
+    if g_play.game_over && !(isVersusMode() && !g_duel_running) {
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, pieceColor(theme, PIECE_Z));
+        drawTextColor(font, "GAME OVER", box_x + 26, box_y + 32, 24, theme.text_main);
+        drawTextColor(font, "Press R to restart", box_x + 16, box_y + 80, 14, theme.text_muted);
+    }
+
+    drawFortyLinesOverlay(font, theme);
+    drawOpponentLeftOverlay(font, theme);
+
+    if isVersusMode() && !g_duel_running {
+        i64 box_w = 272;
+        i64 box_h = 140;
+        i64 box_x = boardCenteredBoxX(board_left, box_w);
+        i64 box_y = boardCenteredBoxY(board_top, box_h);
+        fillRect(box_x, box_y, box_w, box_h, alphaColor(rgba(8, 11, 18, 255), 0.88));
+        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        if g_duel_result == DUEL_RESULT_PLAYER_WIN {drawTextColor(font, "YOU WIN", box_x + 50, box_y + 32, 24, theme.text_main);} else {drawTextColor(font, "YOU LOSE", box_x + 46, box_y + 32, 24, theme.text_main);}
+        ptr<u8> footer = "R retry  ESC menu";
+        if isOnlineDuelMode() {footer = "R retry  ESC room";}
+        drawTextColor(font, footer, box_x + 24, box_y + 80, 14, theme.text_muted);
+    }
+
+    if g_debug_colors {drawColorDebugOverlay(font, theme);}
+}
