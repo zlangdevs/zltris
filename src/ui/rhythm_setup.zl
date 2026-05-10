@@ -1,0 +1,410 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.sound
+
+#define RHYTHM_ACTION_NONE 0
+#define RHYTHM_ACTION_START 1
+#define RHYTHM_ACTION_BACK 2
+
+#define RHYTHM_BASE_INPUT 0
+#define RHYTHM_BASE_DROP 1
+
+#define RHYTHM_ROW_SONG 0
+#define RHYTHM_ROW_BASED 1
+#define RHYTHM_ROW_TARGET_IPS 2
+#define RHYTHM_ROW_BEAT_SENSITIVITY 3
+#define RHYTHM_ROW_SONG_SPEED 4
+#define RHYTHM_ROW_ALLOW_MISS 5
+#define RHYTHM_ROW_BEAT_WARNING 6
+#define RHYTHM_ROW_START 7
+#define RHYTHM_ROW_BACK 8
+#define RHYTHM_ROW_COUNT 9
+
+struct RhythmSetupState {
+    selected_row i32,
+    scroll f32,
+    picker_open bool,
+    picker_scroll f32,
+    picker_selected i32,
+}
+
+RhythmSetupState g_rhythm_setup = {0};
+
+fun rhythmSetupActionNone() >> i32 { return RHYTHM_ACTION_NONE; }
+fun rhythmSetupActionStart() >> i32 { return RHYTHM_ACTION_START; }
+fun rhythmSetupActionBack() >> i32 { return RHYTHM_ACTION_BACK; }
+
+fun rhythmSetupInit() >> void {
+    if g_star_music_track_count > 0 {
+        if g_rhythm_song_index < 0 {g_rhythm_song_index = 0;}
+        if g_rhythm_song_index >= g_star_music_track_count {g_rhythm_song_index = 0;}
+    } else {
+        g_rhythm_song_index = 0;
+    }
+    if g_rhythm_based < RHYTHM_BASE_INPUT || g_rhythm_based > RHYTHM_BASE_DROP {g_rhythm_based = RHYTHM_BASE_INPUT;}
+    if g_rhythm_max_ips < 0.5 {g_rhythm_max_ips = 0.5;}
+    if g_rhythm_max_ips > 15.0 {g_rhythm_max_ips = 15.0;}
+    if g_rhythm_max_dps < 0.3 {g_rhythm_max_dps = 0.3;}
+    if g_rhythm_max_dps > 5.0 {g_rhythm_max_dps = 5.0;}
+    if g_rhythm_beat_sensitivity < 0.5 {g_rhythm_beat_sensitivity = 0.5;}
+    if g_rhythm_beat_sensitivity > 5.0 {g_rhythm_beat_sensitivity = 5.0;}
+    g_rhythm_setup.selected_row = RHYTHM_ROW_SONG;
+    g_rhythm_setup.scroll = 0.0;
+    g_rhythm_setup.picker_open = false;
+    g_rhythm_setup.picker_scroll = 0.0;
+    g_rhythm_setup.picker_selected = g_rhythm_song_index;
+    if g_rhythm_setup.picker_selected < 0 {g_rhythm_setup.picker_selected = 0;}
+}
+
+fun rhythmRowY(row: i32) >> i64 {
+    return 202 + row * 66;
+}
+
+fun rhythmRowBodyHit(mouse: Vector2, row: i32) >> bool {
+    return pointInBaseRect(mouse.x, mouse.y, 118, rhythmRowY(row), 412, 62);
+}
+
+fun rhythmSliderTrackHit(mouse: Vector2, row: i32) >> bool {
+    return pointInBaseRect(mouse.x, mouse.y, 136, rhythmRowY(row) + 40, 372, 10);
+}
+
+fun rhythmSongLabel() >> ptr<u8> {
+    if g_star_music_track_count <= 0 {return "No songs";}
+    if g_rhythm_song_index < 0 || g_rhythm_song_index >= g_star_music_track_count {return "No songs";}
+    return musicTrackBasename(g_rhythm_song_index);
+}
+
+fun rhythmBasedLabel() >> ptr<u8> {
+    if g_rhythm_based == RHYTHM_BASE_DROP {return "DROP";}
+    return "INPUT";
+}
+
+fun rhythmRateLabel() >> ptr<u8> {
+    if g_rhythm_based == RHYTHM_BASE_DROP {return "Max DPS";}
+    return "Max IPS";
+}
+
+fun rhythmRateValue() >> f32 {
+    if g_rhythm_based == RHYTHM_BASE_DROP {return g_rhythm_max_dps;}
+    return g_rhythm_max_ips;
+}
+
+fun rhythmSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
+    f32 left = uiX(136) as f32;
+    f32 width = uiS(372) as f32;
+    f32 t = (px - left) / width;
+    if t < 0.0 {t = 0.0;}
+    if t > 1.0 {t = 1.0;}
+    return min_v + (max_v - min_v) * t;
+}
+
+fun rhythmSliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
+    f32 p = (value - min_v) / (max_v - min_v);
+    if p < 0.0 {p = 0.0;}
+    if p > 1.0 {p = 1.0;}
+    return p;
+}
+
+fun rhythmNudge(row: i32, dir: i32) >> void {
+    if row == RHYTHM_ROW_BASED {
+        if g_rhythm_based == RHYTHM_BASE_INPUT {g_rhythm_based = RHYTHM_BASE_DROP;}
+        else {g_rhythm_based = RHYTHM_BASE_INPUT;}
+        return;
+    }
+
+    if row == RHYTHM_ROW_TARGET_IPS {
+        f32 v = rhythmRateValue() + (dir as f32) * 0.1;
+        f32 min_v = 0.5;
+        f32 max_v = 15.0;
+        if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
+        if v < min_v {v = min_v;}
+        if v > max_v {v = max_v;}
+        i32 step = (v * 10.0 + 0.5) as i32;
+        if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
+        return;
+    }
+    if row == RHYTHM_ROW_ALLOW_MISS {
+        g_rhythm_allow_miss = toggled(g_rhythm_allow_miss);
+        return;
+    }
+    if row == RHYTHM_ROW_BEAT_SENSITIVITY {
+        f32 v = g_rhythm_beat_sensitivity + (dir as f32) * 0.1;
+        if v < 0.5 {v = 0.5;}
+        if v > 5.0 {v = 5.0;}
+        i32 step = (v * 10.0 + 0.5) as i32;
+        g_rhythm_beat_sensitivity = (step as f32) / 10.0;
+        return;
+    }
+    if row == RHYTHM_ROW_SONG_SPEED {
+        f32 v = g_rhythm_music_speed + (dir as f32) * 0.05;
+        if v < 0.75 {v = 0.75;}
+        if v > 1.50 {v = 1.50;}
+        i32 step = (v * 20.0 + 0.5) as i32;
+        g_rhythm_music_speed = (step as f32) / 20.0;
+        return;
+    }
+    if row == RHYTHM_ROW_BEAT_WARNING {
+        f32 v = g_rhythm_warning_ms + (dir as f32) * 10.0;
+        if v < 0.0 {v = 0.0;}
+        if v > 500.0 {v = 500.0;}
+        i32 step = (v + 0.5) as i32;
+        g_rhythm_warning_ms = step as f32;
+        return;
+    }
+}
+
+fun drawRhythmSelectionGlow(theme: Theme, y: i64) >> void {
+    fillRect(114, y - 4, 420, 70, alphaColor(theme.panel_stroke, 0.20));
+    strokeRect(115, y - 3, 418, 68, alphaColor(theme.panel_stroke, 0.86));
+}
+
+fun drawRhythmSliderRow(font: Font, theme: Theme, row: i32, label: ptr<u8>, value_text: ptr<u8>, value: f32, min_v: f32, max_v: f32) >> void {
+    i64 y = rhythmRowY(row);
+    bool selected = g_rhythm_setup.selected_row == row;
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        drawRhythmSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, label, 136, y + 14, 15, theme.text_main);
+    drawTextColor(font, value_text, 420, y + 14, 14, theme.panel_stroke);
+
+    i64 sx = 136;
+    i64 sy = y + 40;
+    i64 sw = 372;
+    i64 sh = 10;
+    fillRect(sx, sy, sw, sh, alphaColor(theme.board_bg, 0.92));
+    strokeRect(sx, sy, sw, sh, alphaColor(theme.text_muted, 0.46));
+    i64 fill_w = ((sw as f32) * rhythmSliderPercent(value, min_v, max_v)) as i64;
+    fillRect(sx, sy, fill_w, sh, alphaColor(theme.panel_stroke, 0.78));
+    fillRect(sx + fill_w - 3, sy - 3, 6, sh + 6, alphaColor(theme.text_main, 0.98));
+}
+
+fun drawRhythmToggleRow(font: Font, theme: Theme, row: i32, label: ptr<u8>, enabled: bool) >> void {
+    i64 y = rhythmRowY(row);
+    bool selected = g_rhythm_setup.selected_row == row;
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        drawRhythmSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, label, 136, y + 20, 15, theme.text_main);
+    drawCheckboxText(font, enabled, 470, y + 20, 15, theme.panel_stroke);
+}
+
+fun drawRhythmSongRow(font: Font, theme: Theme) >> void {
+    i64 y = rhythmRowY(RHYTHM_ROW_SONG);
+    bool selected = g_rhythm_setup.selected_row == RHYTHM_ROW_SONG;
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        drawRhythmSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, "Song", 136, y + 20, 15, theme.text_main);
+    drawTextColor(font, rhythmSongLabel(), 262, y + 20, 13, theme.panel_stroke);
+}
+
+fun drawRhythmBasedRow(font: Font, theme: Theme) >> void {
+    i64 y = rhythmRowY(RHYTHM_ROW_BASED);
+    bool selected = g_rhythm_setup.selected_row == RHYTHM_ROW_BASED;
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        drawRhythmSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextColor(font, "Based", 136, y + 20, 15, theme.text_main);
+    drawTextColor(font, TextFormat("< %s >", rhythmBasedLabel()), 402, y + 20, 14, theme.panel_stroke);
+}
+
+fun drawRhythmButtonRow(font: Font, theme: Theme, row: i32, label: ptr<u8>) >> void {
+    i64 y = rhythmRowY(row);
+    bool selected = g_rhythm_setup.selected_row == row;
+    u32 stroke = alphaColor(theme.text_muted, 0.52);
+    if selected {
+        drawRhythmSelectionGlow(theme, y);
+        stroke = alphaColor(theme.panel_stroke, 0.86);
+    }
+    fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
+    strokeRect(118, y, 412, 62, stroke);
+    drawTextCenteredInRect(font, label, 118, y + 2, 412, 58, 15, theme.text_main);
+}
+
+fun drawRhythmSongPicker(font: Font, theme: Theme) >> void {
+    fillRect(92, 210, 468, 540, alphaColor(theme.bg_outer, 0.97));
+    strokeRect(92, 210, 468, 540, alphaColor(theme.panel_stroke, 0.94));
+    drawTextColor(font, "SELECT SONG", 122, 236, 16, theme.text_main);
+
+    if g_star_music_track_count <= 0 {
+        drawTextColor(font, "No songs found", 122, 292, 12, theme.text_muted);
+        drawTextColor(font, "ESC close", 122, 720, 11, theme.text_muted);
+        return;
+    }
+
+    i32 visible = 6;
+    i32 max_scroll = g_star_music_track_count - visible;
+    if max_scroll < 0 {max_scroll = 0;}
+    if g_rhythm_setup.picker_scroll < 0.0 {g_rhythm_setup.picker_scroll = 0.0;}
+    if g_rhythm_setup.picker_scroll > (max_scroll as f32) {g_rhythm_setup.picker_scroll = max_scroll as f32;}
+
+    for i32 i = 0; i < g_star_music_track_count; i++ {
+        i64 y = 286 + ((i as f32 - g_rhythm_setup.picker_scroll) * 68.0) as i64;
+        if y < 286 || y > 650 {continue;}
+        bool selected = i == g_rhythm_setup.picker_selected;
+        u32 stroke = alphaColor(theme.text_muted, 0.45);
+        if selected {stroke = alphaColor(theme.panel_stroke, 0.88);}
+        fillRect(116, y, 420, 58, alphaColor(theme.panel_bg, 0.90));
+        strokeRect(116, y, 420, 58, stroke);
+        drawTextColor(font, musicTrackBasename(i), 132, y + 20, 12, theme.text_main);
+    }
+    drawTextColor(font, "ENTER choose  ESC close", 122, 720, 11, theme.text_muted);
+}
+
+fun drawRhythmSetup(font: Font, theme: Theme) >> void {
+    drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
+
+    fillRect(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86));
+    strokeRect(86, 98, 476, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawTextColor(font, "RHYTHM", 118, 132, 24, theme.text_main);
+    drawTextColor(font, "Sync to the beat", 118, 168, 11, theme.text_muted);
+
+    drawRhythmSongRow(font, theme);
+    drawRhythmBasedRow(font, theme);
+    f32 rate_min = 0.5;
+    f32 rate_max = 15.0;
+    if g_rhythm_based == RHYTHM_BASE_DROP {rate_min = 0.3; rate_max = 5.0;}
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_TARGET_IPS, rhythmRateLabel(), TextFormat("%.1f", rhythmRateValue()), rhythmRateValue(), rate_min, rate_max);
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_BEAT_SENSITIVITY, "Beat sensitivity", TextFormat("%.1f", g_rhythm_beat_sensitivity), g_rhythm_beat_sensitivity, 0.5, 5.0);
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_SONG_SPEED, "Song speed", TextFormat("%.2fx", g_rhythm_music_speed), g_rhythm_music_speed, 0.75, 1.50);
+    drawRhythmToggleRow(font, theme, RHYTHM_ROW_ALLOW_MISS, "Allow miss", g_rhythm_allow_miss);
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_BEAT_WARNING, "Beat warning", TextFormat("%.0f ms", g_rhythm_warning_ms), g_rhythm_warning_ms, 0.0, 500.0);
+    drawRhythmButtonRow(font, theme, RHYTHM_ROW_START, "START");
+    drawRhythmButtonRow(font, theme, RHYTHM_ROW_BACK, "BACK");
+
+    drawTextColor(font, "UP/DOWN select  LEFT/RIGHT adjust", 118, 792, 11, theme.text_muted);
+    drawTextColor(font, "ENTER action  ESC back", 118, 814, 11, theme.text_muted);
+
+    if g_rhythm_setup.picker_open {drawRhythmSongPicker(font, theme);}
+}
+
+fun updateRhythmSetup() >> i32 {
+    Vector2 mouse = GetMousePosition();
+    i32 row_count = RHYTHM_ROW_COUNT as i32;
+
+    if g_rhythm_setup.picker_open {
+        if IsKeyPressed(KEY_ESCAPE) {g_rhythm_setup.picker_open = false; return RHYTHM_ACTION_NONE;}
+        if IsKeyPressed(KEY_UP) {g_rhythm_setup.picker_selected -= 1;}
+        if IsKeyPressed(KEY_DOWN) {g_rhythm_setup.picker_selected += 1;}
+        if g_star_music_track_count > 0 {
+            if g_rhythm_setup.picker_selected < 0 {g_rhythm_setup.picker_selected = 0;}
+            if g_rhythm_setup.picker_selected >= g_star_music_track_count {g_rhythm_setup.picker_selected = g_star_music_track_count - 1;}
+        } else {
+            g_rhythm_setup.picker_selected = 0;
+        }
+
+        i32 visible = 6;
+        i32 max_scroll = g_star_music_track_count - visible;
+        if max_scroll < 0 {max_scroll = 0;}
+        f32 wheel = GetMouseWheelMove();
+        if wheel > 0.0 {g_rhythm_setup.picker_scroll -= 1.0;}
+        if wheel < 0.0 {g_rhythm_setup.picker_scroll += 1.0;}
+        if g_rhythm_setup.picker_selected < (g_rhythm_setup.picker_scroll as i32) {g_rhythm_setup.picker_scroll = g_rhythm_setup.picker_selected as f32;}
+        if g_rhythm_setup.picker_selected >= (g_rhythm_setup.picker_scroll as i32) + visible {g_rhythm_setup.picker_scroll = (g_rhythm_setup.picker_selected - visible + 1) as f32;}
+        if g_rhythm_setup.picker_scroll < 0.0 {g_rhythm_setup.picker_scroll = 0.0;}
+        if g_rhythm_setup.picker_scroll > (max_scroll as f32) {g_rhythm_setup.picker_scroll = max_scroll as f32;}
+
+        i32 hovered = 0;
+        if uiScrollListHoverIndex(mouse, 116, 286, 420, 68, visible, g_rhythm_setup.picker_scroll, g_star_music_track_count, &hovered) {
+            g_rhythm_setup.picker_selected = hovered;
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                g_rhythm_setup.picker_selected = hovered;
+            }
+        }
+
+        if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+            if g_star_music_track_count > 0 {
+                g_rhythm_song_index = g_rhythm_setup.picker_selected;
+            }
+            g_rhythm_setup.picker_open = false;
+        }
+        return RHYTHM_ACTION_NONE;
+    }
+
+    if IsKeyPressed(KEY_ESCAPE) {return RHYTHM_ACTION_BACK;}
+    if IsKeyPressed(KEY_UP) {g_rhythm_setup.selected_row -= 1;}
+    if IsKeyPressed(KEY_DOWN) {g_rhythm_setup.selected_row += 1;}
+    if g_rhythm_setup.selected_row < 0 {g_rhythm_setup.selected_row = row_count - 1;}
+    if g_rhythm_setup.selected_row >= row_count {g_rhythm_setup.selected_row = 0;}
+
+    if IsKeyPressed(KEY_LEFT) {rhythmNudge(g_rhythm_setup.selected_row, -1);}
+    if IsKeyPressed(KEY_RIGHT) {rhythmNudge(g_rhythm_setup.selected_row, 1);}
+
+    for i32 row = 0; row < row_count; row++ {
+        if rhythmRowBodyHit(mouse, row) {
+            g_rhythm_setup.selected_row = row;
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                if row == RHYTHM_ROW_SONG {
+                    g_rhythm_setup.picker_open = true;
+                    g_rhythm_setup.picker_selected = g_rhythm_song_index;
+                    if g_rhythm_setup.picker_selected < 0 {g_rhythm_setup.picker_selected = 0;}
+                    return RHYTHM_ACTION_NONE;
+                }
+                if row == RHYTHM_ROW_START {return RHYTHM_ACTION_START;}
+                if row == RHYTHM_ROW_BACK {return RHYTHM_ACTION_BACK;}
+                if row == RHYTHM_ROW_BASED {rhythmNudge(row, 1);}
+                if row == RHYTHM_ROW_ALLOW_MISS {rhythmNudge(row, 1);}
+            }
+            if (row == RHYTHM_ROW_TARGET_IPS || row == RHYTHM_ROW_BEAT_SENSITIVITY || row == RHYTHM_ROW_SONG_SPEED || row == RHYTHM_ROW_BEAT_WARNING) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && rhythmSliderTrackHit(mouse, row) {
+                if row == RHYTHM_ROW_TARGET_IPS {
+                    f32 min_v = 0.5;
+                    f32 max_v = 15.0;
+                    if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
+                    f32 v = rhythmSliderValueFromMouse(mouse.x, min_v, max_v);
+                    i32 step = (v * 10.0 + 0.5) as i32;
+                    if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
+                } else if row == RHYTHM_ROW_BEAT_SENSITIVITY {
+                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.5, 5.0);
+                    i32 step = (v * 10.0 + 0.5) as i32;
+                    g_rhythm_beat_sensitivity = (step as f32) / 10.0;
+                } else if row == RHYTHM_ROW_SONG_SPEED {
+                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.75, 1.50);
+                    i32 step = (v * 20.0 + 0.5) as i32;
+                    g_rhythm_music_speed = (step as f32) / 20.0;
+                } else {
+                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.0, 500.0);
+                    i32 step = (v + 0.5) as i32;
+                    g_rhythm_warning_ms = step as f32;
+                }
+            }
+        }
+    }
+
+    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_SONG {
+            g_rhythm_setup.picker_open = true;
+            g_rhythm_setup.picker_selected = g_rhythm_song_index;
+            if g_rhythm_setup.picker_selected < 0 {g_rhythm_setup.picker_selected = 0;}
+            return RHYTHM_ACTION_NONE;
+        }
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_BACK {return RHYTHM_ACTION_BACK;}
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_BASED {
+            rhythmNudge(RHYTHM_ROW_BASED, 1);
+            return RHYTHM_ACTION_NONE;
+        }
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_ALLOW_MISS {
+            rhythmNudge(RHYTHM_ROW_ALLOW_MISS, 1);
+            return RHYTHM_ACTION_NONE;
+        }
+        return RHYTHM_ACTION_START;
+    }
+
+    return RHYTHM_ACTION_NONE;
+}
