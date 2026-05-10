@@ -1,0 +1,451 @@
+module zltris.screen_transition;
+use raylib
+use zltris.ui
+use zltris.theme
+
+#define SCREEN_TX_NONE 0
+#define SCREEN_TX_BARS_VERT 1
+#define SCREEN_TX_BARS_HORIZ 2
+#define SCREEN_TX_GAME_IN 3
+#define SCREEN_TX_GAME_OUT 4
+
+#define SCREEN_TX_PHASE_COVER 0
+#define SCREEN_TX_PHASE_HOLD 1
+#define SCREEN_TX_PHASE_REVEAL 2
+
+struct ScreenTransition {
+    active bool,
+    phase i32,
+    progress f32,
+    kind i32,
+    pending_action i32,
+    cover_dur f32,
+    hold_dur f32,
+    reveal_dur f32,
+    apply_now bool,
+}
+
+ScreenTransition g_screen_tx = {0};
+
+fun screenTxBarsVert() >> i32 {return SCREEN_TX_BARS_VERT;}
+fun screenTxBarsHoriz() >> i32 {return SCREEN_TX_BARS_HORIZ;}
+fun screenTxGameIn() >> i32 {return SCREEN_TX_GAME_IN;}
+fun screenTxGameOut() >> i32 {return SCREEN_TX_GAME_OUT;}
+
+fun screenTransitionActive() >> bool {
+    return g_screen_tx.active;
+}
+
+fun screenTransitionPending() >> i32 {
+    return g_screen_tx.pending_action;
+}
+
+fun screenTransitionShouldApply() >> bool {
+    return g_screen_tx.apply_now;
+}
+
+fun screenTransitionConsume() >> void {
+    g_screen_tx.apply_now = false;
+    g_screen_tx.pending_action = 0;
+}
+
+fun screenTransitionStart(kind: i32, pending_action: i32) >> void {
+    g_screen_tx.active = true;
+    g_screen_tx.phase = SCREEN_TX_PHASE_COVER;
+    g_screen_tx.progress = 0.0;
+    g_screen_tx.kind = kind;
+    g_screen_tx.pending_action = pending_action;
+    g_screen_tx.cover_dur = 0.40;
+    g_screen_tx.hold_dur = 0.10;
+    g_screen_tx.reveal_dur = 0.42;
+    if kind == SCREEN_TX_GAME_IN {
+        g_screen_tx.cover_dur = 0.62;
+        g_screen_tx.hold_dur = 0.08;
+        g_screen_tx.reveal_dur = 0.55;
+    } else if kind == SCREEN_TX_GAME_OUT {
+        g_screen_tx.cover_dur = 0.50;
+        g_screen_tx.hold_dur = 0.08;
+        g_screen_tx.reveal_dur = 0.55;
+    }
+    g_screen_tx.apply_now = false;
+}
+
+fun screenTransitionTick(dt: f32) >> void {
+    if !g_screen_tx.active {return;}
+    f32 dur = g_screen_tx.cover_dur;
+    if g_screen_tx.phase == SCREEN_TX_PHASE_HOLD {dur = g_screen_tx.hold_dur;}
+    if g_screen_tx.phase == SCREEN_TX_PHASE_REVEAL {dur = g_screen_tx.reveal_dur;}
+    if dur < 0.001 {dur = 0.001;}
+    g_screen_tx.progress += dt / dur;
+    if g_screen_tx.progress >= 1.0 {
+        if g_screen_tx.phase == SCREEN_TX_PHASE_COVER {
+            g_screen_tx.phase = SCREEN_TX_PHASE_HOLD;
+            g_screen_tx.progress = 0.0;
+            g_screen_tx.apply_now = true;
+        } else if g_screen_tx.phase == SCREEN_TX_PHASE_HOLD {
+            g_screen_tx.phase = SCREEN_TX_PHASE_REVEAL;
+            g_screen_tx.progress = 0.0;
+        } else {
+            g_screen_tx.active = false;
+            g_screen_tx.progress = 0.0;
+        }
+    }
+}
+
+fun txEaseOutCubic(t: f32) >> f32 {
+    f32 c = clamp01(t);
+    f32 inv = 1.0 - c;
+    return 1.0 - inv * inv * inv;
+}
+
+fun txEaseInCubic(t: f32) >> f32 {
+    f32 c = clamp01(t);
+    return c * c * c;
+}
+
+fun txEaseInOutCubic(t: f32) >> f32 {
+    f32 c = clamp01(t);
+    if c < 0.5 {
+        return 4.0 * c * c * c;
+    }
+    f32 k = 2.0 * c - 2.0;
+    return 1.0 + 0.5 * k * k * k;
+}
+
+fun txPieceColor(theme: Theme, idx: i32) >> u32 {
+    i32 m = idx % 7;
+    if m < 0 {m += 7;}
+    if m == 0 {return theme.piece_t;}
+    if m == 1 {return theme.piece_i;}
+    if m == 2 {return theme.piece_o;}
+    if m == 3 {return theme.piece_l;}
+    if m == 4 {return theme.piece_j;}
+    if m == 5 {return theme.piece_s;}
+    return theme.piece_z;
+}
+
+fun txHash32(v: i32) >> i32 {
+    i32 x = v * 1664525 + 1013904223;
+    x = x ^ (x >> 16);
+    x = x * 1274126177;
+    x = x ^ (x >> 13);
+    if x < 0 {x = -x;}
+    return x;
+}
+
+fun txCellRand01(col: i32, row: i32) >> f32 {
+    i32 h = txHash32(col * 73856093 ^ row * 19349663);
+    return ((h % 1000) as f32) / 1000.0;
+}
+
+fun txDrawTile(x: i32, y: i32, w: i32, h: i32, col: u32, alpha: f32) >> void {
+    if w <= 0 {return;}
+    if h <= 0 {return;}
+    f32 a = clamp01(alpha);
+    if a <= 0.001 {return;}
+    DrawRectangle(x, y, w, h, toColor(alphaColor(col, a * 0.97)));
+    i32 hl = h / 8;
+    if hl < 2 {hl = 2;}
+    DrawRectangle(x, y, w, hl, toColor(alphaColor(0xFFFFFFFF, a * 0.32)));
+    i32 sd = h / 10;
+    if sd < 2 {sd = 2;}
+    DrawRectangle(x, y + h - sd, w, sd, toColor(alphaColor(0x000000FF, a * 0.28)));
+    DrawRectangle(x, y, 2, h, toColor(alphaColor(0xFFFFFFFF, a * 0.18)));
+    DrawRectangle(x + w - 2, y, 2, h, toColor(alphaColor(0x000000FF, a * 0.18)));
+}
+
+fun txGridCellSize(sw: i32, sh: i32) >> i32 {
+    i32 base = sw;
+    if sh > base {base = sh;}
+    i32 cs = base / 11;
+    if cs < 56 {cs = 56;}
+    if cs > 128 {cs = 128;}
+    return cs;
+}
+
+fun txEaseOutBack(t: f32) >> f32 {
+    f32 c = clamp01(t);
+    f32 inv = 1.0 - c;
+    f32 s = 1.70158;
+    return 1.0 - inv * inv * ((s + 1.0) * inv - s);
+}
+
+fun txDrawCleanTile(cx: f32, cy: f32, sz: f32, col: u32, alpha: f32) >> void {
+    f32 a = clamp01(alpha);
+    if a <= 0.001 {return;}
+    if sz < 1.0 {return;}
+    i32 x = (cx - sz * 0.5) as i32;
+    i32 y = (cy - sz * 0.5) as i32;
+    i32 w = sz as i32;
+    i32 h = sz as i32;
+    if w < 1 {return;}
+    if h < 1 {return;}
+    DrawRectangle(x, y, w, h, toColor(alphaColor(col, a)));
+    i32 inset = w / 14;
+    if inset < 2 {inset = 2;}
+    u32 bright = colorLerpUi(col, 0xFFFFFFFF, 0.20);
+    u32 dark = colorLerpUi(col, 0x000000FF, 0.45);
+    DrawRectangle(x + inset, y + inset, w - inset * 2, h - inset * 2, toColor(alphaColor(bright, a)));
+    i32 hl = h / 9;
+    if hl < 2 {hl = 2;}
+    DrawRectangle(x + inset, y + inset, w - inset * 2, hl, toColor(alphaColor(0xFFFFFFFF, a * 0.28)));
+    i32 sd = h / 9;
+    if sd < 2 {sd = 2;}
+    DrawRectangle(x + inset, y + h - inset - sd, w - inset * 2, sd, toColor(alphaColor(0x000000FF, a * 0.30)));
+    DrawRectangleLines(x, y, w, h, toColor(alphaColor(dark, a * 0.85)));
+}
+
+fun txCellColor(theme: Theme, c: i32, r: i32) >> u32 {
+    i32 idx = (c * 11 + r * 7 + ((c ^ (r * 3)) & 7)) % 7;
+    if idx < 0 {idx += 7;}
+    return txPieceColor(theme, idx);
+}
+
+fun drawTxGameIn(theme: Theme, sw: i32, sh: i32, phase: i32, t: f32) >> void {
+    i32 cell = txGridCellSize(sw, sh);
+    i32 cols = sw / cell + 2;
+    i32 rows = sh / cell + 2;
+    f32 fcell = cell as f32;
+    f32 diag_max = ((cols - 1) + (rows - 1)) as f32;
+    if diag_max < 1.0 {diag_max = 1.0;}
+    f32 edge_w = 5.5;
+
+    if phase == SCREEN_TX_PHASE_HOLD {
+        DrawRectangle(0, 0, sw, sh, toColor(alphaColor(theme.bg_outer, 1.0)));
+        for i32 r = 0; r < rows; r++ {
+            for i32 c = 0; c < cols; c++ {
+                f32 cx = (c as f32) * fcell + fcell * 0.5;
+                f32 cy = (r as f32) * fcell + fcell * 0.5;
+                txDrawCleanTile(cx, cy, fcell, txCellColor(theme, c, r), 1.0);
+            }
+        }
+        return;
+    }
+
+    if phase == SCREEN_TX_PHASE_COVER {
+        f32 sweep = txEaseInOutCubic(t) * (diag_max + edge_w);
+        DrawRectangle(0, 0, sw, sh, toColor(alphaColor(theme.bg_outer, txEaseOutCubic(t) * 0.55)));
+        for i32 r = 0; r < rows; r++ {
+            for i32 c = 0; c < cols; c++ {
+                f32 diag = ((c + r) as f32) + (txCellRand01(c, r) - 0.5) * 0.9;
+                f32 e = (sweep - diag) / edge_w;
+                if e <= 0.0 {continue;}
+                if e > 1.0 {e = 1.0;}
+                f32 scale = txEaseOutBack(e);
+                if scale < 0.0 {scale = 0.0;}
+                f32 alpha = clamp01(e * 1.6);
+                f32 cx = (c as f32) * fcell + fcell * 0.5;
+                f32 cy = (r as f32) * fcell + fcell * 0.5;
+                txDrawCleanTile(cx, cy, fcell * scale, txCellColor(theme, c, r), alpha);
+            }
+        }
+        return;
+    }
+
+    f32 sweep_r = txEaseInOutCubic(t) * (diag_max + edge_w);
+    for i32 r = 0; r < rows; r++ {
+        for i32 c = 0; c < cols; c++ {
+            f32 diag = (((cols - 1 - c) + (rows - 1 - r)) as f32) + (txCellRand01(c + 17, r + 31) - 0.5) * 0.9;
+            f32 e = (sweep_r - diag) / edge_w;
+            f32 cx = (c as f32) * fcell + fcell * 0.5;
+            f32 cy = (r as f32) * fcell + fcell * 0.5;
+            u32 col = txCellColor(theme, c, r);
+            if e <= 0.0 {
+                txDrawCleanTile(cx, cy, fcell, col, 1.0);
+                continue;
+            }
+            if e > 1.0 {continue;}
+            f32 alpha = 1.0 - e;
+            f32 scale = 1.0 - e * 0.35;
+            f32 lift = txEaseInCubic(e) * fcell * 0.45;
+            txDrawCleanTile(cx, cy - lift, fcell * scale, col, alpha);
+        }
+    }
+}
+
+fun drawTxGameOut(theme: Theme, sw: i32, sh: i32, phase: i32, t: f32) >> void {
+    i32 cell = txGridCellSize(sw, sh);
+    i32 cols = sw / cell + 2;
+    i32 rows = sh / cell + 2;
+    f32 fcell = cell as f32;
+    f32 diag_max = ((cols - 1) + (rows - 1)) as f32;
+    if diag_max < 1.0 {diag_max = 1.0;}
+    f32 edge_w = 5.5;
+
+    if phase == SCREEN_TX_PHASE_HOLD {
+        DrawRectangle(0, 0, sw, sh, toColor(alphaColor(theme.bg_outer, 1.0)));
+        for i32 r = 0; r < rows; r++ {
+            for i32 c = 0; c < cols; c++ {
+                f32 cx = (c as f32) * fcell + fcell * 0.5;
+                f32 cy = (r as f32) * fcell + fcell * 0.5;
+                txDrawCleanTile(cx, cy, fcell, txCellColor(theme, c, r), 1.0);
+            }
+        }
+        return;
+    }
+
+    if phase == SCREEN_TX_PHASE_COVER {
+        f32 sweep = txEaseInOutCubic(t) * (diag_max + edge_w);
+        DrawRectangle(0, 0, sw, sh, toColor(alphaColor(theme.bg_outer, txEaseOutCubic(t) * 0.55)));
+        for i32 r = 0; r < rows; r++ {
+            for i32 c = 0; c < cols; c++ {
+                f32 diag = ((c + (rows - 1 - r)) as f32) + (txCellRand01(c + 41, r + 7) - 0.5) * 0.9;
+                f32 e = (sweep - diag) / edge_w;
+                if e <= 0.0 {continue;}
+                if e > 1.0 {e = 1.0;}
+                f32 scale = txEaseOutBack(e);
+                if scale < 0.0 {scale = 0.0;}
+                f32 alpha = clamp01(e * 1.6);
+                f32 cx = (c as f32) * fcell + fcell * 0.5;
+                f32 cy = (r as f32) * fcell + fcell * 0.5;
+                txDrawCleanTile(cx, cy, fcell * scale, txCellColor(theme, c, r), alpha);
+            }
+        }
+        return;
+    }
+
+    f32 stagger = 0.40;
+    f32 denom = 1.0 - stagger;
+    if denom < 0.001 {denom = 0.001;}
+    for i32 c = 0; c < cols; c++ {
+        f32 col_t = (c as f32) / ((cols - 1) as f32);
+        f32 jitter = txCellRand01(c, 0) * 0.10;
+        f32 delay = col_t * (stagger - 0.10) + jitter;
+        if delay < 0.0 {delay = 0.0;}
+        if delay > stagger {delay = stagger;}
+        f32 cp = (t - delay) / denom;
+        if cp < 0.0 {cp = 0.0;}
+        if cp > 1.0 {cp = 1.0;}
+        f32 eased = txEaseInCubic(cp);
+        f32 fall = (sh as f32) * 1.35 * eased;
+        for i32 r = 0; r < rows; r++ {
+            f32 cx = (c as f32) * fcell + fcell * 0.5;
+            f32 cy = (r as f32) * fcell + fcell * 0.5 + fall;
+            txDrawCleanTile(cx, cy, fcell, txCellColor(theme, c, r), 1.0);
+        }
+    }
+}
+
+fun drawScreenTransitionOverlay(theme: Theme) >> void {
+    if !g_screen_tx.active {return;}
+
+    i32 sw = GetScreenWidth();
+    i32 sh = GetScreenHeight();
+    f32 phase_t = clamp01(g_screen_tx.progress);
+
+    if g_screen_tx.kind == SCREEN_TX_GAME_IN {
+        drawTxGameIn(theme, sw, sh, g_screen_tx.phase, phase_t);
+        return;
+    }
+    if g_screen_tx.kind == SCREEN_TX_GAME_OUT {
+        drawTxGameOut(theme, sw, sh, g_screen_tx.phase, phase_t);
+        return;
+    }
+
+    f32 mask_alpha = 0.0;
+    if g_screen_tx.phase == SCREEN_TX_PHASE_COVER {
+        mask_alpha = txEaseOutCubic(phase_t);
+    } else if g_screen_tx.phase == SCREEN_TX_PHASE_HOLD {
+        mask_alpha = 1.0;
+    } else {
+        f32 inv = 1.0 - phase_t;
+        mask_alpha = txEaseOutCubic(inv);
+    }
+    if mask_alpha > 0.0 {
+        DrawRectangle(0, 0, sw, sh, toColor(alphaColor(theme.bg_outer, mask_alpha * 0.95)));
+    }
+
+    if g_screen_tx.phase == SCREEN_TX_PHASE_HOLD {
+        if g_screen_tx.kind == SCREEN_TX_BARS_VERT {
+            i32 cols = 14;
+            f32 col_w_f = (sw as f32) / (cols as f32);
+            for i32 c = 0; c < cols; c++ {
+                i32 x = ((c as f32) * col_w_f) as i32;
+                i32 w = (col_w_f as i32) + 2;
+                u32 col = txPieceColor(theme, c);
+                DrawRectangle(x, 0, w, sh, toColor(alphaColor(col, 0.96)));
+                DrawRectangle(x, 0, w, 5, toColor(alphaColor(0xFFFFFFFF, 0.35)));
+                DrawRectangle(x, 5, w, 2, toColor(alphaColor(0xFFFFFFFF, 0.18)));
+            }
+        } else if g_screen_tx.kind == SCREEN_TX_BARS_HORIZ {
+            i32 rows = 12;
+            f32 row_h_f = (sh as f32) / (rows as f32);
+            for i32 r = 0; r < rows; r++ {
+                i32 y = ((r as f32) * row_h_f) as i32;
+                i32 h = (row_h_f as i32) + 2;
+                u32 col = txPieceColor(theme, r + 2);
+                DrawRectangle(0, y, sw, h, toColor(alphaColor(col, 0.94)));
+                DrawRectangle(0, y, 5, h, toColor(alphaColor(0xFFFFFFFF, 0.40)));
+                DrawRectangle(5, y, 2, h, toColor(alphaColor(0xFFFFFFFF, 0.20)));
+            }
+        }
+        return;
+    }
+
+    if g_screen_tx.kind == SCREEN_TX_BARS_VERT {
+        i32 cols = 14;
+        f32 col_w_f = (sw as f32) / (cols as f32);
+        f32 max_delay = 0.18;
+        f32 denom = 1.0 - max_delay;
+        if denom < 0.001 {denom = 0.001;}
+
+        for i32 c = 0; c < cols; c++ {
+            f32 frac = (c as f32) / ((cols - 1) as f32);
+            f32 delay = frac * max_delay;
+            f32 cp = (phase_t - delay) / denom;
+
+            f32 center_y = 0.0;
+            if g_screen_tx.phase == SCREEN_TX_PHASE_COVER {
+                f32 eased = txEaseOutCubic(cp);
+                center_y = (sh as f32) * (1.5 - eased);
+            } else {
+                f32 ein = txEaseInCubic(cp);
+                center_y = (sh as f32) * (0.5 - ein);
+            }
+            f32 top = center_y - (sh as f32) * 0.5;
+            i32 x = ((c as f32) * col_w_f) as i32;
+            i32 w = (col_w_f as i32) + 2;
+            u32 col = txPieceColor(theme, c);
+            DrawRectangle(x, top as i32, w, sh, toColor(alphaColor(col, 0.96)));
+
+            i32 hl_y = top as i32;
+            DrawRectangle(x, hl_y, w, 5, toColor(alphaColor(0xFFFFFFFF, 0.35)));
+            DrawRectangle(x, hl_y + 5, w, 2, toColor(alphaColor(0xFFFFFFFF, 0.18)));
+        }
+        return;
+    }
+
+    if g_screen_tx.kind == SCREEN_TX_BARS_HORIZ {
+        i32 rows = 12;
+        f32 row_h_f = (sh as f32) / (rows as f32);
+        f32 max_delay = 0.18;
+        f32 denom = 1.0 - max_delay;
+        if denom < 0.001 {denom = 0.001;}
+
+        for i32 r = 0; r < rows; r++ {
+            f32 frac = (r as f32) / ((rows - 1) as f32);
+            f32 delay = frac * max_delay;
+            f32 cp = (phase_t - delay) / denom;
+
+            f32 center_x = 0.0;
+            if g_screen_tx.phase == SCREEN_TX_PHASE_COVER {
+                f32 eased = txEaseOutCubic(cp);
+                center_x = (sw as f32) * ((-0.5) + eased);
+            } else {
+                f32 ein = txEaseInCubic(cp);
+                center_x = (sw as f32) * (0.5 + ein);
+            }
+            f32 left = center_x - (sw as f32) * 0.5;
+            i32 y = ((r as f32) * row_h_f) as i32;
+            i32 h = (row_h_f as i32) + 2;
+
+            u32 col = txPieceColor(theme, r + 2);
+            DrawRectangle(left as i32, y, sw, h, toColor(alphaColor(col, 0.94)));
+
+            i32 lead_x = left as i32;
+            DrawRectangle(lead_x, y, 5, h, toColor(alphaColor(0xFFFFFFFF, 0.40)));
+            DrawRectangle(lead_x + 5, y, 2, h, toColor(alphaColor(0xFFFFFFFF, 0.20)));
+        }
+        return;
+    }
+}
