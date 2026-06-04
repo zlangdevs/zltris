@@ -125,6 +125,71 @@ fun strokeRect(x: i64, y: i64, w: i64, h: i64, color_rgba: u32) >> void {
     DrawRectangleLines(uiX(x), uiY(y), uiS(w), uiS(h), toColor(color_rgba));
 }
 
+fun uiShade(base: u32, factor: f32) >> u32 {
+    i32 r = (((base & 255) as i32) as f32 * factor) as i32;
+    i32 g = ((((base >> 8) & 255) as i32) as f32 * factor) as i32;
+    i32 b = ((((base >> 16) & 255) as i32) as f32 * factor) as i32;
+    i32 a = ((base >> 24) & 255) as i32;
+    if r < 0 {r = 0;}
+    if g < 0 {g = 0;}
+    if b < 0 {b = 0;}
+    if r > 255 {r = 255;}
+    if g > 255 {g = 255;}
+    if b > 255 {b = 255;}
+    return ((r as u32) & 255) | (((g as u32) & 255) << 8) | (((b as u32) & 255) << 16) | (((a as u32) & 255) << 24);
+}
+
+fun drawScanlines(x: i64, y: i64, w: i64, h: i64, color_rgba: u32, step: i64) >> void {
+    if step < 2 {return;}
+    i64 yy = y + 2;
+    for (yy < y + h - 2) {
+        fillRect(x + 2, yy, w - 4, 1, color_rgba);
+        yy += step;
+    }
+}
+
+fun drawHardBevel(x: i64, y: i64, w: i64, h: i64, hi: u32, lo: u32, t: i64) >> void {
+    fillRect(x, y, w, t, hi);
+    fillRect(x, y, t, h, hi);
+    fillRect(x, y + h - t, w, t, lo);
+    fillRect(x + w - t, y, t, h, lo);
+}
+
+fun drawMenuItemButton(font: Font, label: ptr<u8>, x: i64, y: i64, w: i64, h: i64, label_size: i64, label_y: i64, fill: u32, board_bg: u32, stroke: u32, accent: u32, text_main: u32, text_muted: u32, selected: bool, enabled: bool, show_soon: bool, soon_x: i64, soon_y: i64, soon_size: i64, alpha: f32) >> void {
+    u32 body = fill;
+    if selected {body = board_bg;}
+    u32 hi = uiShade(body, 1.32);
+    u32 lo = uiShade(body, 0.58);
+
+    u32 text_color = alphaColor(text_main, alpha);
+    if !enabled {text_color = alphaColor(text_muted, 0.76 * alpha);}
+
+    i64 lx = x + 24;
+    if selected {lx = x + 34;}
+
+    fillRect(x + 6, y + 6, w, h, alphaColor(0xFF050208, 0.50 * alpha));
+
+    fillRect(x, y, w, h, alphaColor(uiShade(body, 0.90), alpha));
+    fillRect(x, y, w, h / 2, alphaColor(uiShade(body, 1.10), alpha));
+    if selected {drawScanlines(x, y, w, h, alphaColor(accent, 0.10 * alpha), 4);}
+
+    drawHardBevel(x, y, w, h, alphaColor(hi, alpha), alphaColor(lo, alpha), 3);
+    strokeRect(x, y, w, h, alphaColor(stroke, 0.85 * alpha));
+
+    if selected {
+        strokeRect(x - 2, y - 2, w + 4, h + 4, alphaColor(accent, alpha));
+        strokeRect(x - 4, y - 4, w + 8, h + 8, alphaColor(accent, 0.35 * alpha));
+        strokeRect(x + 4, y + 4, w - 8, h - 8, alphaColor(accent, 0.50 * alpha));
+        fillRect(x + 11, y + h / 2 - 6, 6, 12, alphaColor(accent, alpha));
+        fillRect(x + 17, y + h / 2 - 3, 4, 6, alphaColor(accent, alpha));
+    }
+    if !enabled {strokeRect(x, y, w, h, alphaColor(text_muted, 0.40 * alpha));}
+
+    drawTextColor(font, label, lx + 2, label_y + 2, label_size, alphaColor(0xFF000000, 0.60 * alpha));
+    drawTextColor(font, label, lx, label_y, label_size, text_color);
+    if show_soon {drawTextColor(font, "SOON", soon_x, soon_y, soon_size, alphaColor(text_muted, 0.82 * alpha));}
+}
+
 fun drawTextColor(font: Font, text: ptr<u8>, x: i64, y: i64, size: i64, color_rgba: u32) >> void {
     DrawTextExXY(font, text, uiX(x) as f32, uiY(y) as f32, uiS(size) as f32, 0.0, toColor(color_rgba));
 }

@@ -398,23 +398,10 @@ fun drawMenuButton(font: Font, theme: Theme, index: i32) >> void {
     bool selected = index == g_menu.index;
     bool enabled = menuEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90 * g_btn_alpha);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52 * g_btn_alpha);
-    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
-
-    if selected {
-        bg = alphaColor(theme.board_bg, 0.98 * g_btn_alpha);
-        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
-    }
-    if (!enabled) {
-        text_color = alphaColor(theme.text_muted, 0.76 * g_btn_alpha);
-        stroke = alphaColor(theme.text_muted, 0.42 * g_btn_alpha);
-    }
-
-    fillRect(x, y, w, h, bg);
-    strokeRect(x, y, w, h, stroke);
-    drawTextColor(font, menuLabel(index), x + 24, y + 24, 18, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 276, y + 26, 12, alphaColor(theme.text_muted, 0.82 * g_btn_alpha));}
+    drawMenuItemButton(font, menuLabel(index), x, y, w, h, 18, y + 24,
+        theme.panel_bg, theme.board_bg, theme.panel_stroke, theme.panel_stroke,
+        theme.text_main, theme.text_muted, selected, enabled,
+        !enabled, x + 276, y + 26, 12, g_btn_alpha);
 }
 
 fun drawSoloButton(font: Font, theme: Theme, index: i32) >> void {
@@ -426,23 +413,10 @@ fun drawSoloButton(font: Font, theme: Theme, index: i32) >> void {
     bool selected = index == g_menu.solo_index;
     bool enabled = soloEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90 * g_btn_alpha);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52 * g_btn_alpha);
-    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
-
-    if selected {
-        bg = alphaColor(theme.board_bg, 0.98 * g_btn_alpha);
-        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
-    }
-    if !enabled {
-        text_color = alphaColor(theme.text_muted, 0.76 * g_btn_alpha);
-        stroke = alphaColor(theme.text_muted, 0.42 * g_btn_alpha);
-    }
-
-    fillRect(x, y, w, h, bg);
-    strokeRect(x, y, w, h, stroke);
-    drawTextColor(font, soloLabel(index), x + 24, y + 22, 16, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, 0.80 * g_btn_alpha));}
+    drawMenuItemButton(font, soloLabel(index), x, y, w, h, 16, y + 22,
+        theme.panel_bg, theme.board_bg, theme.panel_stroke, theme.panel_stroke,
+        theme.text_main, theme.text_muted, selected, enabled,
+        !enabled, x + 282, y + 24, 11, g_btn_alpha);
 }
 
 fun drawVersusButton(font: Font, theme: Theme, index: i32) >> void {
@@ -454,23 +428,10 @@ fun drawVersusButton(font: Font, theme: Theme, index: i32) >> void {
     bool selected = index == g_menu.versus_index;
     bool enabled = versusEnabled(index);
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90 * g_btn_alpha);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52 * g_btn_alpha);
-    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
-
-    if selected {
-        bg = alphaColor(theme.board_bg, 0.98 * g_btn_alpha);
-        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
-    }
-    if !enabled {
-        text_color = alphaColor(theme.text_muted, 0.76 * g_btn_alpha);
-        stroke = alphaColor(theme.text_muted, 0.42 * g_btn_alpha);
-    }
-
-    fillRect(x, y, w, h, bg);
-    strokeRect(x, y, w, h, stroke);
-    drawTextColor(font, versusLabel(index), x + 24, y + 22, 16, text_color);
-    if !enabled {drawTextColor(font, "SOON", x + 282, y + 24, 11, alphaColor(theme.text_muted, 0.80 * g_btn_alpha));}
+    drawMenuItemButton(font, versusLabel(index), x, y, w, h, 16, y + 22,
+        theme.panel_bg, theme.board_bg, theme.panel_stroke, theme.panel_stroke,
+        theme.text_main, theme.text_muted, selected, enabled,
+        !enabled, x + 282, y + 24, 11, g_btn_alpha);
 }
 
 fun drawOnlineButton(font: Font, theme: Theme, index: i32) >> void {
@@ -481,18 +442,10 @@ fun drawOnlineButton(font: Font, theme: Theme, index: i32) >> void {
 
     bool selected = index == g_menu.online_index;
 
-    u32 bg = alphaColor(theme.panel_bg, 0.90 * g_btn_alpha);
-    u32 stroke = alphaColor(theme.panel_stroke, 0.52 * g_btn_alpha);
-    u32 text_color = alphaColor(theme.text_main, g_btn_alpha);
-
-    if selected {
-        bg = alphaColor(theme.board_bg, 0.98 * g_btn_alpha);
-        stroke = alphaColor(theme.panel_stroke, g_btn_alpha);
-    }
-
-    fillRect(x, y, w, h, bg);
-    strokeRect(x, y, w, h, stroke);
-    drawTextColor(font, onlineLabel(index), x + 24, y + 22, 16, text_color);
+    drawMenuItemButton(font, onlineLabel(index), x, y, w, h, 16, y + 22,
+        theme.panel_bg, theme.board_bg, theme.panel_stroke, theme.panel_stroke,
+        theme.text_main, theme.text_muted, selected, true,
+        false, x + 282, y + 24, 11, g_btn_alpha);
 }
 
 fun drawPageContents(font: Font, theme: Theme, page: i32, t_in: f32, slide_sign: f32, incoming: bool) >> void {
