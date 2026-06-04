@@ -1205,8 +1205,7 @@ fun drawThemeManager(font: Font, theme: Theme) >> void {
     i64 panel_h = 0;
     themeManagerPanelRect(&panel_x, &panel_y, &panel_w, &panel_h);
 
-    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_bg, 0.96));
-    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_bg, 0.96), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
 
     drawTextColor(font, "MANAGE CUSTOM THEMES", panel_x + 24, panel_y + 24, 17, theme.text_main);
     drawTextColor(font, "TAB focus, ENTER action, ESC close", panel_x + 24, panel_y + 48, 11, alphaColor(theme.text_muted, 0.84));
@@ -2025,8 +2024,7 @@ fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
     drawImpulseGridBackground(font, theme);
 
-    fillRect(84, 48, 480, 860, alphaColor(theme.bg_outer, 0.90));
-    strokeRect(84, 48, 480, 860, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(84, 48, 480, 860, alphaColor(theme.bg_outer, 0.90), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
 
     drawTextColor(font, "SETTINGS", 130, 118, 30, theme.text_main);
     drawTextColor(font, "Sections: ENTER toggle", 130, 162, 14, theme.text_muted);
@@ -2040,8 +2038,7 @@ fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
         if g_settings.song_picker_scroll < 0.0 {g_settings.song_picker_scroll = 0.0;}
         if g_settings.song_picker_scroll > song_max_scroll as f32 {g_settings.song_picker_scroll = song_max_scroll as f32;}
 
-        fillRect(112, 232, 424, 646, alphaColor(theme.panel_bg, 0.94));
-        strokeRect(112, 232, 424, 646, alphaColor(theme.panel_stroke, 0.86));
+        drawRetroPanel(112, 232, 424, 646, alphaColor(theme.panel_bg, 0.94), alphaColor(theme.panel_stroke, 0.86), theme.text_main);
         drawTextColor(font, "SELECT SONGS", 136, 258, 18, theme.text_main);
         drawTextColor(font, "click to toggle", 136, 278, 11, alphaColor(theme.text_muted, 0.70));
 
@@ -2086,8 +2083,7 @@ fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
     }
 
     if g_settings.picker_open {
-        fillRect(112, 232, 424, 646, alphaColor(theme.panel_bg, 0.94));
-        strokeRect(112, 232, 424, 646, alphaColor(theme.panel_stroke, 0.86));
+        drawRetroPanel(112, 232, 424, 646, alphaColor(theme.panel_bg, 0.94), alphaColor(theme.panel_stroke, 0.86), theme.text_main);
         drawTextColor(font, "CHOOSE SHADER", 136, 258, 18, theme.text_main);
 
         i32 visible = 7;

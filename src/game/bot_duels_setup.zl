@@ -67,8 +67,7 @@ fun drawBotSetupScreen(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
 
     i64 panel_h = botSetupPanelHeight();
-    fillRect(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90));
-    strokeRect(126, 128, 396, panel_h, alphaColor(theme.panel_stroke, 0.88));
+    drawRetroPanel(126, 128, 396, panel_h, alphaColor(theme.bg_outer, 0.90), alphaColor(theme.panel_stroke, 0.88), theme.text_main);
     drawTextColor(font, "AGAINST BOT", 176, 164, 28, theme.text_main);
     drawTextColor(font, "Duel setup", 176, 202, 12, theme.text_muted);
 

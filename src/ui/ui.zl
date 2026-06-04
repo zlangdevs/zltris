@@ -155,6 +155,36 @@ fun drawHardBevel(x: i64, y: i64, w: i64, h: i64, hi: u32, lo: u32, t: i64) >> v
     fillRect(x + w - t, y, t, h, lo);
 }
 
+fun drawCornerTicks(x: i64, y: i64, w: i64, h: i64, accent: u32) >> void {
+    i64 b = 9;
+    fillRect(x, y, b, 2, accent);
+    fillRect(x, y, 2, b, accent);
+    fillRect(x + w - b, y, b, 2, accent);
+    fillRect(x + w - 2, y, 2, b, accent);
+    fillRect(x, y + h - 2, b, 2, accent);
+    fillRect(x, y + h - b, 2, b, accent);
+    fillRect(x + w - b, y + h - 2, b, 2, accent);
+    fillRect(x + w - 2, y + h - b, 2, b, accent);
+}
+
+fun drawRetroPanelFill(x: i64, y: i64, w: i64, h: i64, fill: u32) >> void {
+    fillRect(x, y, w, h, fill);
+    fillRect(x, y, w, 5, alphaColor(uiShade(fill, 1.20), 0.75));
+    drawScanlines(x, y, w, h, alphaColor(0xFF000000, 0.10), 4);
+    drawHardBevel(x, y, w, h, alphaColor(uiShade(fill, 1.24), 0.50), alphaColor(uiShade(fill, 0.52), 0.50), 2);
+}
+
+fun drawRetroPanelEdge(x: i64, y: i64, w: i64, h: i64, stroke: u32, accent: u32) >> void {
+    strokeRect(x, y, w, h, stroke);
+    strokeRect(x + 3, y + 3, w - 6, h - 6, alphaColor(stroke, 0.30));
+    drawCornerTicks(x, y, w, h, accent);
+}
+
+fun drawRetroPanel(x: i64, y: i64, w: i64, h: i64, fill: u32, stroke: u32, accent: u32) >> void {
+    drawRetroPanelFill(x, y, w, h, fill);
+    drawRetroPanelEdge(x, y, w, h, stroke, accent);
+}
+
 fun drawMenuItemButton(font: Font, label: ptr<u8>, x: i64, y: i64, w: i64, h: i64, label_size: i64, label_y: i64, fill: u32, board_bg: u32, stroke: u32, accent: u32, text_main: u32, text_muted: u32, selected: bool, enabled: bool, show_soon: bool, soon_x: i64, soon_y: i64, soon_size: i64, alpha: f32) >> void {
     u32 body = fill;
     if selected {body = board_bg;}

@@ -117,8 +117,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         i64 left_panel_x = panels.player_x;
         i64 right_panel_x = panels.next_x;
 
-        fillRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92));
-        strokeRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+        drawRetroPanel(left_panel_x, 120, 184, 510, alphaColor(theme.panel_bg, 0.92), alphaColor(theme.panel_stroke, 0.78), theme.text_main);
 
         drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
         drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
@@ -137,8 +136,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
         if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
 
-        fillRect(right_panel_x, 120, 178, 510, theme.panel_bg);
-        strokeRect(right_panel_x, 120, 178, 510, theme.panel_stroke);
+        drawRetroPanel(right_panel_x, 120, 178, 510, theme.panel_bg, theme.panel_stroke, theme.text_main);
         drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
         PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
         for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -151,8 +149,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
         if isAgainstBotMode() {
             i64 bot_panel_x = panels.bot_x;
 
-            fillRect(bot_panel_x, 120, 178, 510, theme.panel_bg);
-            strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
+            drawRetroPanel(bot_panel_x, 120, 178, 510, theme.panel_bg, theme.panel_stroke, theme.text_main);
             drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
             PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -166,8 +163,7 @@ fun drawSidebar(font: Font, theme: Theme, split_layout: bool) >> void {
     }
 
     i64 sidebar_x = currentCenterSidebarX();
-    fillRect(sidebar_x, 82, 178, 756, theme.panel_bg);
-    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
+    drawRetroPanel(sidebar_x, 82, 178, 756, theme.panel_bg, theme.panel_stroke, theme.text_main);
 
     drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
     drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);
@@ -267,7 +263,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         i64 left_panel_x = panels.player_x;
         i64 right_panel_x = panels.next_x;
 
-        strokeRect(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78));
+        drawRetroPanelEdge(left_panel_x, 120, 184, 510, alphaColor(theme.panel_stroke, 0.78), theme.text_main);
 
         drawTextColor(font, "ZLTRIS", left_panel_x + 20, 146, 24, theme.text_main);
         drawTextColor(font, "first strike", left_panel_x + 20, 180, 11, theme.text_muted);
@@ -284,7 +280,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         if isFortyLinesMode() {drawTextColor(font, TextFormat("TIME\n%02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
         if isBlitzMode() {drawTextColor(font, TextFormat("LEFT\n%02i:%02i.%02i", ((blitzTimeLeft() * 100.0) as i32) / 6000, (((blitzTimeLeft() * 100.0) as i32) / 100) % 60, ((blitzTimeLeft() * 100.0) as i32) % 100), left_panel_x + 20, 600, 14, theme.panel_stroke);}
 
-        strokeRect(right_panel_x, 120, 178, 510, theme.panel_stroke);
+        drawRetroPanelEdge(right_panel_x, 120, 178, 510, theme.panel_stroke, theme.text_main);
         drawTextColor(font, "NEXT", right_panel_x + 20, 150, 14, theme.text_main);
         PreviewStripLayout right_preview = splitPreviewLayout(right_panel_x);
         for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -294,7 +290,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
         if isAgainstBotMode() {
             i64 bot_panel_x = panels.bot_x;
 
-            strokeRect(bot_panel_x, 120, 178, 510, theme.panel_stroke);
+            drawRetroPanelEdge(bot_panel_x, 120, 178, 510, theme.panel_stroke, theme.text_main);
             drawTextColor(font, "BOT BAG", bot_panel_x + 20, 150, 14, theme.text_main);
             PreviewStripLayout bot_preview = splitPreviewLayout(bot_panel_x);
             for i32 i = 0; i < PREVIEW_COUNT; i++ {
@@ -305,7 +301,7 @@ fun drawSidebarUiTargetLayer(font: Font, theme: Theme, split_layout: bool) >> vo
     }
 
     i64 sidebar_x = currentCenterSidebarX();
-    strokeRect(sidebar_x, 82, 178, 756, theme.panel_stroke);
+    drawRetroPanelEdge(sidebar_x, 82, 178, 756, theme.panel_stroke, theme.text_main);
 
     drawTextColor(font, "ZLTRIS", sidebar_x + 20, 108, 24, theme.text_main);
     drawTextColor(font, "first strike", sidebar_x + 20, 142, 11, theme.text_muted);

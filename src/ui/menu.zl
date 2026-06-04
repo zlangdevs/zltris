@@ -514,10 +514,8 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
     drawRetroGrid(theme);
 
-    fillRect(98, 104, 452, 714, alphaColor(theme.bg_outer, 0.84));
-    strokeRect(98, 104, 452, 714, alphaColor(theme.panel_stroke, 0.90));
-    fillRect(122, 132, 404, 120, alphaColor(theme.panel_bg, 0.82));
-    strokeRect(122, 132, 404, 120, alphaColor(theme.panel_stroke, 0.72));
+    drawRetroPanel(98, 104, 452, 714, alphaColor(theme.bg_outer, 0.84), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
+    drawRetroPanel(122, 132, 404, 120, alphaColor(theme.panel_bg, 0.82), alphaColor(theme.panel_stroke, 0.72), alphaColor(theme.text_main, 0.78));
 
     drawTextColor(font, "ZLTRIS", 220, 156, 36, theme.text_main);
     drawTextColor(font, "Modern handling, classic pleasure.", 138, 212, 11, theme.text_muted);
@@ -534,8 +532,7 @@ fun drawMenu(font: Font, theme: Theme) >> void {
     }
 
     if (g_menu.notice_timer > 0.0) {
-        fillRect(146, 764, 354, 42, alphaColor(theme.board_bg, 0.92));
-        strokeRect(146, 764, 354, 42, alphaColor(theme.panel_stroke, 0.70));
+        drawRetroPanel(146, 764, 354, 42, alphaColor(theme.board_bg, 0.92), alphaColor(theme.panel_stroke, 0.70), alphaColor(theme.text_main, 0.7));
         i32 adj_notice = g_menu.notice - 100;
         ptr<u8> notice_label = soloLabel(adj_notice);
         i32 versus_notice = g_menu.notice - 200;

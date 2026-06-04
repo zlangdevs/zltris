@@ -239,8 +239,7 @@ fun drawRhythmButtonRow(font: Font, theme: Theme, row: i32, label: ptr<u8>) >> v
 }
 
 fun drawRhythmSongPicker(font: Font, theme: Theme) >> void {
-    fillRect(92, 210, 468, 540, alphaColor(theme.bg_outer, 0.97));
-    strokeRect(92, 210, 468, 540, alphaColor(theme.panel_stroke, 0.94));
+    drawRetroPanel(92, 210, 468, 540, alphaColor(theme.bg_outer, 0.97), alphaColor(theme.panel_stroke, 0.94), theme.text_main);
     drawTextColor(font, "SELECT SONG", 122, 236, 16, theme.text_main);
 
     if g_star_music_track_count <= 0 {
@@ -271,8 +270,7 @@ fun drawRhythmSongPicker(font: Font, theme: Theme) >> void {
 fun drawRhythmSetup(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
 
-    fillRect(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86));
-    strokeRect(86, 98, 476, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
     drawTextColor(font, "RHYTHM", 118, 132, 24, theme.text_main);
     drawTextColor(font, "Sync to the beat", 118, 168, 11, theme.text_muted);
 

@@ -492,8 +492,7 @@ fun drawChallengeButtonRow(font: Font, theme: Theme, row: i32) >> void {
 }
 
 fun drawChallengePreviewPanel(font: Font, theme: Theme) >> void {
-    fillRect(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86));
-    strokeRect(600, 98, 280, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
 
     drawTextColor(font, "PREVIEW", 620, 132, 24, theme.text_main);
     drawTextColor(font, TextFormat("%i x %i", g_challenge_board_width, g_challenge_board_height), 620, 168, 12, theme.text_muted);
@@ -560,8 +559,7 @@ fun drawChallengePreviewPanel(font: Font, theme: Theme) >> void {
 fun drawChallengeSetup(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
 
-    fillRect(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86));
-    strokeRect(86, 98, 476, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
     drawTextColor(font, "CHALLENGE", 118, 132, 24, theme.text_main);
     drawTextColor(font, "Custom rules before solo start", 118, 168, 11, theme.text_muted);
 

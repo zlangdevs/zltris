@@ -814,8 +814,7 @@ fun drawOnlineParticipantRow(font: Font, theme: Theme, index: i32, y: i64) >> vo
 }
 
 fun drawOnlinePlayerList(font: Font, theme: Theme) >> void {
-    fillRect(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86));
-    strokeRect(600, 98, 280, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(600, 98, 280, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
     
     drawTextColor(font, "PARTICIPANTS", 620, 132, 20, theme.text_main);
     drawTextColor(font, TextFormat("%i connected", onlineParticipantCount()), 620, 164, 11, theme.text_muted);
@@ -841,8 +840,7 @@ fun drawOnlinePlayerList(font: Font, theme: Theme) >> void {
 fun drawOnlineDuelSetup(font: Font, theme: Theme) >> void {
     drawScreenThemeGradient(theme.bg_inner, theme.bg_outer, theme.bg_gradient_angle);
 
-    fillRect(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86));
-    strokeRect(86, 98, 476, 740, alphaColor(theme.panel_stroke, 0.90));
+    drawRetroPanel(86, 98, 476, 740, alphaColor(theme.bg_outer, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
 
     ptr<u8> title = "ONLINE DUEL - HOST";
     if g_online_role == ONLINE_ROLE_CLIENT {title = "ONLINE DUEL - JOIN";}

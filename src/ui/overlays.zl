@@ -76,8 +76,7 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
         if seg > 1.0 {seg = 1.0;}
         f32 fade = 0.18 + seg * 0.82;
 
-        fillRect(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.86));
-        strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.90));
+        drawRetroPanel(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.86), alphaColor(theme.panel_stroke, 0.90), theme.text_main);
         drawTextCenteredInRect(font, text, box_x, box_y, box_w, box_h, size, alphaColor(theme.text_main, fade));
         return;
     }
@@ -88,8 +87,7 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
         if isRhythmMode() {box_h = 226;}
         i64 box_x = boardCenteredBoxX(board_left, box_w);
         i64 box_y = boardCenteredBoxY(board_top, box_h);
-        fillRect(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.88));
-        strokeRect(box_x, box_y, box_w, box_h, theme.panel_stroke);
+        drawRetroPanel(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.88), theme.panel_stroke, theme.text_main);
         if (isFortyLinesMode()) {
             drawTextColor(font, "40 DONE", box_x + 58, box_y + 24, 24, theme.text_main);
             drawTextColor(font, TextFormat("TIME %02i:%02i.%02i", ((g_rt.mode_timer * 100.0) as i32) / 6000, (((g_rt.mode_timer * 100.0) as i32) / 100) % 60, ((g_rt.mode_timer * 100.0) as i32) % 100), box_x + 44, box_y + 70, 14, theme.panel_stroke);
@@ -160,8 +158,7 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
     i64 panel_x = board_left;
     i64 panel_y = board_top + board_h + 16;
 
-    fillRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84));
-    strokeRect(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.panel_stroke, 0.86));
+    drawRetroPanel(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84), alphaColor(theme.panel_stroke, 0.86), theme.text_main);
     drawTextColor(font, "RHYTHM", panel_x + 10, panel_y + 8, 10, theme.text_muted);
 
     i64 lane_x = panel_x + 10;
