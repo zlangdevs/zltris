@@ -3,6 +3,7 @@ use raylib
 use zltris.ui
 use zltris.theme
 use zltris.scale
+use zltris.sound
 
 #define PIECE_T 2
 
@@ -248,6 +249,9 @@ fun stepLock() >> void {
     bool mini = false;
     if spin && lines_cleared <= 1 && g_rt.last_rotate_kick_test == 0 {mini = true;}
     bool all_clear = lines_cleared > 0 && boardIsEmpty();
+    bool sfx_difficult = false;
+    if lines_cleared == 4 {sfx_difficult = true;}
+    if spin && lines_cleared > 0 {sfx_difficult = true;}
     if isFreePlayMode() {
         i32 max_h = 0;
         i32 holes = 0;
@@ -261,6 +265,7 @@ fun stepLock() >> void {
     triggerQuadClearFx(lines_cleared, spin);
     triggerAllClearFx(all_clear);
     applyLockScore(lines_cleared, spin, mini, all_clear);
+    playSfxLineClear(lines_cleared, g_rt.combo, sfx_difficult, all_clear);
 
     if isComboTrainerMode() && lines_cleared <= 0 {
         restartCurrentModeWithShake();
@@ -305,5 +310,6 @@ fun hardDrop() >> void {
     }
     g_rt.hard_drop_lock = true;
     kickBoardDropPress(6.2);
+    playSfxHardDrop(distance);
     stepLock();
 }

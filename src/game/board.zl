@@ -3,6 +3,7 @@ use raylib
 use zltris.ui
 use zltris.theme
 use zltris.scale
+use zltris.sound
 
 #define BOARD_W_DEFAULT 10
 #define BOARD_H_DEFAULT 22
@@ -934,6 +935,7 @@ fun queuePlayerGarbage(amount: i32) >> void {
         g_player_delayed_garbage_delay = delay;
     }
     g_player_delayed_garbage += amount;
+    playSfxGarbageWarn(amount);
 }
 
 fun queueBotGarbage(amount: i32) >> void {

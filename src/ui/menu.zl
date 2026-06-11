@@ -2,6 +2,7 @@ module zltris.menu;
 use raylib
 use zltris.scale
 use zltris.ui
+use zltris.sound
 
 #define BOTDEVMODE false
 
@@ -559,16 +560,19 @@ fun menuUpdate() >> i32 {
 
     if g_menu.solo_open {
         if IsKeyPressed(KEY_ESCAPE) {
+            playSfxMenuBack();
             g_menu.solo_open = false;
             g_menu.keyboard_nav_lock = true;
             startPageTransition(1, 0);
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {
+            playSfxMenuMove();
             g_menu = g_menu.move_solo_index(-1);
             g_menu.keyboard_nav_lock = true;
         }
         if IsKeyPressed(KEY_DOWN) {
+            playSfxMenuMove();
             g_menu = g_menu.move_solo_index(1);
             g_menu.keyboard_nav_lock = true;
         }
@@ -576,6 +580,7 @@ fun menuUpdate() >> i32 {
             if pointInBaseRect(mouse.x, mouse.y, 148, soloButtonY(i), 352, 64) {
                 if !g_menu.keyboard_nav_lock {g_menu.solo_index = i;}
                 if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                    playSfxMenuConfirm();
                     g_menu.keyboard_nav_lock = false;
                     g_menu.solo_index = i;
                     return selectSoloIndex(i);
@@ -583,6 +588,7 @@ fun menuUpdate() >> i32 {
             }
         }
         if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+            playSfxMenuConfirm();
             g_menu.keyboard_nav_lock = true;
             return selectSoloIndex(g_menu.solo_index);
         }
@@ -591,16 +597,19 @@ fun menuUpdate() >> i32 {
 
     if g_menu.versus_open {
         if IsKeyPressed(KEY_ESCAPE) {
+            playSfxMenuBack();
             g_menu.versus_open = false;
             g_menu.keyboard_nav_lock = true;
             startPageTransition(2, 0);
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {
+            playSfxMenuMove();
             g_menu = g_menu.move_versus_index(-1);
             g_menu.keyboard_nav_lock = true;
         }
         if IsKeyPressed(KEY_DOWN) {
+            playSfxMenuMove();
             g_menu = g_menu.move_versus_index(1);
             g_menu.keyboard_nav_lock = true;
         }
@@ -608,6 +617,7 @@ fun menuUpdate() >> i32 {
             if pointInBaseRect(mouse.x, mouse.y, 148, versusButtonY(i), 352, 64) {
                 if !g_menu.keyboard_nav_lock {g_menu.versus_index = i;}
                 if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                    playSfxMenuConfirm();
                     g_menu.keyboard_nav_lock = false;
                     g_menu.versus_index = i;
                     return selectVersusIndex(i);
@@ -615,6 +625,7 @@ fun menuUpdate() >> i32 {
             }
         }
         if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+            playSfxMenuConfirm();
             g_menu.keyboard_nav_lock = true;
             return selectVersusIndex(g_menu.versus_index);
         }
@@ -623,6 +634,7 @@ fun menuUpdate() >> i32 {
 
     if g_menu.online_open {
         if IsKeyPressed(KEY_ESCAPE) {
+            playSfxMenuBack();
             g_menu.online_open = false;
             g_menu.versus_open = true;
             g_menu.keyboard_nav_lock = true;
@@ -630,10 +642,12 @@ fun menuUpdate() >> i32 {
             return MENU_ACTION_NONE;
         }
         if IsKeyPressed(KEY_UP) {
+            playSfxMenuMove();
             g_menu = g_menu.move_online_index(-1);
             g_menu.keyboard_nav_lock = true;
         }
         if IsKeyPressed(KEY_DOWN) {
+            playSfxMenuMove();
             g_menu = g_menu.move_online_index(1);
             g_menu.keyboard_nav_lock = true;
         }
@@ -641,6 +655,7 @@ fun menuUpdate() >> i32 {
             if pointInBaseRect(mouse.x, mouse.y, 148, onlineButtonY(i), 352, 64) {
                 if !g_menu.keyboard_nav_lock {g_menu.online_index = i;}
                 if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                    playSfxMenuConfirm();
                     g_menu.keyboard_nav_lock = false;
                     g_menu.online_index = i;
                     return selectOnlineIndex(i);
@@ -648,6 +663,7 @@ fun menuUpdate() >> i32 {
             }
         }
         if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+            playSfxMenuConfirm();
             g_menu.keyboard_nav_lock = true;
             return selectOnlineIndex(g_menu.online_index);
         }
@@ -655,10 +671,12 @@ fun menuUpdate() >> i32 {
     }
 
     if IsKeyPressed(KEY_UP) {
+        playSfxMenuMove();
         g_menu = g_menu.move_index(-1);
         g_menu.keyboard_nav_lock = true;
     }
     if IsKeyPressed(KEY_DOWN) {
+        playSfxMenuMove();
         g_menu = g_menu.move_index(1);
         g_menu.keyboard_nav_lock = true;
     }
@@ -668,6 +686,7 @@ fun menuUpdate() >> i32 {
         if (pointInBaseRect(mouse.x, mouse.y, 148, menuButtonY(i), 352, 72)) {
             if !g_menu.keyboard_nav_lock {g_menu.index = i;}
             if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                playSfxMenuConfirm();
                 g_menu.keyboard_nav_lock = false;
                 g_menu.index = i;
                 return selectMenuIndex(i);
@@ -676,6 +695,7 @@ fun menuUpdate() >> i32 {
     }
 
     if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+        playSfxMenuConfirm();
         g_menu.keyboard_nav_lock = true;
         return selectMenuIndex(g_menu.index);
     }

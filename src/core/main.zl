@@ -53,6 +53,7 @@ fun main() >> i32 {
     applyChampionAiTuning();
     clampSettings();
     loadStarMusic();
+    loadSfx();
     startGameMode(MODE_FREE_PLAY);
     initBotSetupDefaults();
     initBackgroundStars();
@@ -70,6 +71,7 @@ fun main() >> i32 {
     aiWorkerShutdown();
     if custom_font_loaded {UnloadFont(ui_font);}
     unloadPostEffects();
+    unloadSfx();
     unloadStarMusic();
     CloseWindow();
     return 0;

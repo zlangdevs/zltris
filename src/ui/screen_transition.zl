@@ -2,6 +2,7 @@ module zltris.screen_transition;
 use raylib
 use zltris.ui
 use zltris.theme
+use zltris.sound
 
 #define SCREEN_TX_NONE 0
 #define SCREEN_TX_BARS_VERT 1
@@ -50,6 +51,7 @@ fun screenTransitionConsume() >> void {
 }
 
 fun screenTransitionStart(kind: i32, pending_action: i32) >> void {
+    playSfxTransition();
     g_screen_tx.active = true;
     g_screen_tx.phase = SCREEN_TX_PHASE_COVER;
     g_screen_tx.progress = 0.0;
