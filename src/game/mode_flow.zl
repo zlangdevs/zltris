@@ -46,6 +46,7 @@ use zltris.theme
 #define RHYTHM_BASE_DROP 1
 #define STAR_MUSIC_MODE_BUILTIN 0
 #define STAR_MUSIC_MODE_CUSTOM 1
+#define KB_RESTART 7
 
 fun isFortyLinesMode() >> bool {
     return g_play.is_mode(MODE_40_LINES);
@@ -773,7 +774,7 @@ fun updateRestartAfterglow(dt: f32) >> void {
 
 fun updateRestartCharge(dt: f32) >> bool {
     bool esc_down = IsKeyDown(KEY_ESCAPE);
-    bool r_down = IsKeyDown(KEY_R);
+    bool r_down = keybindDown(KB_RESTART);
     if g_instant_restart {r_down = false;}
 
     if g_restart_hold_blocked {

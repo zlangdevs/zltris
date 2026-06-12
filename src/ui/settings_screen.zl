@@ -12,43 +12,44 @@ use zltris.ui
 #define SETTINGS_ROW_DCD 3
 #define SETTINGS_ROW_SDF 4
 #define SETTINGS_ROW_INSTANT_RESTART 5
-#define SETTINGS_ROW_SECTION_VIDEO 6
-#define SETTINGS_ROW_THEME 7
-#define SETTINGS_ROW_MANAGE_THEMES 8
-#define SETTINGS_ROW_SHADER 9
-#define SETTINGS_ROW_CHOOSE_SHADER 10
-#define SETTINGS_ROW_BOARD_BOUNCINESS 11
-#define SETTINGS_ROW_CRT_CURVATURE 12
-#define SETTINGS_ROW_CRT_BRIGHTNESS 13
-#define SETTINGS_ROW_VHS_WAVES 14
-#define SETTINGS_ROW_VHS_DAMAGE 15
-#define SETTINGS_ROW_BG_VISUAL_MODE 16
-#define SETTINGS_ROW_BG_STARS_AMOUNT 17
-#define SETTINGS_ROW_BG_STARS_MODE 18
-#define SETTINGS_ROW_STAR_PEAK_TARGET 19
-#define SETTINGS_ROW_STAR_INTENSITY 20
-#define SETTINGS_ROW_MUSIC_STYLE 21
-#define SETTINGS_ROW_MUSIC_INTENSITY 22
-#define SETTINGS_ROW_BG_BARS_AMOUNT 23
-#define SETTINGS_ROW_BG_BARS_INTENSITY 24
-#define SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT 25
-#define SETTINGS_ROW_BG_BARS_OPACITY 26
-#define SETTINGS_ROW_BG_BARS_GLOW 27
-#define SETTINGS_ROW_BG_BARS_LAYOUT 28
-#define SETTINGS_ROW_DOUBLE_ROW 29
-#define SETTINGS_ROW_HARD_DROP_RING 30
-#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 31
-#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 32
-#define SETTINGS_ROW_FULLSCREEN_MODE 33
+#define SETTINGS_ROW_REBIND_KEYS 6
+#define SETTINGS_ROW_SECTION_VIDEO 7
+#define SETTINGS_ROW_THEME 8
+#define SETTINGS_ROW_MANAGE_THEMES 9
+#define SETTINGS_ROW_SHADER 10
+#define SETTINGS_ROW_CHOOSE_SHADER 11
+#define SETTINGS_ROW_BOARD_BOUNCINESS 12
+#define SETTINGS_ROW_CRT_CURVATURE 13
+#define SETTINGS_ROW_CRT_BRIGHTNESS 14
+#define SETTINGS_ROW_VHS_WAVES 15
+#define SETTINGS_ROW_VHS_DAMAGE 16
+#define SETTINGS_ROW_BG_VISUAL_MODE 17
+#define SETTINGS_ROW_BG_STARS_AMOUNT 18
+#define SETTINGS_ROW_BG_STARS_MODE 19
+#define SETTINGS_ROW_STAR_PEAK_TARGET 20
+#define SETTINGS_ROW_STAR_INTENSITY 21
+#define SETTINGS_ROW_MUSIC_STYLE 22
+#define SETTINGS_ROW_MUSIC_INTENSITY 23
+#define SETTINGS_ROW_BG_BARS_AMOUNT 24
+#define SETTINGS_ROW_BG_BARS_INTENSITY 25
+#define SETTINGS_ROW_BG_BARS_HEIGHT_LIMIT 26
+#define SETTINGS_ROW_BG_BARS_OPACITY 27
+#define SETTINGS_ROW_BG_BARS_GLOW 28
+#define SETTINGS_ROW_BG_BARS_LAYOUT 29
+#define SETTINGS_ROW_DOUBLE_ROW 30
+#define SETTINGS_ROW_HARD_DROP_RING 31
+#define SETTINGS_ROW_HIGH_CONTRAST_BLOCKS 32
+#define SETTINGS_ROW_BIG_FIRST_BAG_PREVIEW 33
+#define SETTINGS_ROW_FULLSCREEN_MODE 34
 
-#define SETTINGS_ROW_SECTION_AUDIO 34
-#define SETTINGS_ROW_MUSIC_VOLUME 35
-#define SETTINGS_ROW_MUSIC_MODE 36
-#define SETTINGS_ROW_SELECT_SONGS 37
-#define SETTINGS_ROW_MUSIC_SHUFFLE 38
+#define SETTINGS_ROW_SECTION_AUDIO 35
+#define SETTINGS_ROW_MUSIC_VOLUME 36
+#define SETTINGS_ROW_MUSIC_MODE 37
+#define SETTINGS_ROW_SELECT_SONGS 38
+#define SETTINGS_ROW_MUSIC_SHUFFLE 39
 
-#define SETTINGS_ROW_BACK 39
-#define SETTINGS_ROW_COUNT 40
+#define SETTINGS_ROW_BACK 40
+#define SETTINGS_ROW_COUNT 41
 #define SETTINGS_VISIBLE_ROWS 8
 
 #define STAR_MODE_NONE 0
@@ -87,6 +88,7 @@ use zltris.ui
 
 #define SETTINGS_ACTION_NONE 0
 #define SETTINGS_ACTION_BACK 1
+#define SETTINGS_ACTION_OPEN_KEYBINDS 2
 
 struct SettingsState {
     selected_row i32,
@@ -251,10 +253,12 @@ SettingsState g_settings = {0};
 
 fun settingsInit() >> void {
     g_settings = g_settings.init();
+    uiSliderEndDrag();
 }
 
 fun settingsActionNone() >> i32 { return SETTINGS_ACTION_NONE; }
 fun settingsActionBack() >> i32 { return SETTINGS_ACTION_BACK; }
+fun settingsActionOpenKeybinds() >> i32 { return SETTINGS_ACTION_OPEN_KEYBINDS; }
 
 fun absi(v: i32) >> i32 {
     if v < 0 {return -v;}
@@ -1666,7 +1670,7 @@ fun rowVisible(row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i
     if row == SETTINGS_ROW_BACK {return true;}
     if row == SETTINGS_ROW_SECTION_CONTROLS || row == SETTINGS_ROW_SECTION_VIDEO || row == SETTINGS_ROW_SECTION_AUDIO {return true;}
 
-    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_INSTANT_RESTART {return g_settings.controls_expanded;}
+    if row >= SETTINGS_ROW_ARR && row <= SETTINGS_ROW_REBIND_KEYS {return g_settings.controls_expanded;}
 
     if row >= SETTINGS_ROW_THEME && row <= SETTINGS_ROW_FULLSCREEN_MODE {
         if !g_settings.video_expanded {return false;}
@@ -1790,13 +1794,29 @@ fun sliderTrackHit(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode:
 }
 
 fun dragSliderF32(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<f32>, min_v: f32, max_v: f32) >> void {
-    if !sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {return;}
-    target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v);
+    i32 cap = uiSliderDragRow();
+    if cap == row {
+        target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v);
+        return;
+    }
+    if cap >= 0 {return;}
+    if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {
+        uiSliderBeginDrag(row);
+        target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v);
+    }
 }
 
 fun dragSliderI32(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32, target: ptr<i32>, min_v: f32, max_v: f32) >> void {
-    if !sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {return;}
-    target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v) as i32;
+    i32 cap = uiSliderDragRow();
+    if cap == row {
+        target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v) as i32;
+        return;
+    }
+    if cap >= 0 {return;}
+    if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && sliderTrackHit(mouse, row, bg_visual_mode, bg_stars_mode, shader_mode) {
+        uiSliderBeginDrag(row);
+        target[0] = sliderValueFromMouse(mouse.x, 136, 372, min_v, max_v) as i32;
+    }
 }
 
 fun rowBodyHit(mouse: Vector2, row: i32, bg_visual_mode: i32, bg_stars_mode: i32, shader_mode: i32) >> bool {
@@ -2138,6 +2158,7 @@ fun drawSettings(font: Font, theme: Theme, params: SettingsDrawParams) >> void {
     if rowVisible(SETTINGS_ROW_DCD, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_DCD, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "DCD", TextFormat("%.1fF", params.dcd), params.dcd, 0.0, 10.0);}
     if rowVisible(SETTINGS_ROW_SDF, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSliderRow(font, theme, SETTINGS_ROW_SDF, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "SDF", TextFormat("%.1fX", params.sdf), params.sdf, 1.0, 40.0);}
     if rowVisible(SETTINGS_ROW_INSTANT_RESTART, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawToggleRow(font, theme, SETTINGS_ROW_INSTANT_RESTART, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Instant restart", params.instant_restart);}
+    if rowVisible(SETTINGS_ROW_REBIND_KEYS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawButtonRow(font, theme, SETTINGS_ROW_REBIND_KEYS, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "REBIND KEYS");}
 
     drawSectionHeaderRow(font, theme, SETTINGS_ROW_SECTION_VIDEO, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode);
     if rowVisible(SETTINGS_ROW_THEME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode) {drawSelectorRow(font, theme, SETTINGS_ROW_THEME, params.bg_visual_mode, params.bg_stars_mode, params.shader_mode, "Theme", themeName(params.theme_index));}
@@ -2453,6 +2474,8 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
             openShaderPicker(params.custom_shader_name);
         } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS {
             if g_star_music_track_count > 0 {openSongPicker();}
+        } else if g_settings.selected_row == SETTINGS_ROW_REBIND_KEYS {
+            return SETTINGS_ACTION_OPEN_KEYBINDS;
         } else {
             i32 act = settingsNudgeRow(g_settings.selected_row, 1, params);
             settingsEnsureSelectedVisible(params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]);
@@ -2487,6 +2510,8 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
                 openThemeManager(params.theme_index);
             } else if g_settings.selected_row == SETTINGS_ROW_SELECT_SONGS && rowBodyHit(mouse, SETTINGS_ROW_SELECT_SONGS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
                 if g_star_music_track_count > 0 {openSongPicker();}
+            } else if g_settings.selected_row == SETTINGS_ROW_REBIND_KEYS && rowBodyHit(mouse, SETTINGS_ROW_REBIND_KEYS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
+                return SETTINGS_ACTION_OPEN_KEYBINDS;
             } else if rowUsesToggleMouseNudge(g_settings.selected_row) && rowBodyHit(mouse, g_settings.selected_row, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
                 act = settingsNudgeRow(g_settings.selected_row, 1, params);
             } else if g_settings.selected_row == SETTINGS_ROW_BACK && rowBodyHit(mouse, SETTINGS_ROW_BACK, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0]) {
@@ -2496,6 +2521,7 @@ fun settingsUpdate(params: SettingsUpdateParams) >> i32 {
         }
     }
 
+    uiSliderReleaseIfMouseUp();
     if IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
         dragSliderF32(mouse, SETTINGS_ROW_CRT_CURVATURE, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.crt_curvature, 0.2, 1.4);
         dragSliderF32(mouse, SETTINGS_ROW_CRT_BRIGHTNESS, params.bg_visual_mode[0], params.bg_stars_mode[0], params.shader_mode[0], params.crt_brightness, 0.6, 1.8);

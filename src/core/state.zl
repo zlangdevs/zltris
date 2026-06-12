@@ -458,6 +458,11 @@ bool g_settings_controls_expanded = false;
 bool g_settings_video_expanded = false;
 bool g_settings_audio_expanded = false;
 
+#define KB_COUNT 8
+arr<i32, KB_COUNT> g_keybind_primary = {0};
+arr<i32, KB_COUNT> g_keybind_secondary = {0};
+bool g_keybind_initialized = false;
+
 RenderTexture g_post_fx_target = {0};
 bool g_post_fx_target_ready = false;
 i32 g_post_fx_target_w = 0;

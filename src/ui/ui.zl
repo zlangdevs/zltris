@@ -371,6 +371,32 @@ fun uiKeyRepeatPulse(key: i32, timer: ptr<f32>, initial_delay: f32, repeat_delay
     return false;
 }
 
+bool g_ui_slider_drag = false;
+i32 g_ui_slider_drag_row = -1;
+
+fun uiSliderBeginDrag(row: i32) >> void {
+    g_ui_slider_drag = true;
+    g_ui_slider_drag_row = row;
+}
+
+fun uiSliderEndDrag() >> void {
+    g_ui_slider_drag = false;
+    g_ui_slider_drag_row = -1;
+}
+
+fun uiSliderDragActive() >> bool {
+    return g_ui_slider_drag;
+}
+
+fun uiSliderDragRow() >> i32 {
+    if !g_ui_slider_drag {return -1;}
+    return g_ui_slider_drag_row;
+}
+
+fun uiSliderReleaseIfMouseUp() >> void {
+    if !IsMouseButtonDown(MOUSE_BUTTON_LEFT) {uiSliderEndDrag();}
+}
+
 fun uiScrollListHoverIndex(mouse: Vector2, row_x: i64, row_y: i64, row_w: i64, row_h: i64, visible_rows: i32, scroll: f32, item_count: i32, out_index: ptr<i32>) >> bool {
     if item_count <= 0 || visible_rows <= 0 {return false;}
 

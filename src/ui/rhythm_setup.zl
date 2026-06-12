@@ -55,6 +55,7 @@ fun rhythmSetupInit() >> void {
     g_rhythm_setup.picker_scroll = 0.0;
     g_rhythm_setup.picker_selected = g_rhythm_song_index;
     if g_rhythm_setup.picker_selected < 0 {g_rhythm_setup.picker_selected = 0;}
+    uiSliderEndDrag();
 }
 
 fun rhythmRowY(row: i32) >> i64 {
@@ -97,6 +98,39 @@ fun rhythmSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
     if t < 0.0 {t = 0.0;}
     if t > 1.0 {t = 1.0;}
     return min_v + (max_v - min_v) * t;
+}
+
+fun rhythmRowIsSlider(row: i32) >> bool {
+    return row == RHYTHM_ROW_TARGET_IPS || row == RHYTHM_ROW_BEAT_SENSITIVITY || row == RHYTHM_ROW_SONG_SPEED || row == RHYTHM_ROW_BEAT_WARNING;
+}
+
+fun rhythmApplySliderFromMouse(row: i32, mouse_x: f32) >> void {
+    if row == RHYTHM_ROW_TARGET_IPS {
+        f32 min_v = 0.5;
+        f32 max_v = 15.0;
+        if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
+        f32 v = rhythmSliderValueFromMouse(mouse_x, min_v, max_v);
+        i32 step = (v * 10.0 + 0.5) as i32;
+        if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
+        return;
+    }
+    if row == RHYTHM_ROW_BEAT_SENSITIVITY {
+        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.5, 5.0);
+        i32 step = (v * 10.0 + 0.5) as i32;
+        g_rhythm_beat_sensitivity = (step as f32) / 10.0;
+        return;
+    }
+    if row == RHYTHM_ROW_SONG_SPEED {
+        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.75, 1.50);
+        i32 step = (v * 20.0 + 0.5) as i32;
+        g_rhythm_music_speed = (step as f32) / 20.0;
+        return;
+    }
+    if row == RHYTHM_ROW_BEAT_WARNING {
+        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.0, 500.0);
+        i32 step = (v + 0.5) as i32;
+        g_rhythm_warning_ms = step as f32;
+    }
 }
 
 fun rhythmSliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
@@ -345,9 +379,15 @@ fun updateRhythmSetup() >> i32 {
     if IsKeyPressed(KEY_LEFT) {rhythmNudge(g_rhythm_setup.selected_row, -1);}
     if IsKeyPressed(KEY_RIGHT) {rhythmNudge(g_rhythm_setup.selected_row, 1);}
 
+    uiSliderReleaseIfMouseUp();
+    i32 drag_row = uiSliderDragRow();
+    if drag_row >= 0 && rhythmRowIsSlider(drag_row) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) {
+        rhythmApplySliderFromMouse(drag_row, mouse.x);
+    }
+
     for i32 row = 0; row < row_count; row++ {
         if rhythmRowBodyHit(mouse, row) {
-            g_rhythm_setup.selected_row = row;
+            if uiSliderDragRow() < 0 {g_rhythm_setup.selected_row = row;}
             if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
                 if row == RHYTHM_ROW_SONG {
                     g_rhythm_setup.picker_open = true;
@@ -359,27 +399,9 @@ fun updateRhythmSetup() >> i32 {
                 if row == RHYTHM_ROW_BACK {return RHYTHM_ACTION_BACK;}
                 if row == RHYTHM_ROW_BASED {rhythmNudge(row, 1);}
                 if row == RHYTHM_ROW_ALLOW_MISS {rhythmNudge(row, 1);}
-            }
-            if (row == RHYTHM_ROW_TARGET_IPS || row == RHYTHM_ROW_BEAT_SENSITIVITY || row == RHYTHM_ROW_SONG_SPEED || row == RHYTHM_ROW_BEAT_WARNING) && IsMouseButtonDown(MOUSE_BUTTON_LEFT) && rhythmSliderTrackHit(mouse, row) {
-                if row == RHYTHM_ROW_TARGET_IPS {
-                    f32 min_v = 0.5;
-                    f32 max_v = 15.0;
-                    if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
-                    f32 v = rhythmSliderValueFromMouse(mouse.x, min_v, max_v);
-                    i32 step = (v * 10.0 + 0.5) as i32;
-                    if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
-                } else if row == RHYTHM_ROW_BEAT_SENSITIVITY {
-                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.5, 5.0);
-                    i32 step = (v * 10.0 + 0.5) as i32;
-                    g_rhythm_beat_sensitivity = (step as f32) / 10.0;
-                } else if row == RHYTHM_ROW_SONG_SPEED {
-                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.75, 1.50);
-                    i32 step = (v * 20.0 + 0.5) as i32;
-                    g_rhythm_music_speed = (step as f32) / 20.0;
-                } else {
-                    f32 v = rhythmSliderValueFromMouse(mouse.x, 0.0, 500.0);
-                    i32 step = (v + 0.5) as i32;
-                    g_rhythm_warning_ms = step as f32;
+                if rhythmRowIsSlider(row) && rhythmSliderTrackHit(mouse, row) {
+                    uiSliderBeginDrag(row);
+                    rhythmApplySliderFromMouse(row, mouse.x);
                 }
             }
         }

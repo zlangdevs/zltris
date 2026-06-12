@@ -146,6 +146,7 @@ fun drawAppContentInner(font: Font, theme: Theme) >> void {
         draw_params.music_mode = g_music_mode;
         draw_params.music_shuffle = g_music_shuffle;
         drawSettings(font, theme, draw_params);
+        if keybindOverlayIsOpen() {drawKeybindOverlay(font, theme);}
         if g_debug_colors {drawColorDebugOverlay(font, theme);}
         return;
     }
@@ -497,10 +498,18 @@ fun updateApp() >> void {
     }
 
     if (g_game.screen == SCREEN_SETTINGS) {
+        if keybindOverlayIsOpen() {
+            if updateKeybindOverlay() == keybindOverlayActionClose() {
+                keybindOverlayClose();
+                saveSettingsFile();
+            }
+            return;
+        }
         SettingsSnapshot previous_settings = captureSettingsSnapshot();
         i32 settings_action = settingsUpdate(bindSettingsUpdateParams());
         if previous_settings.shader_mode != g_post_shader_mode {g_custom_shader_warned = false;}
         applySettingsChanges(previous_settings);
+        if settings_action == settingsActionOpenKeybinds() {keybindOverlayOpen(); return;}
         if settings_action == settingsActionBack() {g_game = g_game.with_screen(g_game.settings_return_screen);}
         return;
     }

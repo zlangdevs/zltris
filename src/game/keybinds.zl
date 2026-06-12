@@ -1,0 +1,142 @@
+module zltris;
+use raylib
+use std.string
+
+#define KB_LEFT 0
+#define KB_RIGHT 1
+#define KB_SOFT_DROP 2
+#define KB_HARD_DROP 3
+#define KB_ROTATE_CW 4
+#define KB_ROTATE_CCW 5
+#define KB_HOLD 6
+#define KB_RESTART 7
+#define KB_COUNT 8
+
+fun keybindResetDefaults() >> void {
+    g_keybind_primary[KB_LEFT] = KEY_LEFT;        g_keybind_secondary[KB_LEFT] = KEY_NULL;
+    g_keybind_primary[KB_RIGHT] = KEY_RIGHT;      g_keybind_secondary[KB_RIGHT] = KEY_NULL;
+    g_keybind_primary[KB_SOFT_DROP] = KEY_DOWN;   g_keybind_secondary[KB_SOFT_DROP] = KEY_NULL;
+    g_keybind_primary[KB_HARD_DROP] = KEY_SPACE;  g_keybind_secondary[KB_HARD_DROP] = KEY_NULL;
+    g_keybind_primary[KB_ROTATE_CW] = KEY_UP;     g_keybind_secondary[KB_ROTATE_CW] = KEY_X;
+    g_keybind_primary[KB_ROTATE_CCW] = KEY_Z;     g_keybind_secondary[KB_ROTATE_CCW] = KEY_NULL;
+    g_keybind_primary[KB_HOLD] = KEY_C;           g_keybind_secondary[KB_HOLD] = KEY_NULL;
+    g_keybind_primary[KB_RESTART] = KEY_R;        g_keybind_secondary[KB_RESTART] = KEY_NULL;
+}
+
+fun keybindEnsureInit() >> void {
+    if g_keybind_initialized {return;}
+    keybindResetDefaults();
+    g_keybind_initialized = true;
+}
+
+fun keybindDown(action: i32) >> bool {
+    if action < 0 || action >= KB_COUNT {return false;}
+    i32 p = g_keybind_primary[action];
+    i32 s = g_keybind_secondary[action];
+    if p != KEY_NULL && IsKeyDown(p) {return true;}
+    if s != KEY_NULL && IsKeyDown(s) {return true;}
+    return false;
+}
+
+fun keybindPressed(action: i32) >> bool {
+    if action < 0 || action >= KB_COUNT {return false;}
+    i32 p = g_keybind_primary[action];
+    i32 s = g_keybind_secondary[action];
+    if p != KEY_NULL && IsKeyPressed(p) {return true;}
+    if s != KEY_NULL && IsKeyPressed(s) {return true;}
+    return false;
+}
+
+fun keybindAssign(action: i32, secondary: bool, code: i32) >> void {
+    if action < 0 || action >= KB_COUNT {return;}
+    if code != KEY_NULL {
+        for i32 a = 0; a < KB_COUNT; a++ {
+            if g_keybind_primary[a] == code {g_keybind_primary[a] = KEY_NULL;}
+            if g_keybind_secondary[a] == code {g_keybind_secondary[a] = KEY_NULL;}
+        }
+    }
+    if secondary {g_keybind_secondary[action] = code;} else {g_keybind_primary[action] = code;}
+}
+
+fun keybindActionLabel(action: i32) >> ptr<u8> {
+    if action == KB_LEFT {return "Move left";}
+    if action == KB_RIGHT {return "Move right";}
+    if action == KB_SOFT_DROP {return "Soft drop";}
+    if action == KB_HARD_DROP {return "Hard drop";}
+    if action == KB_ROTATE_CW {return "Rotate CW";}
+    if action == KB_ROTATE_CCW {return "Rotate CCW";}
+    if action == KB_HOLD {return "Hold";}
+    if action == KB_RESTART {return "Restart";}
+    return "?";
+}
+
+fun keybindConfigName(action: i32) >> ptr<u8> {
+    if action == KB_LEFT {return "left";}
+    if action == KB_RIGHT {return "right";}
+    if action == KB_SOFT_DROP {return "soft_drop";}
+    if action == KB_HARD_DROP {return "hard_drop";}
+    if action == KB_ROTATE_CW {return "rotate_cw";}
+    if action == KB_ROTATE_CCW {return "rotate_ccw";}
+    if action == KB_HOLD {return "hold";}
+    if action == KB_RESTART {return "restart";}
+    return "unknown";
+}
+
+fun keybindActionFromConfigName(name: ptr<u8>) >> i32 {
+    for i32 a = 0; a < KB_COUNT; a++ {
+        if strEq(name, keybindConfigName(a)) {return a;}
+    }
+    return -1;
+}
+
+fun keyDisplayName(code: i32) >> ptr<u8> {
+    if code == KEY_NULL {return "--";}
+    if code == KEY_LEFT {return "Left";}
+    if code == KEY_RIGHT {return "Right";}
+    if code == KEY_UP {return "Up";}
+    if code == KEY_DOWN {return "Down";}
+    if code == KEY_SPACE {return "Space";}
+    if code == KEY_ENTER {return "Enter";}
+    if code == KEY_TAB {return "Tab";}
+    if code == KEY_LEFT_SHIFT {return "LShift";}
+    if code == KEY_RIGHT_SHIFT {return "RShift";}
+    if code == KEY_LEFT_CONTROL {return "LCtrl";}
+    if code == KEY_RIGHT_CONTROL {return "RCtrl";}
+    if code == KEY_LEFT_ALT {return "LAlt";}
+    if code == KEY_RIGHT_ALT {return "RAlt";}
+    if code == KEY_BACKSPACE {return "Bksp";}
+    if code == KEY_DELETE {return "Del";}
+    if code == KEY_INSERT {return "Ins";}
+    if code == KEY_HOME {return "Home";}
+    if code == KEY_END {return "End";}
+    if code == KEY_PAGE_UP {return "PgUp";}
+    if code == KEY_PAGE_DOWN {return "PgDn";}
+    if code == KEY_COMMA {return ",";}
+    if code == KEY_PERIOD {return ".";}
+    if code == KEY_SLASH {return "/";}
+    if code == KEY_SEMICOLON {return ";";}
+    if code == KEY_APOSTROPHE {return "'";}
+    if code == KEY_LEFT_BRACKET {return "[";}
+    if code == KEY_RIGHT_BRACKET {return "]";}
+    if code == KEY_BACKSLASH {return "\\";}
+    if code == KEY_MINUS {return "-";}
+    if code == KEY_EQUAL {return "=";}
+    if code == KEY_GRAVE {return "`";}
+
+    if code >= KEY_A && code <= KEY_Z {
+        arr<u8, 2> buf = {0};
+        buf[0] = (('A' as i32) + (code - KEY_A)) as u8;
+        buf[1] = 0;
+        return TextFormat("%s", &buf[0]);
+    }
+    if code >= KEY_ZERO && code <= KEY_NINE {
+        return TextFormat("%i", code - KEY_ZERO);
+    }
+    if code >= KEY_KP_0 && code <= KEY_KP_9 {
+        return TextFormat("KP%i", code - KEY_KP_0);
+    }
+    if code >= KEY_F1 && code <= KEY_F12 {
+        return TextFormat("F%i", code - KEY_F1 + 1);
+    }
+    return TextFormat("#%i", code);
+}

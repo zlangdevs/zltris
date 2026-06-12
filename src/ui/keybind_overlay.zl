@@ -1,0 +1,230 @@
+module zltris;
+use raylib
+use zltris.ui
+use zltris.theme
+
+#define KB_LEFT 0
+#define KB_RIGHT 1
+#define KB_SOFT_DROP 2
+#define KB_HARD_DROP 3
+#define KB_ROTATE_CW 4
+#define KB_ROTATE_CCW 5
+#define KB_HOLD 6
+#define KB_RESTART 7
+#define KB_COUNT 8
+
+#define KB_ROW_RESET 8
+#define KB_ROW_DONE 9
+#define KB_ROW_COUNT 10
+
+#define KB_OVERLAY_ACTION_NONE 0
+#define KB_OVERLAY_ACTION_CLOSE 1
+
+bool g_keybind_overlay_open = false;
+i32 g_keybind_sel_row = 0;
+i32 g_keybind_sel_col = 0;
+bool g_keybind_listening = false;
+f32 g_keybind_blink = 0.0;
+
+fun keybindOverlayActionNone() >> i32 { return KB_OVERLAY_ACTION_NONE; }
+fun keybindOverlayActionClose() >> i32 { return KB_OVERLAY_ACTION_CLOSE; }
+fun keybindOverlayIsOpen() >> bool { return g_keybind_overlay_open; }
+
+fun keybindOverlayOpen() >> void {
+    keybindEnsureInit();
+    g_keybind_overlay_open = true;
+    g_keybind_sel_row = 0;
+    g_keybind_sel_col = 0;
+    g_keybind_listening = false;
+    g_keybind_blink = 0.0;
+}
+
+fun keybindOverlayClose() >> void {
+    g_keybind_overlay_open = false;
+    g_keybind_listening = false;
+}
+
+fun keybindBlink01(t: f32) >> f32 {
+    f32 ph = fractf(t * 1.2);
+    if ph > 0.5 {ph = 1.0 - ph;}
+    return ph * 2.0;
+}
+
+fun keybindRowY(row: i32) >> i64 {
+    return 196 + (row as i64) * 50;
+}
+
+fun keybindCellRect(col: i32, x: ptr<i64>, w: ptr<i64>) >> void {
+    if col == 1 {
+        x[0] = 420;
+        w[0] = 122;
+    } else {
+        x[0] = 296;
+        w[0] = 116;
+    }
+}
+
+fun keybindCellHit(mouse: Vector2, row: i32, col: i32) >> bool {
+    i64 cx = 0;
+    i64 cw = 0;
+    keybindCellRect(col, &cx, &cw);
+    return pointInBaseRect(mouse.x, mouse.y, cx, keybindRowY(row) + 7, cw, 30);
+}
+
+fun keybindButtonHit(mouse: Vector2, row: i32) >> bool {
+    return pointInBaseRect(mouse.x, mouse.y, 104, keybindRowY(row), 440, 40);
+}
+
+fun keybindCellCode(row: i32, col: i32) >> i32 {
+    if col == 1 {return g_keybind_secondary[row];}
+    return g_keybind_primary[row];
+}
+
+fun drawKeybindCell(font: Font, theme: Theme, row: i32, col: i32) >> void {
+    i64 cx = 0;
+    i64 cw = 0;
+    keybindCellRect(col, &cx, &cw);
+    i64 y = keybindRowY(row) + 7;
+
+    bool selected = g_keybind_sel_row == row && g_keybind_sel_col == col;
+    bool listening = selected && g_keybind_listening;
+
+    u32 fill = alphaColor(theme.board_bg, 0.86);
+    u32 stroke = alphaColor(theme.text_muted, 0.50);
+    if selected {stroke = alphaColor(theme.panel_stroke, 0.90);}
+
+    ptr<u8> label = keyDisplayName(keybindCellCode(row, col));
+    if listening {
+        f32 blink = 0.55 + 0.45 * keybindBlink01(g_keybind_blink * 2.0);
+        fill = alphaColor(theme.panel_stroke, 0.30 + blink * 0.20);
+        stroke = alphaColor(theme.text_main, 0.92);
+        label = "[ ... ]";
+    }
+
+    fillRect(cx, y, cw, 30, fill);
+    strokeRect(cx, y, cw, 30, stroke);
+    drawTextCenteredInRect(font, label, cx, y, cw, 30, 12, theme.text_main);
+}
+
+fun drawKeybindActionRow(font: Font, theme: Theme, row: i32) >> void {
+    i64 y = keybindRowY(row);
+    bool row_selected = g_keybind_sel_row == row;
+    u32 stroke = alphaColor(theme.text_muted, 0.42);
+    if row_selected {stroke = alphaColor(theme.panel_stroke, 0.74);}
+
+    fillRect(104, y, 440, 44, alphaColor(theme.panel_bg, 0.88));
+    strokeRect(104, y, 440, 44, stroke);
+    drawTextColor(font, keybindActionLabel(row), 120, y + 15, 13, theme.text_main);
+    drawKeybindCell(font, theme, row, 0);
+    drawKeybindCell(font, theme, row, 1);
+}
+
+fun drawKeybindButtonRow(font: Font, theme: Theme, row: i32, label: ptr<u8>) >> void {
+    i64 y = keybindRowY(row);
+    bool selected = g_keybind_sel_row == row;
+    u32 stroke = alphaColor(theme.text_muted, 0.50);
+    u32 fill = alphaColor(theme.panel_bg, 0.88);
+    if selected {
+        stroke = alphaColor(theme.panel_stroke, 0.90);
+        fill = alphaColor(theme.board_bg, 0.92);
+    }
+    fillRect(104, y, 440, 40, fill);
+    strokeRect(104, y, 440, 40, stroke);
+    drawTextCenteredInRect(font, label, 104, y, 440, 40, 14, theme.text_main);
+}
+
+fun drawKeybindOverlay(font: Font, theme: Theme) >> void {
+    fillRect(visibleBaseLeft(), 0, visibleBaseRight() - visibleBaseLeft(), 920, alphaColor(0xFF000000, 0.55));
+    drawRetroPanel(86, 92, 476, 752, alphaColor(theme.bg_outer, 0.97), alphaColor(theme.panel_stroke, 0.92), theme.text_main);
+    drawTextColor(font, "REBIND KEYS", 118, 124, 22, theme.text_main);
+    drawTextColor(font, "Primary / Secondary", 118, 160, 10, theme.text_muted);
+
+    for i32 a = 0; a < KB_COUNT; a++ {drawKeybindActionRow(font, theme, a);}
+    drawKeybindButtonRow(font, theme, KB_ROW_RESET, "RESET TO DEFAULTS");
+    drawKeybindButtonRow(font, theme, KB_ROW_DONE, "DONE");
+
+    drawTextColor(font, "ENTER bind  DEL clear  LEFT/RIGHT slot", 118, 800, 10, theme.text_muted);
+    drawTextColor(font, "ESC close", 118, 820, 10, theme.text_muted);
+}
+
+fun keybindClearCell(row: i32, col: i32) >> void {
+    if row < 0 || row >= KB_COUNT {return;}
+    keybindAssign(row, col == 1, KEY_NULL);
+}
+
+fun keybindStartListening() >> void {
+    g_keybind_listening = true;
+    g_keybind_blink = 0.0;
+    for (GetKeyPressed() != KEY_NULL) {}
+}
+
+fun updateKeybindOverlay() >> i32 {
+    f32 dt = GetFrameTime();
+    g_keybind_blink += dt;
+    Vector2 mouse = GetMousePosition();
+
+    if g_keybind_listening {
+        i32 key = GetKeyPressed();
+        if key == KEY_ESCAPE {
+            g_keybind_listening = false;
+            return KB_OVERLAY_ACTION_NONE;
+        }
+        if key == KEY_DELETE || key == KEY_BACKSPACE {
+            keybindClearCell(g_keybind_sel_row, g_keybind_sel_col);
+            g_keybind_listening = false;
+            return KB_OVERLAY_ACTION_NONE;
+        }
+        if key != KEY_NULL {
+            keybindAssign(g_keybind_sel_row, g_keybind_sel_col == 1, key);
+            g_keybind_listening = false;
+        }
+        return KB_OVERLAY_ACTION_NONE;
+    }
+
+    if IsKeyPressed(KEY_ESCAPE) {return KB_OVERLAY_ACTION_CLOSE;}
+
+    if IsKeyPressed(KEY_UP) {g_keybind_sel_row -= 1;}
+    if IsKeyPressed(KEY_DOWN) {g_keybind_sel_row += 1;}
+    if g_keybind_sel_row < 0 {g_keybind_sel_row = KB_ROW_COUNT - 1;}
+    if g_keybind_sel_row >= KB_ROW_COUNT {g_keybind_sel_row = 0;}
+
+    bool on_action = g_keybind_sel_row < KB_COUNT;
+    if on_action {
+        if IsKeyPressed(KEY_LEFT) {g_keybind_sel_col = 0;}
+        if IsKeyPressed(KEY_RIGHT) {g_keybind_sel_col = 1;}
+        if IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE) {keybindClearCell(g_keybind_sel_row, g_keybind_sel_col);}
+    }
+
+    for i32 a = 0; a < KB_COUNT; a++ {
+        for i32 col = 0; col < 2; col++ {
+            if keybindCellHit(mouse, a, col) {
+                g_keybind_sel_row = a;
+                g_keybind_sel_col = col;
+                if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                    keybindStartListening();
+                    return KB_OVERLAY_ACTION_NONE;
+                }
+            }
+        }
+    }
+    if keybindButtonHit(mouse, KB_ROW_RESET) {
+        g_keybind_sel_row = KB_ROW_RESET;
+        if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {keybindResetDefaults();}
+    }
+    if keybindButtonHit(mouse, KB_ROW_DONE) {
+        g_keybind_sel_row = KB_ROW_DONE;
+        if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {return KB_OVERLAY_ACTION_CLOSE;}
+    }
+
+    if IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) {
+        if on_action {
+            keybindStartListening();
+        } else if g_keybind_sel_row == KB_ROW_RESET {
+            keybindResetDefaults();
+        } else if g_keybind_sel_row == KB_ROW_DONE {
+            return KB_OVERLAY_ACTION_CLOSE;
+        }
+    }
+
+    return KB_OVERLAY_ACTION_NONE;
+}

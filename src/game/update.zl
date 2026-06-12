@@ -23,23 +23,32 @@ use raylib
 #define RHYTHM_BASE_INPUT 0
 #define RHYTHM_BASE_DROP 1
 
+#define KB_LEFT 0
+#define KB_RIGHT 1
+#define KB_SOFT_DROP 2
+#define KB_HARD_DROP 3
+#define KB_ROTATE_CW 4
+#define KB_ROTATE_CCW 5
+#define KB_HOLD 6
+#define KB_RESTART 7
+
 fun rhythmRegisterPlayerAction(is_drop: bool) >> void {
     if !isRhythmMode() {return;}
     if is_drop || g_rhythm_based == RHYTHM_BASE_INPUT {rhythmRegisterInput();}
 }
 
 fun updateHorizontalInput(dt: f32) >> void {
-    if IsKeyPressed(KEY_LEFT) {
+    if keybindPressed(KB_LEFT) {
         g_rt.last_horizontal_press = -1;
         rhythmRegisterPlayerAction(false);
     }
-    if IsKeyPressed(KEY_RIGHT) {
+    if keybindPressed(KB_RIGHT) {
         g_rt.last_horizontal_press = 1;
         rhythmRegisterPlayerAction(false);
     }
 
-    bool left_down = IsKeyDown(KEY_LEFT);
-    bool right_down = IsKeyDown(KEY_RIGHT);
+    bool left_down = keybindDown(KB_LEFT);
+    bool right_down = keybindDown(KB_RIGHT);
 
     i32 desired_dir = 0;
     if (left_down && !right_down) {
@@ -106,28 +115,28 @@ fun updateHorizontalInput(dt: f32) >> void {
 fun updateMovementInput(dt: f32) >> void {
     updateHorizontalInput(dt);
 
-    bool rotate_cw = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_X);
+    bool rotate_cw = keybindPressed(KB_ROTATE_CW);
     if rotate_cw {
         tryRotate(1);
         rhythmRegisterPlayerAction(false);
     }
-    if IsKeyPressed(KEY_Z) {
+    if keybindPressed(KB_ROTATE_CCW) {
         tryRotate(-1);
         rhythmRegisterPlayerAction(false);
     }
-    if IsKeyPressed(KEY_C) {
+    if keybindPressed(KB_HOLD) {
         holdCurrent();
         rhythmRegisterPlayerAction(false);
     }
-    if IsKeyPressed(KEY_SPACE) {
+    if keybindPressed(KB_HARD_DROP) {
         rhythmRegisterPlayerAction(true);
         hardDrop();
     }
-    if IsKeyPressed(KEY_DOWN) {rhythmRegisterPlayerAction(false);}
+    if keybindPressed(KB_SOFT_DROP) {rhythmRegisterPlayerAction(false);}
 }
 
 fun updateSoftDrop(dt: f32) >> void {
-    if (!IsKeyDown(KEY_DOWN)) {
+    if (!keybindDown(KB_SOFT_DROP)) {
         g_rt.soft_timer = 0.0;
         return;
     }
@@ -482,7 +491,7 @@ fun updateGameScreen() >> void {
         return;
     }
 
-    if (g_instant_restart && IsKeyPressed(KEY_R) && !(isOnlineDuelMode() && g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running)) {
+    if (g_instant_restart && keybindPressed(KB_RESTART) && !(isOnlineDuelMode() && g_online_net_state == ONLINE_NET_STATE_RUNNING && !g_duel_running)) {
         if isOnlineDuelMode() {
             onlineSetLocalRestartReady();
         } else {
@@ -491,7 +500,7 @@ fun updateGameScreen() >> void {
         return;
     }
 
-    if canRestartNowByHotkey() && IsKeyPressed(KEY_R) {
+    if canRestartNowByHotkey() && keybindPressed(KB_RESTART) {
         if isOnlineDuelMode() {
             onlineSetLocalRestartReady();
         } else {

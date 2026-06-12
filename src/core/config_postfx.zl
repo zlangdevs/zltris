@@ -19,6 +19,7 @@ use zltris.theme
 
 #define CUSTOM_SHADER_NAME_MAX 96
 #define SETTINGS_FILE_PATH "zltris.cfg"
+#define KB_COUNT 8
 
 fun trimLeftSpaces(s: ptr<u8>) >> ptr<u8> {
     ptr<u8> p = s;
@@ -247,6 +248,10 @@ fun saveSettingsFile() >> void {
     writeLineFd(fd, TextFormat("settings_video_open=%i", video_open));
     writeLineFd(fd, TextFormat("settings_audio_open=%i", audio_open));
 
+    for i32 kb = 0; kb < KB_COUNT; kb++ {
+        writeLineFd(fd, TextFormat("keybind_%s=%i,%i", keybindConfigName(kb), g_keybind_primary[kb], g_keybind_secondary[kb]));
+    }
+
     i32 custom_count = customThemeCount();
     writeLineFd(fd, TextFormat("custom_theme_selected=%i", customThemeSelected()));
     writeLineFd(fd, TextFormat("custom_theme_count=%i", custom_count));
@@ -381,6 +386,16 @@ fun loadSettingsFile() >> void {
                     g_settings_video_expanded = parseBoolValue(value, g_settings_video_expanded);
                 } else if (strEq(key, "settings_audio_open")) {
                     g_settings_audio_expanded = parseBoolValue(value, g_settings_audio_expanded);
+                } else if (startsWith(key, "keybind_")) {
+                    i32 kb_action = keybindActionFromConfigName(key + 8);
+                    if kb_action >= 0 {
+                        ptr<u8> comma = value;
+                        for (comma[0] != 0 && comma[0] != (',' as u8)) {comma = comma + 1;}
+                        g_keybind_primary[kb_action] = atoi(value);
+                        i32 sec = 0;
+                        if comma[0] == (',' as u8) {sec = atoi(comma + 1);}
+                        g_keybind_secondary[kb_action] = sec;
+                    }
                 } else if (strEq(key, "custom_theme_selected")) {
                     loaded_custom_selected = atoi(value);
                     has_loaded_custom_selected = true;
