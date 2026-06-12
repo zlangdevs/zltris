@@ -1,0 +1,29 @@
+module zltris.test;
+use std.io
+
+i32 g_tests = 0;
+i32 g_fails = 0;
+
+fun checkEqI(name: ptr<u8>, got: i32, want: i32) >> void {
+    g_tests += 1;
+    if got == want {
+        printf("  ok   %s\n", name);
+    } else {
+        g_fails += 1;
+        printf("  FAIL %s: got %d, want %d\n", name, got, want);
+    }
+}
+
+fun checkTrue(name: ptr<u8>, cond: bool) >> void {
+    g_tests += 1;
+    if cond {
+        printf("  ok   %s\n", name);
+    } else {
+        g_fails += 1;
+        printf("  FAIL %s: expected true\n", name);
+    }
+}
+
+fun checkFalse(name: ptr<u8>, cond: bool) >> void {
+    checkTrue(name, !cond);
+}

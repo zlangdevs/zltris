@@ -1,3 +1,7 @@
 output
 zltris.cfg
 *.ll
+zltris
+zltris.exe
+bin/textshim.o
+bin/libtextshim.a

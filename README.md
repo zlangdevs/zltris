@@ -207,3 +207,4 @@ Licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE
 - Graphics via [raylib](https://www.raylib.com/)
 - Beat detection via [aubio](https://aubio.org/)
 - Font: Press Start 2P by CodeMan38
+- Music: [Karl Casey @ White Bat Audio](https://karlcasey.bandcamp.com/) (free for profit)

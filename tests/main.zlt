@@ -1,0 +1,23 @@
+module zltris.test;
+use std.io
+
+fun main() >> i32 {
+    printf("== zltris.ai unit tests ==\n");
+    testMath();
+    testBoardIndex();
+    testRotation();
+    testBounds();
+    testPieceFit();
+    testLineClear();
+    testKickDispatch();
+    testJlstzKicks();
+    testIKicks();
+    testLineClearAttack();
+    testSpinAttack();
+    testAttackBonuses();
+    testEstimateAttack();
+    testTSpinDetection();
+    printf("\n%d checks, %d failures\n", g_tests, g_fails);
+    if g_fails > 0 { return 1; }
+    return 0;
+}
