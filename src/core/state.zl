@@ -65,8 +65,9 @@ use zltris.theme
 #define ONLINE_PEER_NAME_TOTAL (ONLINE_NAME_MAX * ONLINE_MAX_PEERS)
 #define ONLINE_PEER_BOARD_TOTAL (BOARD_CELLS * ONLINE_MAX_PEERS)
 
-#define RHYTHM_BASE_INPUT 0
-#define RHYTHM_BASE_DROP 1
+#define RHYTHM_STYLE_HYBRID 0
+#define RHYTHM_STYLE_DROPS 1
+#define RHYTHM_STYLE_GROOVE 2
 
 #define STAR_MUSIC_MODE_BUILTIN 0
 #define STAR_MUSIC_MODE_CUSTOM 1
@@ -427,10 +428,9 @@ bool g_online_local_finalist_visible = false;
 f32 g_online_round_result_timer = 0.0;
 
 i32 g_rhythm_song_index = 0;
-i32 g_rhythm_based = RHYTHM_BASE_INPUT;
-f32 g_rhythm_max_ips = 2.5;
-f32 g_rhythm_max_dps = 2.5;
-f32 g_rhythm_beat_sensitivity = 1.0;
+i32 g_rhythm_style = RHYTHM_STYLE_HYBRID;
+f32 g_rhythm_max_dps = 1.5;
+f32 g_rhythm_hit_window = 1.0;
 f32 g_rhythm_music_speed = 1.0;
 bool g_rhythm_allow_miss = true;
 f32 g_rhythm_warning_ms = 180.0;
@@ -438,6 +438,7 @@ f32 g_rhythm_warning_ms = 180.0;
 f32 g_rhythm_next_beat_time = 0.0;
 arr<f32, RHYTHM_TARGET_MAX> g_rhythm_target_times = {0.0};
 i32 g_rhythm_target_count = 0;
+i32 g_rhythm_sched_beats_version = -1;
 i32 g_rhythm_target_index = 0;
 bool g_rhythm_needs_sync = false;
 f32 g_rhythm_ignore_until_time = 0.0;
@@ -450,6 +451,12 @@ i32 g_rhythm_hit_count = 0;
 f32 g_rhythm_total_abs_ms = 0.0;
 i32 g_rhythm_score = 0;
 f32 g_rhythm_indicator_visual = 0.0;
+f32 g_rhythm_groove = 0.0;
+i32 g_rhythm_combo = 0;
+i32 g_rhythm_best_combo = 0;
+f32 g_rhythm_bpm = 0.0;
+f32 g_rhythm_grid_interval = 0.0;
+arr<f32, RHYTHM_TARGET_MAX> g_rhythm_grid_clarity = {0.0};
 bool g_rhythm_music_override_active = false;
 i32 g_rhythm_saved_music_mode = STAR_MUSIC_MODE_BUILTIN;
 i32 g_rhythm_saved_track_index = 0;

@@ -7,13 +7,14 @@ use zltris.sound
 #define RHYTHM_ACTION_START 1
 #define RHYTHM_ACTION_BACK 2
 
-#define RHYTHM_BASE_INPUT 0
-#define RHYTHM_BASE_DROP 1
+#define RHYTHM_STYLE_HYBRID 0
+#define RHYTHM_STYLE_DROPS 1
+#define RHYTHM_STYLE_GROOVE 2
 
 #define RHYTHM_ROW_SONG 0
-#define RHYTHM_ROW_BASED 1
-#define RHYTHM_ROW_TARGET_IPS 2
-#define RHYTHM_ROW_BEAT_SENSITIVITY 3
+#define RHYTHM_ROW_STYLE 1
+#define RHYTHM_ROW_TARGET_DPS 2
+#define RHYTHM_ROW_HIT_WINDOW 3
 #define RHYTHM_ROW_SONG_SPEED 4
 #define RHYTHM_ROW_ALLOW_MISS 5
 #define RHYTHM_ROW_BEAT_WARNING 6
@@ -42,13 +43,11 @@ fun rhythmSetupInit() >> void {
     } else {
         g_rhythm_song_index = 0;
     }
-    if g_rhythm_based < RHYTHM_BASE_INPUT || g_rhythm_based > RHYTHM_BASE_DROP {g_rhythm_based = RHYTHM_BASE_INPUT;}
-    if g_rhythm_max_ips < 0.5 {g_rhythm_max_ips = 0.5;}
-    if g_rhythm_max_ips > 15.0 {g_rhythm_max_ips = 15.0;}
+    if g_rhythm_style < RHYTHM_STYLE_HYBRID || g_rhythm_style > RHYTHM_STYLE_GROOVE {g_rhythm_style = RHYTHM_STYLE_HYBRID;}
     if g_rhythm_max_dps < 0.3 {g_rhythm_max_dps = 0.3;}
     if g_rhythm_max_dps > 5.0 {g_rhythm_max_dps = 5.0;}
-    if g_rhythm_beat_sensitivity < 0.5 {g_rhythm_beat_sensitivity = 0.5;}
-    if g_rhythm_beat_sensitivity > 5.0 {g_rhythm_beat_sensitivity = 5.0;}
+    if g_rhythm_hit_window < 0.5 {g_rhythm_hit_window = 0.5;}
+    if g_rhythm_hit_window > 2.0 {g_rhythm_hit_window = 2.0;}
     g_rhythm_setup.selected_row = RHYTHM_ROW_SONG;
     g_rhythm_setup.scroll = 0.0;
     g_rhythm_setup.picker_open = false;
@@ -58,8 +57,23 @@ fun rhythmSetupInit() >> void {
     uiSliderEndDrag();
 }
 
+fun rhythmRowVisible(row: i32) >> bool {
+    if row == RHYTHM_ROW_ALLOW_MISS && g_rhythm_style == RHYTHM_STYLE_GROOVE {return false;}
+    return true;
+}
+
+fun rhythmVisibleRowCount() >> i32 {
+    i32 count = RHYTHM_ROW_COUNT;
+    if g_rhythm_style == RHYTHM_STYLE_GROOVE {count -= 1;}
+    return count;
+}
+
 fun rhythmRowY(row: i32) >> i64 {
-    return 202 + row * 66;
+    i32 hidden = 0;
+    for i32 r = 0; r < row; r++ {
+        if !rhythmRowVisible(r) {hidden += 1;}
+    }
+    return 202 + (row - hidden) * 66;
 }
 
 fun rhythmRowBodyHit(mouse: Vector2, row: i32) >> bool {
@@ -76,19 +90,16 @@ fun rhythmSongLabel() >> ptr<u8> {
     return musicTrackBasename(g_rhythm_song_index);
 }
 
-fun rhythmBasedLabel() >> ptr<u8> {
-    if g_rhythm_based == RHYTHM_BASE_DROP {return "DROP";}
-    return "INPUT";
+fun rhythmStyleLabel() >> ptr<u8> {
+    if g_rhythm_style == RHYTHM_STYLE_DROPS {return "DROPS";}
+    if g_rhythm_style == RHYTHM_STYLE_GROOVE {return "GROOVE";}
+    return "HYBRID";
 }
 
-fun rhythmRateLabel() >> ptr<u8> {
-    if g_rhythm_based == RHYTHM_BASE_DROP {return "Max DPS";}
-    return "Max IPS";
-}
-
-fun rhythmRateValue() >> f32 {
-    if g_rhythm_based == RHYTHM_BASE_DROP {return g_rhythm_max_dps;}
-    return g_rhythm_max_ips;
+fun rhythmStyleHint() >> ptr<u8> {
+    if g_rhythm_style == RHYTHM_STYLE_DROPS {return "Drop on beat. Miss = fail";}
+    if g_rhythm_style == RHYTHM_STYLE_GROOVE {return "Free play. Beat drops boost score";}
+    return "Drop on beat + groove multiplier";
 }
 
 fun rhythmSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
@@ -101,23 +112,20 @@ fun rhythmSliderValueFromMouse(px: f32, min_v: f32, max_v: f32) >> f32 {
 }
 
 fun rhythmRowIsSlider(row: i32) >> bool {
-    return row == RHYTHM_ROW_TARGET_IPS || row == RHYTHM_ROW_BEAT_SENSITIVITY || row == RHYTHM_ROW_SONG_SPEED || row == RHYTHM_ROW_BEAT_WARNING;
+    return row == RHYTHM_ROW_TARGET_DPS || row == RHYTHM_ROW_HIT_WINDOW || row == RHYTHM_ROW_SONG_SPEED || row == RHYTHM_ROW_BEAT_WARNING;
 }
 
 fun rhythmApplySliderFromMouse(row: i32, mouse_x: f32) >> void {
-    if row == RHYTHM_ROW_TARGET_IPS {
-        f32 min_v = 0.5;
-        f32 max_v = 15.0;
-        if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
-        f32 v = rhythmSliderValueFromMouse(mouse_x, min_v, max_v);
+    if row == RHYTHM_ROW_TARGET_DPS {
+        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.3, 5.0);
         i32 step = (v * 10.0 + 0.5) as i32;
-        if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
+        g_rhythm_max_dps = (step as f32) / 10.0;
         return;
     }
-    if row == RHYTHM_ROW_BEAT_SENSITIVITY {
-        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.5, 5.0);
-        i32 step = (v * 10.0 + 0.5) as i32;
-        g_rhythm_beat_sensitivity = (step as f32) / 10.0;
+    if row == RHYTHM_ROW_HIT_WINDOW {
+        f32 v = rhythmSliderValueFromMouse(mouse_x, 0.5, 2.0);
+        i32 step = (v * 20.0 + 0.5) as i32;
+        g_rhythm_hit_window = (step as f32) / 20.0;
         return;
     }
     if row == RHYTHM_ROW_SONG_SPEED {
@@ -141,33 +149,35 @@ fun rhythmSliderPercent(value: f32, min_v: f32, max_v: f32) >> f32 {
 }
 
 fun rhythmNudge(row: i32, dir: i32) >> void {
-    if row == RHYTHM_ROW_BASED {
-        if g_rhythm_based == RHYTHM_BASE_INPUT {g_rhythm_based = RHYTHM_BASE_DROP;}
-        else {g_rhythm_based = RHYTHM_BASE_INPUT;}
+    if row == RHYTHM_ROW_STYLE {
+        g_rhythm_style += dir;
+        if g_rhythm_style > RHYTHM_STYLE_GROOVE {g_rhythm_style = RHYTHM_STYLE_HYBRID;}
+        if g_rhythm_style < RHYTHM_STYLE_HYBRID {g_rhythm_style = RHYTHM_STYLE_GROOVE;}
+        for (g_rhythm_setup.selected_row >= 0 && !rhythmRowVisible(g_rhythm_setup.selected_row)) {
+            g_rhythm_setup.selected_row -= 1;
+        }
+        if g_rhythm_setup.selected_row < 0 {g_rhythm_setup.selected_row = RHYTHM_ROW_SONG;}
         return;
     }
 
-    if row == RHYTHM_ROW_TARGET_IPS {
-        f32 v = rhythmRateValue() + (dir as f32) * 0.1;
-        f32 min_v = 0.5;
-        f32 max_v = 15.0;
-        if g_rhythm_based == RHYTHM_BASE_DROP {min_v = 0.3; max_v = 5.0;}
-        if v < min_v {v = min_v;}
-        if v > max_v {v = max_v;}
+    if row == RHYTHM_ROW_TARGET_DPS {
+        f32 v = g_rhythm_max_dps + (dir as f32) * 0.1;
+        if v < 0.3 {v = 0.3;}
+        if v > 5.0 {v = 5.0;}
         i32 step = (v * 10.0 + 0.5) as i32;
-        if g_rhythm_based == RHYTHM_BASE_DROP {g_rhythm_max_dps = (step as f32) / 10.0;} else {g_rhythm_max_ips = (step as f32) / 10.0;}
+        g_rhythm_max_dps = (step as f32) / 10.0;
         return;
     }
     if row == RHYTHM_ROW_ALLOW_MISS {
         g_rhythm_allow_miss = toggled(g_rhythm_allow_miss);
         return;
     }
-    if row == RHYTHM_ROW_BEAT_SENSITIVITY {
-        f32 v = g_rhythm_beat_sensitivity + (dir as f32) * 0.1;
+    if row == RHYTHM_ROW_HIT_WINDOW {
+        f32 v = g_rhythm_hit_window + (dir as f32) * 0.05;
         if v < 0.5 {v = 0.5;}
-        if v > 5.0 {v = 5.0;}
-        i32 step = (v * 10.0 + 0.5) as i32;
-        g_rhythm_beat_sensitivity = (step as f32) / 10.0;
+        if v > 2.0 {v = 2.0;}
+        i32 step = (v * 20.0 + 0.5) as i32;
+        g_rhythm_hit_window = (step as f32) / 20.0;
         return;
     }
     if row == RHYTHM_ROW_SONG_SPEED {
@@ -245,9 +255,9 @@ fun drawRhythmSongRow(font: Font, theme: Theme) >> void {
     drawTextColor(font, rhythmSongLabel(), 262, y + 20, 13, theme.panel_stroke);
 }
 
-fun drawRhythmBasedRow(font: Font, theme: Theme) >> void {
-    i64 y = rhythmRowY(RHYTHM_ROW_BASED);
-    bool selected = g_rhythm_setup.selected_row == RHYTHM_ROW_BASED;
+fun drawRhythmStyleRow(font: Font, theme: Theme) >> void {
+    i64 y = rhythmRowY(RHYTHM_ROW_STYLE);
+    bool selected = g_rhythm_setup.selected_row == RHYTHM_ROW_STYLE;
     u32 stroke = alphaColor(theme.text_muted, 0.52);
     if selected {
         drawRhythmSelectionGlow(theme, y);
@@ -255,8 +265,9 @@ fun drawRhythmBasedRow(font: Font, theme: Theme) >> void {
     }
     fillRect(118, y, 412, 62, alphaColor(theme.panel_bg, 0.92));
     strokeRect(118, y, 412, 62, stroke);
-    drawTextColor(font, "Based", 136, y + 20, 15, theme.text_main);
-    drawTextColor(font, TextFormat("< %s >", rhythmBasedLabel()), 402, y + 20, 14, theme.panel_stroke);
+    drawTextColor(font, "Style", 136, y + 12, 15, theme.text_main);
+    drawTextColor(font, TextFormat("< %s >", rhythmStyleLabel()), 402, y + 12, 14, theme.panel_stroke);
+    drawTextColor(font, rhythmStyleHint(), 136, y + 40, 9, theme.text_muted);
 }
 
 fun drawRhythmButtonRow(font: Font, theme: Theme, row: i32, label: ptr<u8>) >> void {
@@ -309,14 +320,13 @@ fun drawRhythmSetup(font: Font, theme: Theme) >> void {
     drawTextColor(font, "Sync to the beat", 118, 168, 11, theme.text_muted);
 
     drawRhythmSongRow(font, theme);
-    drawRhythmBasedRow(font, theme);
-    f32 rate_min = 0.5;
-    f32 rate_max = 15.0;
-    if g_rhythm_based == RHYTHM_BASE_DROP {rate_min = 0.3; rate_max = 5.0;}
-    drawRhythmSliderRow(font, theme, RHYTHM_ROW_TARGET_IPS, rhythmRateLabel(), TextFormat("%.1f", rhythmRateValue()), rhythmRateValue(), rate_min, rate_max);
-    drawRhythmSliderRow(font, theme, RHYTHM_ROW_BEAT_SENSITIVITY, "Beat sensitivity", TextFormat("%.1f", g_rhythm_beat_sensitivity), g_rhythm_beat_sensitivity, 0.5, 5.0);
+    drawRhythmStyleRow(font, theme);
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_TARGET_DPS, "Target DPS", TextFormat("%.1f", g_rhythm_max_dps), g_rhythm_max_dps, 0.3, 5.0);
+    drawRhythmSliderRow(font, theme, RHYTHM_ROW_HIT_WINDOW, "Hit window", TextFormat("%.2fx", g_rhythm_hit_window), g_rhythm_hit_window, 0.5, 2.0);
     drawRhythmSliderRow(font, theme, RHYTHM_ROW_SONG_SPEED, "Song speed", TextFormat("%.2fx", g_rhythm_music_speed), g_rhythm_music_speed, 0.75, 1.50);
-    drawRhythmToggleRow(font, theme, RHYTHM_ROW_ALLOW_MISS, "Allow miss", g_rhythm_allow_miss);
+    if rhythmRowVisible(RHYTHM_ROW_ALLOW_MISS) {
+        drawRhythmToggleRow(font, theme, RHYTHM_ROW_ALLOW_MISS, "Allow miss", g_rhythm_allow_miss);
+    }
     drawRhythmSliderRow(font, theme, RHYTHM_ROW_BEAT_WARNING, "Beat warning", TextFormat("%.0f ms", g_rhythm_warning_ms), g_rhythm_warning_ms, 0.0, 500.0);
     drawRhythmButtonRow(font, theme, RHYTHM_ROW_START, "START");
     drawRhythmButtonRow(font, theme, RHYTHM_ROW_BACK, "BACK");
@@ -329,7 +339,7 @@ fun drawRhythmSetup(font: Font, theme: Theme) >> void {
 
 fun updateRhythmSetup() >> i32 {
     Vector2 mouse = GetMousePosition();
-    i32 row_count = RHYTHM_ROW_COUNT as i32;
+    i32 row_count = rhythmVisibleRowCount();
 
     if g_rhythm_setup.picker_open {
         if IsKeyPressed(KEY_ESCAPE) {g_rhythm_setup.picker_open = false; return RHYTHM_ACTION_NONE;}
@@ -371,8 +381,18 @@ fun updateRhythmSetup() >> i32 {
     }
 
     if IsKeyPressed(KEY_ESCAPE) {return RHYTHM_ACTION_BACK;}
-    if IsKeyPressed(KEY_UP) {g_rhythm_setup.selected_row -= 1;}
-    if IsKeyPressed(KEY_DOWN) {g_rhythm_setup.selected_row += 1;}
+    if IsKeyPressed(KEY_UP) {
+        g_rhythm_setup.selected_row -= 1;
+        for (g_rhythm_setup.selected_row >= 0 && !rhythmRowVisible(g_rhythm_setup.selected_row)) {
+            g_rhythm_setup.selected_row -= 1;
+        }
+    }
+    if IsKeyPressed(KEY_DOWN) {
+        g_rhythm_setup.selected_row += 1;
+        for (g_rhythm_setup.selected_row < row_count && !rhythmRowVisible(g_rhythm_setup.selected_row)) {
+            g_rhythm_setup.selected_row += 1;
+        }
+    }
     if g_rhythm_setup.selected_row < 0 {g_rhythm_setup.selected_row = row_count - 1;}
     if g_rhythm_setup.selected_row >= row_count {g_rhythm_setup.selected_row = 0;}
 
@@ -386,6 +406,7 @@ fun updateRhythmSetup() >> i32 {
     }
 
     for i32 row = 0; row < row_count; row++ {
+        if !rhythmRowVisible(row) {continue;}
         if rhythmRowBodyHit(mouse, row) {
             if uiSliderDragRow() < 0 {g_rhythm_setup.selected_row = row;}
             if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
@@ -397,8 +418,8 @@ fun updateRhythmSetup() >> i32 {
                 }
                 if row == RHYTHM_ROW_START {return RHYTHM_ACTION_START;}
                 if row == RHYTHM_ROW_BACK {return RHYTHM_ACTION_BACK;}
-                if row == RHYTHM_ROW_BASED {rhythmNudge(row, 1);}
-                if row == RHYTHM_ROW_ALLOW_MISS {rhythmNudge(row, 1);}
+                if row == RHYTHM_ROW_STYLE {rhythmNudge(row, 1);}
+                if row == RHYTHM_ROW_ALLOW_MISS && rhythmRowVisible(RHYTHM_ROW_ALLOW_MISS) {rhythmNudge(row, 1);}
                 if rhythmRowIsSlider(row) && rhythmSliderTrackHit(mouse, row) {
                     uiSliderBeginDrag(row);
                     rhythmApplySliderFromMouse(row, mouse.x);
@@ -415,11 +436,11 @@ fun updateRhythmSetup() >> i32 {
             return RHYTHM_ACTION_NONE;
         }
         if g_rhythm_setup.selected_row == RHYTHM_ROW_BACK {return RHYTHM_ACTION_BACK;}
-        if g_rhythm_setup.selected_row == RHYTHM_ROW_BASED {
-            rhythmNudge(RHYTHM_ROW_BASED, 1);
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_STYLE {
+            rhythmNudge(RHYTHM_ROW_STYLE, 1);
             return RHYTHM_ACTION_NONE;
         }
-        if g_rhythm_setup.selected_row == RHYTHM_ROW_ALLOW_MISS {
+        if g_rhythm_setup.selected_row == RHYTHM_ROW_ALLOW_MISS && rhythmRowVisible(RHYTHM_ROW_ALLOW_MISS) {
             rhythmNudge(RHYTHM_ROW_ALLOW_MISS, 1);
             return RHYTHM_ACTION_NONE;
         }

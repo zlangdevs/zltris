@@ -273,12 +273,21 @@ fun vsBotBotPanelX() >> i64 {
     return vsBotBotBoardLeft() + (botBoardWidth() as i64) * boardCellSize() + vsBotGapBase();
 }
 
+fun rhythmTimelineSpan() >> i64 {
+    if !isRhythmMode() {return 0;}
+    return 64;
+}
+
+fun rhythmTimelineLaneWidth() >> i64 {
+    return 50;
+}
+
 fun currentPlayerBoardLeft() >> i64 {
     if isVersusMode() {return vsBotPlayerBoardLeft() + playerIncomingGarbageShakeX();}
     if gameUsesSplitLayout() {return BOARD_LEFT;}
 
     i64 board_w = (boardWidth() as i64) * boardCellSize();
-    i64 content_w = board_w + nonVsSidebarGap() + 178;
+    i64 content_w = board_w + nonVsSidebarGap() + 178 + rhythmTimelineSpan();
     return ((scaleBaseWidth() as i64) - content_w) / 2;
 }
 
@@ -297,7 +306,7 @@ fun currentBoardTop() >> i64 {
 
 fun currentCenterSidebarX() >> i64 {
     if isVersusMode() {return vsBotCenterPanelX();}
-    return currentPlayerBoardLeft() + (boardWidth() as i64) * boardCellSize() + nonVsSidebarGap();
+    return currentPlayerBoardLeft() + (boardWidth() as i64) * boardCellSize() + rhythmTimelineSpan() + nonVsSidebarGap();
 }
 
 fun nonVsSidebarGap() >> i64 {
@@ -313,7 +322,7 @@ fun nonVsSidebarGap() >> i64 {
 fun splitLayoutExtraXBase() >> i64 {
     i64 board_w = (boardWidth() as i64) * boardCellSize();
     i64 min_x = -214;
-    i64 right_panel_x = BOARD_LEFT + board_w + nonVsSidebarGap();
+    i64 right_panel_x = BOARD_LEFT + board_w + rhythmTimelineSpan() + nonVsSidebarGap();
     i64 max_x = right_panel_x + 178;
     i64 total_w = max_x - min_x;
     i64 desired_min = ((scaleBaseWidth() as i64) - total_w) / 2;

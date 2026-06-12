@@ -205,7 +205,9 @@ fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) 
     }
 
     if all_clear {all_clear_points = 3500;}
-    g_play.score += (clear_points + combo_points + all_clear_points) * level;
+    i32 lock_total = (clear_points + combo_points + all_clear_points) * level;
+    if isRhythmMode() {lock_total = (((lock_total as f32) * rhythmScoreMultiplier()) as i32);}
+    g_play.score += lock_total;
 
     i32 attack = lockAttack(lines_cleared, spin, mini, difficult, b2b_chain, g_rt.combo, all_clear);
     g_rt.attack_sent += attack;
@@ -236,6 +238,7 @@ fun applyLockScore(lines_cleared: i32, spin: bool, mini: bool, all_clear: bool) 
 }
 
 fun stepLock() >> void {
+    rhythmRegisterDrop();
     lockCurrentPiece();
     spawnLockEffectPiece(LINE_FX_BOARD_PLAYER, g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y);
     if g_rt.hard_drop_lock {

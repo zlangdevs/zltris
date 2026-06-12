@@ -54,6 +54,7 @@ f32 g_star_music_attack_speed = 1.0;
 f32 g_star_music_decay_speed = 1.0;
 i32 g_star_music_beat_count = 0;
 i32 g_star_music_beat_index = 0;
+i32 g_star_music_beats_version = 0;
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beats = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength = {0.0};
 arr<f32, STAR_MUSIC_MAX_BEATS> g_star_music_beat_strength_raw = {0.0};
@@ -87,6 +88,9 @@ StarMusicAnalyzeRequest g_star_music_analyze_request = {0};
 bool g_star_music_analyze_has_result = false;
 StarMusicAnalyzeResult g_star_music_analyze_result = {0};
 i32 g_star_music_analyze_next_request = 1;
+arr<f32, STAR_MUSIC_MAX_BEATS> g_star_regrid_beats = {0.0};
+arr<f32, STAR_MUSIC_MAX_BEATS> g_star_regrid_strength = {0.0};
+arr<f32, STAR_MUSIC_MAX_BEATS> g_star_regrid_accent = {0.0};
 i32 g_star_music_analyze_expected_request = 0;
 bool g_star_music_analyze_has_bar_env = false;
 i32 g_star_music_analyze_bar_env_request_id = 0;
@@ -859,6 +863,7 @@ fun starMusicTryApplyAnalyzeResult() >> void {
 
     applyStyleStrengthCurveToBeats();
     clearStarMusicBarValues();
+    g_star_music_beats_version += 1;
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
 
@@ -911,6 +916,116 @@ fun loadStarMusicTrack(index: i32) >> void {
 fun starMusicIntensityNorm() >> f32 {
     f32 n = sndClamp01((g_star_music_intensity - 0.1) / 0.9);
     return sqrt(n as f64) as f32;
+}
+
+fun starMusicRegridBeats(beats: ptr<f32>, strength: ptr<f32>, accent: ptr<f32>, count: ptr<i32>, ab_bpm: f32) >> void {
+    i32 n = count[0];
+    if n < 8 {return;}
+
+    arr<i32, 256> hist = {0};
+    i32 used = 0;
+    for i32 i = 1; i < n; i++ {
+        f32 iv = beats[i] - beats[i - 1];
+        if iv < 0.10 || iv > 2.0 {continue;}
+        i32 bin = ((iv * 1000.0) / 8.0) as i32;
+        if bin < 0 {bin = 0;}
+        if bin > 255 {bin = 255;}
+        hist[bin] += 1;
+        used += 1;
+    }
+    if used < 6 {return;}
+
+    i32 acc = 0;
+    f32 period = 0.0;
+    for i32 b = 0; b < 256; b++ {
+        acc += hist[b];
+        if acc * 2 >= used {period = ((b as f32) * 8.0 + 4.0) / 1000.0; break;}
+    }
+    if period <= 0.0 {return;}
+    for (period < 0.24) {period *= 2.0;}
+    for (period > 1.00) {period *= 0.5;}
+
+    if ab_bpm > 40.0 && ab_bpm < 280.0 {
+        f32 ab_period = 60.0 / ab_bpm;
+        for (ab_period < 0.24) {ab_period *= 2.0;}
+        for (ab_period > 1.00) {ab_period *= 0.5;}
+        f32 ratio = period / ab_period;
+        if ratio < 0.94 || ratio > 1.06 {period = ab_period;}
+    }
+
+    f32 sum = 0.0;
+    i32 cnt = 0;
+    for i32 i = 1; i < n; i++ {
+        f32 iv = beats[i] - beats[i - 1];
+        if iv < 0.10 || iv > 2.0 {continue;}
+        for (iv > period * 1.5) {iv *= 0.5;}
+        if iv > period * 0.88 && iv < period * 1.12 {sum += iv; cnt += 1;}
+    }
+    if cnt >= 4 {period = sum / (cnt as f32);}
+    if period < 0.20 {return;}
+
+    i32 phase_steps = 32;
+    f32 best_phase = 0.0;
+    f32 best_score = -1.0;
+    for i32 p = 0; p < phase_steps; p++ {
+        f32 phase = period * (p as f32) / (phase_steps as f32);
+        f32 score = 0.0;
+        for i32 i = 0; i < n; i++ {
+            f32 k = (beats[i] - phase) / period;
+            f32 frac = k - ((k as i32) as f32);
+            if frac < 0.0 {frac += 1.0;}
+            f32 d = frac;
+            if d > 0.5 {d = 1.0 - d;}
+            f32 w = 1.0 - d * 2.0;
+            score += (strength[i] + 0.25) * w * w;
+        }
+        if score > best_score {best_score = score; best_phase = phase;}
+    }
+
+    f32 first = beats[0];
+    f32 last = beats[n - 1];
+    f32 t = best_phase;
+    f32 start_min = first - period * 0.6;
+    for (t < start_min) {t += period;}
+    f32 grid_end = last + period * 0.6;
+
+    f32 snap_tol = period * 0.30;
+    i32 gi = 0;
+    i32 ri = 0;
+    for (t <= grid_end && gi < STAR_MUSIC_MAX_BEATS) {
+        for (ri < n - 1 && beats[ri] < t - snap_tol) {ri += 1;}
+
+        i32 best = -1;
+        f32 best_d = snap_tol;
+        for i32 j = ri; j < n; j++ {
+            f32 d = sndAbsf(beats[j] - t);
+            if d <= best_d {best_d = d; best = j;}
+            if beats[j] > t + snap_tol {break;}
+        }
+
+        f32 tick = t;
+        f32 s = 0.12;
+        f32 a = 1.0;
+        if best >= 0 {
+            tick = t + (beats[best] - t) * 0.35;
+            s = strength[best];
+            a = accent[best];
+        }
+        g_star_regrid_beats[gi] = tick;
+        g_star_regrid_strength[gi] = s;
+        g_star_regrid_accent[gi] = a;
+        gi += 1;
+        t = tick + period;
+    }
+    if gi < 4 {return;}
+
+    for i32 i = 0; i < gi; i++ {
+        beats[i] = g_star_regrid_beats[i];
+        strength[i] = g_star_regrid_strength[i];
+        accent[i] = g_star_regrid_accent[i];
+    }
+    count[0] = gi;
+    printf("[zltris] beat grid: %i ticks, %.1f bpm\n", gi, 60.0 / period);
 }
 
 fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: ptr<f32>, out_accent: ptr<f32>, out_count: ptr<i32>, out_bar_env: ptr<f32>, out_bar_frame_count: ptr<i32>, out_bar_frame_dt: ptr<f32>) >> void {
@@ -1154,6 +1269,8 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         postProcessBarEnvelope(out_bar_env, env_frame, band_count);
     }
 
+    f32 ab_bpm = aubio_tempo_get_bpm(tempo);
+
     del_fvec(out);
     del_fvec(in);
     del_cvec(fft_out);
@@ -1193,6 +1310,8 @@ fun analyzeMusicBeatsInto(path: ptr<u8>, out_beats: ptr<f32>, out_strength_raw: 
         if strength > 1.0 {strength = 1.0;}
         out_strength_raw[i] = strength;
     }
+
+    starMusicRegridBeats(out_beats, out_strength_raw, out_accent, out_count, ab_bpm);
 }
 
 fun analyzeMusicBeats(path: ptr<u8>) >> void {
@@ -1203,6 +1322,7 @@ fun analyzeMusicBeats(path: ptr<u8>) >> void {
     analyzeMusicBeatsInto(path, &g_star_music_beats[0], &g_star_music_beat_strength_raw[0], &g_star_music_beat_accent[0], &g_star_music_beat_count, &g_star_music_bar_env[0], &g_star_music_bar_env_frame_count, &g_star_music_bar_env_frame_dt);
     clearStarMusicBarValues();
     applyStyleStrengthCurveToBeats();
+    g_star_music_beats_version += 1;
     printf("[zltris] aubio beats: %i\n", g_star_music_beat_count);
 }
 

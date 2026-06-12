@@ -84,7 +84,7 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
     if (g_play.round_state == ROUND_FINISHED) {
         i64 box_w = 284;
         i64 box_h = 178;
-        if isRhythmMode() {box_h = 226;}
+        if isRhythmMode() {box_h = 252;}
         i64 box_x = boardCenteredBoxX(board_left, box_w);
         i64 box_y = boardCenteredBoxY(board_top, box_h);
         drawRetroPanel(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.88), theme.panel_stroke, theme.text_main);
@@ -101,9 +101,10 @@ fun drawFortyLinesOverlay(font: Font, theme: Theme) >> void {
             drawTextColor(font, TextFormat("SCORE %i", g_rhythm_score), box_x + 44, box_y + 68, 13, theme.panel_stroke);
             drawTextColor(font, TextFormat("MISSED %i", g_rhythm_missed_beats), box_x + 44, box_y + 98, 13, theme.panel_stroke);
             drawTextColor(font, TextFormat("AVG %.0f ms", rhythmAverageAccuracyMs()), box_x + 44, box_y + 128, 13, theme.panel_stroke);
+            drawTextColor(font, TextFormat("COMBO %i", g_rhythm_best_combo), box_x + 44, box_y + 158, 13, theme.panel_stroke);
         }
         i64 retry_y = box_y + 110;
-        if isRhythmMode() {retry_y = box_y + 186;}
+        if isRhythmMode() {retry_y = box_y + 212;}
         drawTextColor(font, "R retry  ESC menu", box_x + 44, retry_y, 12, theme.text_muted);
     }
 }
@@ -154,26 +155,50 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
     i64 board_w = (boardWidth() as i64) * boardCellSize();
 
     i64 panel_w = board_w;
-    i64 panel_h = 68;
+    i64 panel_h = 46;
     i64 panel_x = board_left;
     i64 panel_y = board_top + board_h + 16;
 
     drawRetroPanel(panel_x, panel_y, panel_w, panel_h, alphaColor(theme.bg_outer, 0.84), alphaColor(theme.panel_stroke, 0.86), theme.text_main);
     drawTextColor(font, "RHYTHM", panel_x + 10, panel_y + 8, 10, theme.text_muted);
+    if g_rhythm_bpm > 1.0 {
+        drawTextColor(font, TextFormat("%.0f BPM", g_rhythm_bpm), panel_x + panel_w - 78, panel_y + 8, 10, theme.text_muted);
+    }
 
-    i64 lane_x = panel_x + 10;
-    i64 lane_w = panel_w - 20;
-    i64 lane_y = panel_y + 44;
-    fillRect(lane_x, lane_y - 1, lane_w, 2, alphaColor(theme.text_muted, 0.44));
+    i64 strip_y = panel_y + 26;
+    if rhythmStyleHasGroove() {
+        i64 bar_w = panel_w - 196;
+        if bar_w < 80 {bar_w = 80;}
+        f32 groove = g_rhythm_groove;
+        if groove < 0.0 {groove = 0.0;}
+        if groove > 1.0 {groove = 1.0;}
+        fillRect(panel_x + 10, strip_y, bar_w, 10, alphaColor(theme.board_bg, 0.92));
+        strokeRect(panel_x + 10, strip_y, bar_w, 10, alphaColor(theme.text_muted, 0.46));
+        i64 fill_w = (((bar_w as f32) * groove) as i64);
+        fillRect(panel_x + 10, strip_y, fill_w, 10, alphaColor(theme.panel_stroke, 0.50 + groove * 0.45));
+        drawTextColor(font, TextFormat("x%.1f", rhythmScoreMultiplier()), panel_x + bar_w + 20, strip_y, 10, theme.text_main);
+        drawTextColor(font, TextFormat("COMBO %i", g_rhythm_combo), panel_x + bar_w + 80, strip_y, 10, theme.panel_stroke);
+    } else {
+        drawTextColor(font, TextFormat("COMBO %i", g_rhythm_combo), panel_x + 10, strip_y, 10, theme.panel_stroke);
+    }
+
+    i64 lane_w = rhythmTimelineLaneWidth();
+    i64 lane_x = board_left + board_w + 14;
+    i64 lane_y = board_top;
+    i64 lane_h = board_h;
+    i64 center_x = lane_x + lane_w / 2;
+
+    drawRetroPanel(lane_x, lane_y, lane_w, lane_h, alphaColor(theme.bg_outer, 0.84), alphaColor(theme.panel_stroke, 0.86), theme.text_main);
+    fillRect(center_x - 1, lane_y + 6, 2, lane_h - 12, alphaColor(theme.text_muted, 0.40));
 
     f32 speed = g_rhythm_music_speed;
     if speed < 0.75 {speed = 0.75;}
     if speed > 1.50 {speed = 1.50;}
     f32 stretch = 1.0 / speed;
-    f32 left_window = 0.36 * stretch;
-    f32 right_window = 1.64 * stretch;
-    f32 total_window = left_window + right_window;
-    i64 hit_x = lane_x + (((lane_w as f32) * (left_window / total_window)) as i64);
+    f32 past_window = 0.36 * stretch;
+    f32 future_window = 1.64 * stretch;
+    f32 total_window = past_window + future_window;
+    i64 hit_y = lane_y + (((lane_h as f32) * (future_window / total_window)) as i64);
 
     f32 marker = rhythmIndicatorLevel();
     bool beat_active = g_play.round_state == ROUND_RUNNING && g_rhythm_target_index >= 0 && g_rhythm_target_index < g_rhythm_target_count;
@@ -190,33 +215,33 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
 
     if beat_pending {
         f32 dt_next = g_rhythm_target_times[g_rhythm_target_index] - rhythmClockTime();
-        if dt_next < -left_window {dt_next = -left_window;}
-        if dt_next > right_window {dt_next = right_window;}
-        f32 x01_next = (dt_next + left_window) / total_window;
-        if x01_next < 0.0 {x01_next = 0.0;}
-        if x01_next > 1.0 {x01_next = 1.0;}
-        i64 next_x = lane_x + ((lane_w as f32 * x01_next) as i64);
+        if dt_next < -past_window {dt_next = -past_window;}
+        if dt_next > future_window {dt_next = future_window;}
+        f32 y01_next = (future_window - dt_next) / total_window;
+        if y01_next < 0.0 {y01_next = 0.0;}
+        if y01_next > 1.0 {y01_next = 1.0;}
+        i64 next_y = lane_y + ((lane_h as f32 * y01_next) as i64);
 
-        i64 seg_l = hit_x;
-        i64 seg_r = next_x;
-        if seg_l > seg_r {
-            i64 tmp = seg_l;
-            seg_l = seg_r;
-            seg_r = tmp;
+        i64 seg_t = hit_y;
+        i64 seg_b = next_y;
+        if seg_t > seg_b {
+            i64 tmp = seg_t;
+            seg_t = seg_b;
+            seg_b = tmp;
         }
-        i64 seg_w = seg_r - seg_l + 1;
-        if seg_w < 2 {seg_w = 2;}
+        i64 seg_h = seg_b - seg_t + 1;
+        if seg_h < 2 {seg_h = 2;}
 
-        fillRect(seg_l, lane_y - 4, seg_w, 8, alphaColor(theme.panel_stroke, 0.46));
-        fillRect(seg_l, lane_y - 2, seg_w, 4, alphaColor(theme.text_main, 0.66));
+        fillRect(center_x - 4, seg_t, 8, seg_h, alphaColor(theme.panel_stroke, 0.46));
+        fillRect(center_x - 2, seg_t, 4, seg_h, alphaColor(theme.text_main, 0.66));
     }
 
     u32 line_col = alphaColor(theme.text_main, 0.38 + marker * 0.36 + pending * 0.22);
-    fillRect(hit_x - 1, lane_y - 22, 3, 44, line_col);
+    fillRect(lane_x + 4, hit_y - 1, lane_w - 8, 3, line_col);
     u32 line_glow = alphaColor(theme.panel_stroke, pending * 0.66);
-    fillRect(hit_x - 4, lane_y - 24, 9, 48, line_glow);
-    fillRect(hit_x - 7, lane_y - 21, 15, 42, alphaColor(theme.panel_stroke, pending * 0.32));
-    drawTextColor(font, "NOW", hit_x - 14, panel_y + 18, 9, alphaColor(theme.text_main, 0.52 + marker * 0.44 + pending * 0.10));
+    fillRect(lane_x + 2, hit_y - 4, lane_w - 4, 9, line_glow);
+    fillRect(lane_x + 5, hit_y - 7, lane_w - 10, 15, alphaColor(theme.panel_stroke, pending * 0.32));
+    drawTextColor(font, "NOW", lane_x + 11, hit_y + 14, 9, alphaColor(theme.text_main, 0.52 + marker * 0.44 + pending * 0.10));
 
     if beat_pending {
         f32 t = GetTime() as f32;
@@ -226,10 +251,10 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
             if frac < 0.0 {frac += 1.0;}
             i32 side = 1;
             if i % 2 == 0 {side = -1;}
-            i64 band = 6 + ((i % 4) as i64) * 4;
-            i64 drift = ((phase * 11.0) as i32 % 5) as i64;
-            i64 px = hit_x + side * band + side * drift;
-            i64 py = lane_y + 18 - (frac * 56.0) as i64;
+            i64 band = 5 + ((i % 4) as i64) * 4;
+            i64 drift = ((phase * 11.0) as i32 % 4) as i64;
+            i64 px = center_x + side * band + side * drift;
+            i64 py = hit_y - 18 + (frac * 56.0) as i64;
             i64 pr = 2 + (i % 3);
             f32 a = pending * (0.24 + (1.0 - frac) * 0.66);
             u32 pc = alphaColor(theme.text_main, a);
@@ -239,7 +264,7 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
     }
 
     if g_rhythm_target_count <= 0 {
-        drawTextColor(font, "no beat map", panel_x + 10, panel_y + 52, 10, theme.text_muted);
+        drawTextColor(font, "analyzing", lane_x + 4, lane_y + 16, 8, theme.text_muted);
         return;
     }
 
@@ -251,24 +276,24 @@ fun drawRhythmBeatIndicator(font: Font, theme: Theme) >> void {
 
     for i32 i = start; i < end; i++ {
         f32 dt = g_rhythm_target_times[i] - now;
-        if dt < -left_window || dt > right_window {continue;}
+        if dt < -past_window || dt > future_window {continue;}
 
-        f32 x01 = (dt + left_window) / total_window;
-        if x01 < 0.0 {x01 = 0.0;}
-        if x01 > 1.0 {x01 = 1.0;}
-        i64 cx = lane_x + ((lane_w as f32 * x01) as i64);
+        f32 y01 = (future_window - dt) / total_window;
+        if y01 < 0.0 {y01 = 0.0;}
+        if y01 > 1.0 {y01 = 1.0;}
+        i64 cy = lane_y + ((lane_h as f32 * y01) as i64);
 
-        f32 near = 1.0 - absf(dt) / (0.40 + right_window * 0.26);
+        f32 near = 1.0 - absf(dt) / (0.40 + future_window * 0.26);
         if near < 0.0 {near = 0.0;}
-        i64 r = 3 + (near * 3.0) as i64;
+        i64 r = 5 + (near * 4.0) as i64;
 
-        u32 dot_col = alphaColor(theme.panel_stroke, 0.30 + near * 0.48);
+        u32 dot_col = alphaColor(theme.piece_o, 0.62 + near * 0.36);
         if i == g_rhythm_target_index {
-            dot_col = alphaColor(theme.text_main, 0.56 + marker * 0.40);
-            r += 1;
+            dot_col = alphaColor(theme.text_main, 0.72 + marker * 0.28);
+            r += 2;
         }
 
-        DrawCircle(uiX(cx), uiY(lane_y), uiS(r) as f32, toColor(dot_col));
-        DrawCircleLines(uiX(cx), uiY(lane_y), uiS(r + 1) as f32, toColor(alphaColor(theme.board_bg, 0.80)));
+        DrawCircle(uiX(center_x), uiY(cy), uiS(r) as f32, toColor(dot_col));
+        DrawCircleLines(uiX(center_x), uiY(cy), uiS(r + 1) as f32, toColor(alphaColor(theme.board_bg, 0.80)));
     }
 }

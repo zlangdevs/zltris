@@ -42,8 +42,9 @@ use zltris.theme
 #define DUEL_RESULT_PLAYING 0
 #define ONLINE_NET_STATE_RUNNING 5
 #define RHYTHM_TARGET_MAX 8192
-#define RHYTHM_BASE_INPUT 0
-#define RHYTHM_BASE_DROP 1
+#define RHYTHM_STYLE_HYBRID 0
+#define RHYTHM_STYLE_DROPS 1
+#define RHYTHM_STYLE_GROOVE 2
 #define STAR_MUSIC_MODE_BUILTIN 0
 #define STAR_MUSIC_MODE_CUSTOM 1
 #define KB_RESTART 7
@@ -107,18 +108,18 @@ fun currentApm() >> f32 {
     return ((g_rt.attack_sent as f32) * 60.0) / g_rt.run_timer;
 }
 
-fun rhythmBasedMode() >> i32 {
-    i32 based = g_rhythm_based;
-    if based < RHYTHM_BASE_INPUT || based > RHYTHM_BASE_DROP {based = RHYTHM_BASE_INPUT;}
-    return based;
+fun rhythmStyleMode() >> i32 {
+    i32 style = g_rhythm_style;
+    if style < RHYTHM_STYLE_HYBRID || style > RHYTHM_STYLE_GROOVE {style = RHYTHM_STYLE_HYBRID;}
+    return style;
 }
 
-fun rhythmBasedIsInput() >> bool {
-    return rhythmBasedMode() == RHYTHM_BASE_INPUT;
+fun rhythmStyleRequiresBeat() >> bool {
+    return rhythmStyleMode() != RHYTHM_STYLE_GROOVE;
 }
 
-fun rhythmBasedIsDrop() >> bool {
-    return rhythmBasedMode() == RHYTHM_BASE_DROP;
+fun rhythmStyleHasGroove() >> bool {
+    return rhythmStyleMode() != RHYTHM_STYLE_DROPS;
 }
 
 fun rhythmPrepareCustomMusicPlaylist() >> void {
@@ -159,26 +160,39 @@ fun rhythmRestoreMusicPlaylistIfNeeded() >> void {
 }
 
 fun rhythmMaxRate() >> f32 {
-    f32 rate = g_rhythm_max_ips;
-    if rhythmBasedIsDrop() {
-        rate = g_rhythm_max_dps;
-        if rate < 0.3 {rate = 0.3;}
-        if rate > 5.0 {rate = 5.0;}
-        return rate;
-    }
-    if rate < 0.5 {rate = 0.5;}
-    if rate > 15.0 {rate = 15.0;}
+    f32 rate = g_rhythm_max_dps;
+    if rate < 0.3 {rate = 0.3;}
+    if rate > 5.0 {rate = 5.0;}
     return rate;
 }
 
-fun rhythmBeatSensitivity() >> f32 {
-    f32 s = g_rhythm_beat_sensitivity;
+fun rhythmHitWindowScale() >> f32 {
+    f32 s = g_rhythm_hit_window;
     if s < 0.5 {s = 0.5;}
-    if s > 5.0 {s = 5.0;}
+    if s > 2.0 {s = 2.0;}
     return s;
 }
 
+fun rhythmGoodWindowS() >> f32 {
+    return 0.140 * rhythmHitWindowScale();
+}
+
+fun rhythmScoreMultiplier() >> f32 {
+    if !rhythmStyleHasGroove() {return 1.0;}
+    f32 g = g_rhythm_groove;
+    if g < 0.0 {g = 0.0;}
+    if g > 1.0 {g = 1.0;}
+    return 1.0 + g * 2.0;
+}
+
+fun rhythmGrooveAdd(amount: f32) >> void {
+    g_rhythm_groove += amount;
+    if g_rhythm_groove < 0.0 {g_rhythm_groove = 0.0;}
+    if g_rhythm_groove > 1.0 {g_rhythm_groove = 1.0;}
+}
+
 fun rhythmBeatInterval() >> f32 {
+    if g_rhythm_grid_interval > 0.05 {return g_rhythm_grid_interval;}
     return 1.0 / rhythmMaxRate();
 }
 
@@ -225,127 +239,124 @@ fun rhythmRefreshNextBeatTime() >> void {
 fun rhythmBuildBeatSchedule() >> void {
     g_rhythm_target_count = 0;
     g_rhythm_target_index = 0;
+    g_rhythm_sched_beats_version = g_star_music_beats_version;
+    g_rhythm_grid_interval = 0.0;
+    g_rhythm_bpm = 0.0;
     if !g_star_music_loaded {return;}
-    if g_star_music_beat_count <= 0 {return;}
+    i32 n = g_star_music_beat_count;
+    if n <= 0 {return;}
 
-    f32 min_interval = rhythmBeatInterval();
-    if min_interval < 0.05 {min_interval = 0.05;}
-    f32 sensitivity = rhythmBeatSensitivity();
-    f32 gate_scale = 0.45;
-    if sensitivity < 1.0 {
-        f32 t = (1.0 - sensitivity) / 0.5;
-        if t < 0.0 {t = 0.0;}
-        if t > 1.0 {t = 1.0;}
-        gate_scale = 0.45 + t * 0.85;
-    } else {
-        f32 t = (sensitivity - 1.0) / 4.0;
-        if t < 0.0 {t = 0.0;}
-        if t > 1.0 {t = 1.0;}
-        gate_scale = 0.45 - t * 0.30;
+    f32 max_rate = rhythmMaxRate();
+
+    arr<i32, 256> hist = {0};
+    i32 used = 0;
+    for i32 i = 1; i < n; i++ {
+        f32 iv = g_star_music_beats[i] - g_star_music_beats[i - 1];
+        if iv < 0.10 || iv > 2.0 {continue;}
+        i32 bin = ((iv * 1000.0) / 8.0) as i32;
+        if bin < 0 {bin = 0;}
+        if bin > 255 {bin = 255;}
+        hist[bin] += 1;
+        used += 1;
     }
-    if gate_scale < 0.15 {gate_scale = 0.15;}
-    if gate_scale > 1.30 {gate_scale = 1.30;}
 
-    f32 global_sum = 0.0;
-    f32 global_max = 0.0;
-    for i32 i = 0; i < g_star_music_beat_count; i++ {
-        f32 c = rhythmBeatClarity(i);
-        global_sum += c;
-        if c > global_max {global_max = c;}
+    f32 period = 0.0;
+    if used >= 6 && n >= 8 {
+        i32 acc = 0;
+        i32 med_bin = 0;
+        for i32 b = 0; b < 256; b++ {
+            acc += hist[b];
+            if acc * 2 >= used {med_bin = b; break;}
+        }
+        period = ((med_bin as f32) * 8.0 + 4.0) / 1000.0;
+
+        for (period < 0.24) {period *= 2.0;}
+        for (period > 1.00) {period *= 0.5;}
+
+        f32 sum = 0.0;
+        i32 cnt = 0;
+        for i32 i = 1; i < n; i++ {
+            f32 iv = g_star_music_beats[i] - g_star_music_beats[i - 1];
+            if iv < 0.10 || iv > 2.0 {continue;}
+            for (iv > period * 1.5) {iv *= 0.5;}
+            if absf(iv - period) <= period * 0.12 {
+                sum += iv;
+                cnt += 1;
+            }
+        }
+        if cnt >= 4 {period = sum / (cnt as f32);}
+        if period < 0.20 {period = 0.0;}
     }
-    f32 global_mean = global_sum / (g_star_music_beat_count as f32);
-    f32 global_dev_sum = 0.0;
-    for i32 i = 0; i < g_star_music_beat_count; i++ {
-        global_dev_sum += absf(rhythmBeatClarity(i) - global_mean);
+
+    if period > 0.0 {
+        i32 stride = 1;
+        f32 grid_rate = 1.0 / period;
+        for ((grid_rate / (stride as f32)) > max_rate && stride < 64) {stride += 1;}
+
+        f32 snap_tol = period * 0.22;
+        f32 end_t = GetMusicTimeLength(g_star_music);
+        if end_t <= 0.0 {end_t = g_star_music_beats[n - 1] + period * 4.0;}
+
+        f32 t = g_star_music_beats[0];
+        i32 bi = 0;
+        i32 grid_count = 0;
+        for (t <= end_t && grid_count < RHYTHM_TARGET_MAX) {
+            for (bi < n - 1 && g_star_music_beats[bi] < t - snap_tol) {bi += 1;}
+
+            f32 tick = t;
+            f32 clarity = 0.0;
+            i32 best = -1;
+            f32 best_d = snap_tol;
+            for i32 j = bi; j < n; j++ {
+                f32 d = absf(g_star_music_beats[j] - t);
+                if d <= best_d {best_d = d; best = j;}
+                if g_star_music_beats[j] > t + snap_tol {break;}
+            }
+            if best >= 0 {
+                tick = g_star_music_beats[best];
+                clarity = rhythmBeatClarity(best);
+            }
+
+            g_rhythm_target_times[grid_count] = tick;
+            g_rhythm_grid_clarity[grid_count] = clarity;
+            grid_count += 1;
+            t = tick + period;
+        }
+
+        if grid_count > 0 {
+            i32 best_class = 0;
+            f32 best_score = -1.0;
+            for i32 c = 0; c < stride; c++ {
+                f32 s = 0.0;
+                i32 class_n = 0;
+                for i32 g = c; g < grid_count; g += stride {
+                    s += g_rhythm_grid_clarity[g];
+                    class_n += 1;
+                }
+                if class_n > 0 {s = s / (class_n as f32);}
+                if s > best_score {best_score = s; best_class = c;}
+            }
+
+            i32 out = 0;
+            for i32 g = best_class; g < grid_count; g += stride {
+                g_rhythm_target_times[out] = g_rhythm_target_times[g];
+                out += 1;
+            }
+            g_rhythm_target_count = out;
+            g_rhythm_grid_interval = period * (stride as f32);
+            g_rhythm_bpm = 60.0 / period;
+            return;
+        }
     }
-    f32 global_dev = global_dev_sum / (g_star_music_beat_count as f32);
 
-    f32 global_gate = (global_mean + global_dev * 0.95) * gate_scale;
-    f32 gate_floor = (global_mean - global_dev * 0.50) * gate_scale;
-    if gate_floor < 0.04 {gate_floor = 0.04;}
-    if global_gate < gate_floor {global_gate = gate_floor;}
-    if global_gate < 0.04 {global_gate = 0.04;}
-    f32 gate_cap = global_max - 0.05;
-    if gate_cap < 0.04 {gate_cap = 0.04;}
-    if global_gate > gate_cap {global_gate = gate_cap;}
-
+    f32 min_interval = 1.0 / max_rate;
     f32 last_keep_time = -9999.0;
-    f32 last_keep_clarity = 0.0;
-
-    for i32 i = 0; i < g_star_music_beat_count && g_rhythm_target_count < RHYTHM_TARGET_MAX; i++ {
+    for i32 i = 0; i < n && g_rhythm_target_count < RHYTHM_TARGET_MAX; i++ {
         f32 bt = g_star_music_beats[i];
-        f32 c = rhythmBeatClarity(i);
-
-        i32 lo = i - 5;
-        i32 hi = i + 5;
-        if lo < 0 {lo = 0;}
-        if hi >= g_star_music_beat_count {hi = g_star_music_beat_count - 1;}
-        i32 local_n = hi - lo + 1;
-
-        f32 local_sum = 0.0;
-        for i32 j = lo; j <= hi; j++ {local_sum += rhythmBeatClarity(j);}
-        f32 local_mean = local_sum / (local_n as f32);
-
-        f32 local_dev_sum = 0.0;
-        for i32 j = lo; j <= hi; j++ {local_dev_sum += absf(rhythmBeatClarity(j) - local_mean);}
-        f32 local_dev = local_dev_sum / (local_n as f32);
-
-        f32 local_gate = local_mean + local_dev * 0.70;
-        local_gate *= gate_scale;
-        f32 local_floor = global_gate * 0.90;
-        if local_gate < local_floor {local_gate = local_floor;}
-
-        if c < global_gate || c < local_gate {continue;}
-
-        if g_rhythm_target_count <= 0 {
-            g_rhythm_target_times[g_rhythm_target_count] = bt;
-            g_rhythm_target_count += 1;
-            last_keep_time = bt;
-            last_keep_clarity = c;
-            continue;
-        }
-
-        if bt - last_keep_time >= min_interval {
-            g_rhythm_target_times[g_rhythm_target_count] = bt;
-            g_rhythm_target_count += 1;
-            last_keep_time = bt;
-            last_keep_clarity = c;
-            continue;
-        }
-
-        if c > last_keep_clarity + 0.05 {
-            g_rhythm_target_times[g_rhythm_target_count - 1] = bt;
-            last_keep_time = bt;
-            last_keep_clarity = c;
-        }
-    }
-
-    if g_rhythm_target_count <= 0 {
-        f32 relaxed_gate = global_mean + global_dev * 0.30;
-        relaxed_gate *= gate_scale;
-        if relaxed_gate < 0.12 {relaxed_gate = 0.12;}
-        last_keep_time = -9999.0;
-
-        for i32 i = 0; i < g_star_music_beat_count && g_rhythm_target_count < RHYTHM_TARGET_MAX; i++ {
-            f32 bt = g_star_music_beats[i];
-            f32 c = rhythmBeatClarity(i);
-            if c < relaxed_gate {continue;}
-            if bt - last_keep_time < min_interval {continue;}
-            g_rhythm_target_times[g_rhythm_target_count] = bt;
-            g_rhythm_target_count += 1;
-            last_keep_time = bt;
-        }
-    }
-
-    if g_rhythm_target_count <= 0 {
-        last_keep_time = -9999.0;
-        for i32 i = 0; i < g_star_music_beat_count && g_rhythm_target_count < RHYTHM_TARGET_MAX; i++ {
-            f32 bt = g_star_music_beats[i];
-            if bt - last_keep_time < min_interval {continue;}
-            g_rhythm_target_times[g_rhythm_target_count] = bt;
-            g_rhythm_target_count += 1;
-            last_keep_time = bt;
-        }
+        if bt - last_keep_time < min_interval {continue;}
+        g_rhythm_target_times[g_rhythm_target_count] = bt;
+        g_rhythm_target_count += 1;
+        last_keep_time = bt;
     }
 }
 
@@ -429,46 +440,45 @@ fun rhythmIndicatorLevel() >> f32 {
     return g_rhythm_indicator_visual;
 }
 
-fun rhythmRegisterInput() >> void {
+fun rhythmRegisterDrop() >> void {
     if !isRhythmMode() {return;}
     if g_play.round_state != ROUND_RUNNING {return;}
 
     if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
     rhythmRefreshNextBeatTime();
+    if g_rhythm_target_index >= g_rhythm_target_count {return;}
     if g_rhythm_target_index == g_rhythm_last_scored_target_index {return;}
 
-    f32 interval = rhythmBeatInterval();
-    f32 prev_t = g_rhythm_next_beat_time - interval;
-    if g_rhythm_target_index > 0 && g_rhythm_target_index - 1 < g_rhythm_target_count {
-        prev_t = g_rhythm_target_times[g_rhythm_target_index - 1];
-    }
     f32 next_t = g_rhythm_next_beat_time;
-    bool prev_required = g_rhythm_target_index > 0 && prev_t > g_rhythm_ignore_until_time;
-    bool next_required = next_t > g_rhythm_ignore_until_time;
-    if !prev_required && !next_required {return;}
+    if next_t <= g_rhythm_ignore_until_time {return;}
 
     f32 t = rhythmClockTime();
-    f32 dist_prev = absf(t - prev_t);
-    f32 dist_next = absf(next_t - t);
-    if !prev_required {dist_prev = 9999.0;}
-    if !next_required {dist_next = 9999.0;}
-    f32 dist = dist_next;
-    if dist_prev < dist_next {dist = dist_prev;}
+    f32 ms = absf(next_t - t) * 1000.0;
+    f32 scale = rhythmHitWindowScale();
 
-    f32 ms = dist * 1000.0;
+    if ms > 140.0 * scale {
+        g_rhythm_combo = 0;
+        if rhythmStyleHasGroove() {rhythmGrooveAdd(-0.15);}
+        return;
+    }
+
     g_rhythm_total_abs_ms += ms;
     g_rhythm_hit_count += 1;
     g_rhythm_last_beat_hit = true;
+    g_rhythm_combo += 1;
+    if g_rhythm_combo > g_rhythm_best_combo {g_rhythm_best_combo = g_rhythm_combo;}
 
     i32 pts = 0;
-    if ms <= 30.0 {pts = 130;}
-    else if ms <= 60.0 {pts = 90;}
-    else if ms <= 100.0 {pts = 55;}
-    else if ms <= 140.0 {pts = 28;}
-    else {pts = 8;}
+    f32 groove_gain = 0.0;
+    if ms <= 40.0 * scale {pts = 130; groove_gain = 0.16;}
+    else if ms <= 85.0 * scale {pts = 90; groove_gain = 0.12;}
+    else {pts = 55; groove_gain = 0.08;}
 
-    g_rhythm_score += pts;
-    g_play.score += pts;
+    if rhythmStyleHasGroove() {rhythmGrooveAdd(groove_gain);}
+
+    i32 add = ((pts as f32) * rhythmScoreMultiplier()) as i32;
+    g_rhythm_score += add;
+    g_play.score += add;
     g_rhythm_last_scored_target_index = g_rhythm_target_index;
 }
 
@@ -476,12 +486,19 @@ fun rhythmUpdateBeatClock() >> bool {
     if !isRhythmMode() {return false;}
     if g_play.round_state != ROUND_RUNNING {return false;}
 
+    if g_rhythm_sched_beats_version != g_star_music_beats_version {
+        rhythmBuildBeatSchedule();
+        g_rhythm_bot_last_action_index = -1;
+        g_rhythm_needs_sync = true;
+    }
+
     if g_rhythm_needs_sync {rhythmSyncToTrackTime();}
 
     f32 now = rhythmClockTime();
     rhythmRefreshNextBeatTime();
 
-    for (g_rhythm_target_index < g_rhythm_target_count && now >= g_rhythm_next_beat_time) {
+    f32 late_grace = rhythmGoodWindowS();
+    for (g_rhythm_target_index < g_rhythm_target_count && now >= g_rhythm_next_beat_time + late_grace) {
         f32 beat_t = g_rhythm_next_beat_time;
         bool beat_required = beat_t > g_rhythm_ignore_until_time;
         if !beat_required {
@@ -492,19 +509,26 @@ fun rhythmUpdateBeatClock() >> bool {
             continue;
         }
 
-        bool missed_now = !g_rhythm_last_beat_hit;
-        if missed_now {
+        bool missed_now = g_rhythm_target_index != g_rhythm_last_scored_target_index;
+        if missed_now && rhythmStyleRequiresBeat() {
             g_rhythm_missed_beats += 1;
-            if !g_rhythm_allow_miss && g_rhythm_prev_beat_missed {
+            g_rhythm_combo = 0;
+            if rhythmStyleHasGroove() {rhythmGrooveAdd(-0.25);}
+            if !g_rhythm_allow_miss {
                 triggerImmediateRestart(true);
                 return true;
             }
         }
 
-        g_rhythm_prev_beat_missed = missed_now;
+        g_rhythm_prev_beat_missed = missed_now && rhythmStyleRequiresBeat();
         g_rhythm_last_beat_hit = false;
         g_rhythm_target_index += 1;
         rhythmRefreshNextBeatTime();
+    }
+
+    if rhythmStyleHasGroove() {
+        f32 decay_dt = GetFrameTime();
+        if decay_dt > 0.0 {rhythmGrooveAdd(-decay_dt * 0.035);}
     }
 
     if g_music_track_ended {
@@ -610,16 +634,15 @@ fun startGameMode(mode: i32) >> void {
     if selected_mode == MODE_RHYTHM {
         rhythmPrepareCustomMusicPlaylist();
         g_music_lock_single_track = true;
-        if g_rhythm_based < RHYTHM_BASE_INPUT || g_rhythm_based > RHYTHM_BASE_DROP {g_rhythm_based = RHYTHM_BASE_INPUT;}
-        if g_rhythm_beat_sensitivity < 0.5 {g_rhythm_beat_sensitivity = 0.5;}
-        if g_rhythm_beat_sensitivity > 5.0 {g_rhythm_beat_sensitivity = 5.0;}
-        if g_rhythm_max_ips < 0.5 {g_rhythm_max_ips = 0.5;}
-        if g_rhythm_max_ips > 15.0 {g_rhythm_max_ips = 15.0;}
+        if g_rhythm_style < RHYTHM_STYLE_HYBRID || g_rhythm_style > RHYTHM_STYLE_GROOVE {g_rhythm_style = RHYTHM_STYLE_HYBRID;}
+        if g_rhythm_hit_window < 0.5 {g_rhythm_hit_window = 0.5;}
+        if g_rhythm_hit_window > 2.0 {g_rhythm_hit_window = 2.0;}
         if g_rhythm_max_dps < 0.3 {g_rhythm_max_dps = 0.3;}
         if g_rhythm_max_dps > 5.0 {g_rhythm_max_dps = 5.0;}
         if g_rhythm_music_speed < 0.75 {g_rhythm_music_speed = 0.75;}
         if g_rhythm_music_speed > 1.50 {g_rhythm_music_speed = 1.50;}
         g_music_playback_rate = g_rhythm_music_speed;
+        if g_rhythm_style == RHYTHM_STYLE_GROOVE {g_rhythm_allow_miss = true;}
         if g_star_music_track_count > 0 {
             if g_rhythm_song_index < 0 {g_rhythm_song_index = 0;}
             if g_rhythm_song_index >= g_star_music_track_count {g_rhythm_song_index = 0;}
@@ -658,6 +681,9 @@ fun startGameMode(mode: i32) >> void {
     g_rhythm_total_abs_ms = 0.0;
     g_rhythm_score = 0;
     g_rhythm_indicator_visual = 0.0;
+    g_rhythm_groove = 0.0;
+    g_rhythm_combo = 0;
+    g_rhythm_best_combo = 0;
 
     if selected_mode == MODE_RHYTHM {
         rhythmBuildBeatSchedule();
