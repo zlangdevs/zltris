@@ -118,7 +118,7 @@ fun aiBotPanicPenalty(garbage_access: i32, mode: i32) >> i32 {
     return base;
 }
 
-fun aiBotCleanCandidateBetter(cur_holes: i32, cur_max_h: i32, cand_holes: i32, cand_max_h: i32, cand_lines: i32, cand_steps: i32, cand_score: i32, best_holes: i32, best_max_h: i32, best_lines: i32, best_steps: i32, best_score: i32) >> bool {
+fun aiBotCleanCandidateBetter(cur_holes: i32, _cur_max_h: i32, cand_holes: i32, cand_max_h: i32, cand_lines: i32, cand_steps: i32, cand_score: i32, best_holes: i32, best_max_h: i32, best_lines: i32, best_steps: i32, best_score: i32) >> bool {
     i32 cand_hole_rise = cand_holes - cur_holes;
     if cand_hole_rise < 0 {cand_hole_rise = 0;}
     i32 best_hole_rise = best_holes - cur_holes;
@@ -485,7 +485,7 @@ fun garbageNoProgressPenalty(garbage_access: i32) >> i32 {
     return penalty;
 }
 
-fun evaluateLockedBoardImpl(board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, apply_panic: bool, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
+fun evaluateLockedBoardImpl(board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, _cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32, apply_panic: bool, out_next_combo: ptr<i32>, out_next_b2b: ptr<bool>, out_value: ptr<i32>) >> void {
     i32 next_holes = 0;
     i32 next_hole_depth = 0;
     i32 next_max_h = 0;
@@ -544,7 +544,7 @@ fun evaluateLockedBoardGreedy(board_after: ptr<i32>, before_score: i32, cur_garb
     evaluateLockedBoardImpl(board_after, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin, all_clear, combo, b2b, level, mode, pending_garbage, false, out_next_combo, out_next_b2b, out_value);
 }
 
-fun evaluateExactLockedState(board_before: ptr<i32>, board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32) >> i32 {
+fun evaluateExactLockedState(_board_before: ptr<i32>, board_after: ptr<i32>, before_score: i32, cur_garbage_rows: i32, cur_garbage_cover: i32, cur_garbage_access: i32, cur_holes: i32, cur_hole_depth: i32, cur_max_h: i32, lines: i32, tspin: bool, all_clear: bool, queue: ptr<i32>, queue_count: i32, spawn_y: i32, combo: i32, b2b: bool, level: i32, mode: i32, pending_garbage: i32) >> i32 {
     i32 next_combo = combo;
     bool next_b2b = b2b;
     i32 value = 0;
@@ -590,13 +590,13 @@ fun evaluateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32
     i32 cur_garbage_cover = 0;
     i32 cur_garbage_access = 0;
     i32 cur_holes = 0;
-    i32 cur_hole_depth = 0;
-    i32 cur_max_h = 0;
+    i32 _cur_hole_depth = 0;
+    i32 _cur_max_h = 0;
     i32 before_score = evaluateBoardStructural(board);
     boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
-    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
+    boardHoleStats(board, &cur_holes, &_cur_hole_depth, &_cur_max_h);
     if !simulateMove(board, kind, rotation, x, spawn_y, false, out_board, &lines, &tspin, &all_clear) {return false;}
-    evaluateLockedBoard(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
+    evaluateLockedBoard(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, _cur_hole_depth, _cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
     out_tspin[0] = tspin;
     return true;
 }
@@ -609,13 +609,13 @@ fun evaluateMoveGreedy(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_
     i32 cur_garbage_cover = 0;
     i32 cur_garbage_access = 0;
     i32 cur_holes = 0;
-    i32 cur_hole_depth = 0;
-    i32 cur_max_h = 0;
+    i32 _cur_hole_depth = 0;
+    i32 _cur_max_h = 0;
     i32 before_score = evaluateBoardStructural(board);
     boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
-    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
+    boardHoleStats(board, &cur_holes, &_cur_hole_depth, &_cur_max_h);
     if !simulateMove(board, kind, rotation, x, spawn_y, false, out_board, &lines, &tspin, &all_clear) {return false;}
-    evaluateLockedBoardGreedy(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
+    evaluateLockedBoardGreedy(out_board, before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, _cur_hole_depth, _cur_max_h, lines, tspin != 0, all_clear != 0, combo, b2b, level, mode, pending_garbage, out_next_combo, out_next_b2b, out_value);
     out_tspin[0] = tspin;
     return true;
 }
@@ -707,11 +707,11 @@ fun findBestMove(board: ptr<i32>, kind: i32, spawn_y: i32, queue: ptr<i32>, queu
     i32 cur_garbage_cover = 0;
     i32 cur_garbage_access = 0;
     i32 cur_holes = 0;
-    i32 cur_hole_depth = 0;
-    i32 cur_max_h = 0;
+    i32 _cur_hole_depth = 0;
+    i32 _cur_max_h = 0;
     boardGarbageStats(board, &cur_garbage_rows, &cur_garbage_cover, &cur_garbage_access);
-    boardHoleStats(board, &cur_holes, &cur_hole_depth, &cur_max_h);
-    i32 mode = aiBotChooseMode(cur_max_h, cur_holes, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, pending_garbage);
+    boardHoleStats(board, &cur_holes, &_cur_hole_depth, &_cur_max_h);
+    i32 mode = aiBotChooseMode(_cur_max_h, cur_holes, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, pending_garbage);
 
     for i32 rot = 0; rot < rot_count; rot++ {
         for i32 x = -2; x < BOARD_W + 2; x++ {
@@ -721,7 +721,7 @@ fun findBestMove(board: ptr<i32>, kind: i32, spawn_y: i32, queue: ptr<i32>, queu
             i32 lines = 0;
             i32 all_clear = 0;
             if !simulateMove(board, kind, rot, x, spawn_y, false, &temp[0], &lines, &tspin, &all_clear) {continue;}
-            score = evaluateExactLockedState(board, &temp[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, queue, queue_count, spawn_y, combo, b2b, level, mode, pending_garbage);
+            score = evaluateExactLockedState(board, &temp[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, _cur_hole_depth, _cur_max_h, lines, tspin != 0, all_clear != 0, queue, queue_count, spawn_y, combo, b2b, level, mode, pending_garbage);
 
             i32 rot_steps = rotationStepDistance(0, rot);
             i32 move_cost = pieces_absi(x - 3) + rot_steps * aiTune(AI_TUNE_MOVE_BASE + 0);

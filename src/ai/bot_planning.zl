@@ -215,14 +215,14 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         }
     }
 
-    i32 cur_max_h = 0;
+    i32 _cur_max_h = 0;
     i32 cur_holes = 0;
     i32 cur_garbage_rows = 0;
     i32 cur_garbage_cover = 0;
-    aiBoardStackStats(&g_bot_board[0], &cur_max_h, &cur_holes, &cur_garbage_rows, &cur_garbage_cover);
+    aiBoardStackStats(&g_bot_board[0], &_cur_max_h, &cur_holes, &cur_garbage_rows, &cur_garbage_cover);
     i32 cur_garbage_access = aiBoardGarbageAccessScore(&g_bot_board[0]);
-    i32 cur_hole_depth = 0;
-    boardHoleStats(&g_bot_board[0], &cur_holes, &cur_hole_depth, &cur_max_h);
+    i32 _cur_hole_depth = 0;
+    boardHoleStats(&g_bot_board[0], &cur_holes, &_cur_hole_depth, &_cur_max_h);
     i32 before_score = evaluateBoardStructural(&g_bot_board[0]);
 
     f32 apm_current = botCurrentApm();
@@ -250,8 +250,8 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     if speed_tier == 3 {action_budget += planTune(6);}
     if mode == BOT_MODE_DIG {action_budget += 1;}
     if mode == BOT_MODE_SURVIVE {action_budget += 2;}
-    if cur_max_h >= 16 {action_budget -= 1;}
-    if cur_max_h >= 19 {action_budget -= 1;}
+    if _cur_max_h >= 16 {action_budget -= 1;}
+    if _cur_max_h >= 19 {action_budget -= 1;}
     if apm_delta < -15 {action_budget -= 1;}
     if apm_delta > 12 {action_budget += 1;}
     if apm_delta > planTune(7) {action_budget += planTune(9);}
@@ -259,7 +259,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     if unrestricted_speed {
         action_budget = BOT_PLAN_MAX - 1;
     }
-    if cur_max_h >= 13 && action_budget < 8 {action_budget = 8;}
+    if _cur_max_h >= 13 && action_budget < 8 {action_budget = 8;}
     if action_budget < 7 {action_budget = 7;}
     if action_budget > BOT_PLAN_MAX - 1 {action_budget = BOT_PLAN_MAX - 1;}
 
@@ -274,7 +274,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
     bool best_target_last_rotate = false;
     bool best_all_clear = false;
     i32 best_next_holes = cur_holes;
-    i32 best_next_max_h = cur_max_h;
+    i32 best_next_max_h = _cur_max_h;
     arr<i32, BOARD_CELLS> best_board = {0};
 
     i32 clean_state = -1;
@@ -321,7 +321,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         i32 cover_delta = cur_garbage_cover - next_garbage_cover;
         i32 access_delta = cur_garbage_access - next_garbage_access;
         i32 holes_delta = cur_holes - next_holes;
-        i32 max_h_delta = cur_max_h - next_max_h;
+        i32 max_h_delta = _cur_max_h - next_max_h;
 
         bool no_immediate_progress = rows_delta <= 0 && cover_delta <= 0 && access_delta <= 0;
         bool immediate_worse = next_garbage_rows > cur_garbage_rows || next_garbage_cover > cur_garbage_cover || next_garbage_access > cur_garbage_access;
@@ -334,7 +334,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         i32 projected_lines = lines;
         i32 projected_score = 0;
 
-        i32 base_score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel(), mode, g_bot_pending_garbage);
+        i32 base_score = evaluateExactLockedState(&g_bot_board[0], &temp_board[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, _cur_hole_depth, _cur_max_h, lines, spin != 0, all_clear != 0, &g_bot_queue[0], lookahead_count, botSpawnY(), g_bot.combo, g_bot.back_to_back_count > 0, botLevel(), mode, g_bot_pending_garbage);
         if unrestricted_speed {base_score -= action_count * planTune(30);} else {base_score -= action_count * planTune(29);}
 
         if mode != BOT_MODE_CLEAN {
@@ -348,7 +348,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         i32 projected_cover_delta = cur_garbage_cover - projected_cover;
         i32 projected_access_delta = cur_garbage_access - projected_access;
         i32 projected_holes_delta = cur_holes - projected_holes;
-        i32 projected_max_h_delta = cur_max_h - projected_max_h;
+        i32 projected_max_h_delta = _cur_max_h - projected_max_h;
         bool no_projected_progress = projected_rows_delta <= 0 && projected_cover_delta <= 0 && projected_access_delta <= 0;
 
         i32 attack = aiBotEstimateAttack(lines, spin != 0, all_clear != 0, g_bot.combo, g_bot.back_to_back_count);
@@ -399,10 +399,10 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         }
         if lines == 0 && mode != BOT_MODE_CLEAN && no_immediate_progress {score -= aiBotPanicPenalty(cur_garbage_access, mode);}
         if lines == 0 && mode == BOT_MODE_CLEAN && next_holes > cur_holes {score -= (next_holes - cur_holes) * 180000;}
-        if lines == 0 && mode == BOT_MODE_CLEAN && next_max_h > cur_max_h {score -= (next_max_h - cur_max_h) * 50000;}
+        if lines == 0 && mode == BOT_MODE_CLEAN && next_max_h > _cur_max_h {score -= (next_max_h - _cur_max_h) * 50000;}
 
         bool prefer_simple_plan = false;
-        if BOT_SIMPLE_PLAN && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && cur_holes == 0 && cur_max_h <= 10 && g_bot_setup.target_apm <= 45.0 {
+        if BOT_SIMPLE_PLAN && mode == BOT_MODE_CLEAN && cur_garbage_rows == 0 && cur_holes == 0 && _cur_max_h <= 10 && g_bot_setup.target_apm <= 45.0 {
             prefer_simple_plan = true;
         }
 
@@ -424,7 +424,7 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
             if clean_state < 0 {
                 clean_better = true;
             } else {
-                clean_better = aiBotCleanCandidateBetter(cur_holes, cur_max_h, next_holes, next_max_h, lines, action_count, score, clean_next_holes, clean_next_max_h, clean_lines, clean_action_count, clean_score);
+                clean_better = aiBotCleanCandidateBetter(cur_holes, _cur_max_h, next_holes, next_max_h, lines, action_count, score, clean_next_holes, clean_next_max_h, clean_lines, clean_action_count, clean_score);
             }
 
             if clean_better {
@@ -470,9 +470,9 @@ fun botPlanExactPath(lookahead_count: i32, mode: i32) >> bool {
         if best_next_holes > clean_next_holes + 1 {should_force_clean = true;}
         if best_next_max_h > clean_next_max_h + 2 && clean_next_holes <= best_next_holes {should_force_clean = true;}
         if best_lines == 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 240000 {should_force_clean = true;}
-        if cur_max_h >= 14 && clean_next_max_h < best_next_max_h {should_force_clean = true;}
+        if _cur_max_h >= 14 && clean_next_max_h < best_next_max_h {should_force_clean = true;}
         if g_bot_pending_garbage > 0 && clean_next_holes <= best_next_holes && clean_next_max_h <= best_next_max_h {should_force_clean = true;}
-        if cur_max_h >= 12 && clean_next_max_h <= cur_max_h && best_next_max_h > cur_max_h {should_force_clean = true;}
+        if _cur_max_h >= 12 && clean_next_max_h <= _cur_max_h && best_next_max_h > _cur_max_h {should_force_clean = true;}
         if cur_holes > 0 && clean_next_holes < best_next_holes && clean_score >= best_score - 400000 {should_force_clean = true;}
 
         if should_force_clean {
