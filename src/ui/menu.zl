@@ -356,8 +356,8 @@ fun selectOnlineIndex(index: i32) >> i32 {
 fun drawRetroGrid(theme: Theme) >> void {
     i64 horizon = 250;
     i64 bottom = 912;
-    i64 left = visibleBaseLeft();
-    i64 right = visibleBaseRight();
+    i64 left = render_visibleBaseLeft();
+    i64 right = render_visibleBaseRight();
     i64 center = (left + right) / 2;
     i64 top_half_span = (right - left) / 2;
     i64 bottom_half_span = (top_half_span * 557) / 100;

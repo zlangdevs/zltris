@@ -32,11 +32,11 @@ arr<i32, MINO_COORD_TABLE_SIZE> g_ai_mino_y_table = {
     0, 0, 1, 1, 0, 1, 1, 2, 1, 1, 2, 2, 0, 1, 1, 2
 };
 
-fun boardIndex(x: i32, y: i32) >> i32 {
+fun pieces_boardIndex(x: i32, y: i32) >> i32 {
     return y * BOARD_W + x;
 }
 
-fun normalizeRotation(rotation: i32) >> i32 {
+fun pieces_normalizeRotation(rotation: i32) >> i32 {
     i32 r = rotation % 4;
     if r < 0 {r += 4;}
     return r;
@@ -48,7 +48,7 @@ fun rotationCount(kind: i32) >> i32 {
 }
 
 fun rotationStepDistance(from: i32, to: i32) >> i32 {
-    i32 diff = normalizeRotation(to - from);
+    i32 diff = pieces_normalizeRotation(to - from);
     if diff > 2 {diff = 4 - diff;}
     return diff;
 }
@@ -60,7 +60,7 @@ fun aiMinoTableKind(kind: i32) >> i32 {
 }
 
 fun aiMinoTableIndex(kind: i32, rotation: i32, idx: i32) >> i32 {
-    return aiMinoTableKind(kind) * 16 + normalizeRotation(rotation) * 4 + idx;
+    return aiMinoTableKind(kind) * 16 + pieces_normalizeRotation(rotation) * 4 + idx;
 }
 
 fun aiMinoX(kind: i32, rotation: i32, idx: i32) >> i32 {
@@ -71,20 +71,20 @@ fun aiMinoY(kind: i32, rotation: i32, idx: i32) >> i32 {
     return g_ai_mino_y_table[aiMinoTableIndex(kind, rotation, idx)];
 }
 
-fun pieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
+fun pieces_pieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32) >> bool {
     for i32 i = 0; i < 4; i++ {
         i32 mx = x + aiMinoX(kind, rotation, i);
         i32 my = y + aiMinoY(kind, rotation, i);
         if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
-        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
+        if my >= 0 && board[pieces_boardIndex(mx, my)] != 0 {return false;}
     }
     return true;
 }
 
 fun dropY(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32) >> i32 {
     i32 y = spawn_y;
-    if !pieceFits(board, kind, rotation, x, y) {return -9999;}
-    for (pieceFits(board, kind, rotation, x, y + 1)) {y += 1;}
+    if !pieces_pieceFits(board, kind, rotation, x, y) {return -9999;}
+    for (pieces_pieceFits(board, kind, rotation, x, y + 1)) {y += 1;}
     return y;
 }
 
@@ -93,16 +93,16 @@ fun clearLinesLocal(board: ptr<i32>) >> i32 {
     for i32 y = BOARD_H - 1; y >= 0; y-- {
         bool full = true;
         for i32 x = 0; x < BOARD_W; x++ {
-            if board[boardIndex(x, y)] == 0 {full = false;}
+            if board[pieces_boardIndex(x, y)] == 0 {full = false;}
         }
         if full {
             cleared += 1;
             for i32 pull = y; pull > 0; pull-- {
                 for i32 x = 0; x < BOARD_W; x++ {
-                    board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];
+                    board[pieces_boardIndex(x, pull)] = board[pieces_boardIndex(x, pull - 1)];
                 }
             }
-            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
+            for i32 x = 0; x < BOARD_W; x++ {board[pieces_boardIndex(x, 0)] = 0;}
             y += 1;
         }
     }
@@ -120,7 +120,7 @@ fun boardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
     if x < 0 || x >= BOARD_W {return true;}
     if y >= BOARD_H {return true;}
     if y < 0 {return false;}
-    return board[boardIndex(x, y)] != 0;
+    return board[pieces_boardIndex(x, y)] != 0;
 }
 
 fun isTSpinPlacement(board_after_place: ptr<i32>, kind: i32, x: i32, y: i32) >> bool {
@@ -135,22 +135,22 @@ fun isTSpinPlacement(board_after_place: ptr<i32>, kind: i32, x: i32, y: i32) >> 
     return corners >= 3;
 }
 
-fun absi(v: i32) >> i32 {
+fun pieces_absi(v: i32) >> i32 {
     if v < 0 {return -v;}
     return v;
 }
 
-fun minI(a: i32, b: i32) >> i32 {
+fun pieces_minI(a: i32, b: i32) >> i32 {
     if a < b {return a;}
     return b;
 }
 
-fun maxI(a: i32, b: i32) >> i32 {
+fun pieces_maxI(a: i32, b: i32) >> i32 {
     if a > b {return a;}
     return b;
 }
 
-fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
+fun pieces_jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
     if test == 0 {return 0;}
 
     if from == 0 && to == 1 {
@@ -205,7 +205,7 @@ fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
+fun pieces_jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
     if test == 0 {return 0;}
 
     if from == 0 && to == 1 {
@@ -260,7 +260,7 @@ fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun iKickX(from: i32, to: i32, test: i32) >> i32 {
+fun pieces_iKickX(from: i32, to: i32, test: i32) >> i32 {
     if test == 0 {return 0;}
 
     if from == 0 && to == 1 {
@@ -315,7 +315,7 @@ fun iKickX(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun iKickY(from: i32, to: i32, test: i32) >> i32 {
+fun pieces_iKickY(from: i32, to: i32, test: i32) >> i32 {
     if test == 0 {return 0;}
 
     if from == 0 && to == 1 {
@@ -370,14 +370,14 @@ fun iKickY(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+fun pieces_kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
     if kind == PIECE_O {return 0;}
-    if kind == PIECE_I {return iKickX(from, to, test);}
-    return jlstzKickX(from, to, test);
+    if kind == PIECE_I {return pieces_iKickX(from, to, test);}
+    return pieces_jlstzKickX(from, to, test);
 }
 
-fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+fun pieces_kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
     if kind == PIECE_O {return 0;}
-    if kind == PIECE_I {return iKickY(from, to, test);}
-    return jlstzKickY(from, to, test);
+    if kind == PIECE_I {return pieces_iKickY(from, to, test);}
+    return pieces_jlstzKickY(from, to, test);
 }

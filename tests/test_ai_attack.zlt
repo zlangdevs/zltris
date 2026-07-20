@@ -40,10 +40,10 @@ fun testTSpinDetection() >> void {
 
     checkFalse("non-T piece is never a t-spin", isTSpinPlacement(b, 1, 4, 18));
 
-    board[boardIndex(4, 18)] = 1;
-    board[boardIndex(6, 18)] = 1;
+    board[pieces_boardIndex(4, 18)] = 1;
+    board[pieces_boardIndex(6, 18)] = 1;
     checkFalse("two corners is not a t-spin", isTSpinPlacement(b, 2, 4, 18));
 
-    board[boardIndex(4, 20)] = 1;
+    board[pieces_boardIndex(4, 20)] = 1;
     checkTrue("three corners is a t-spin", isTSpinPlacement(b, 2, 4, 18));
 }

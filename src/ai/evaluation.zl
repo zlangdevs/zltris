@@ -198,7 +198,7 @@ fun boardHoleStats(board: ptr<i32>, out_holes: ptr<i32>, out_hole_depth: ptr<i32
     for i32 x = 0; x < BOARD_W; x++ {
         i32 top = -1;
         for i32 y = 0; y < BOARD_H; y++ {
-            if board[boardIndex(x, y)] != 0 {
+            if board[pieces_boardIndex(x, y)] != 0 {
                 top = y;
                 break;
             }
@@ -209,7 +209,7 @@ fun boardHoleStats(board: ptr<i32>, out_holes: ptr<i32>, out_hole_depth: ptr<i32
         i32 h = BOARD_H - top;
         if h > out_max_h[0] {out_max_h[0] = h;}
         for i32 y = top + 1; y < BOARD_H; y++ {
-            if board[boardIndex(x, y)] != 0 {continue;}
+            if board[pieces_boardIndex(x, y)] != 0 {continue;}
             out_holes[0] += 1;
             out_hole_depth[0] += BOARD_H - y;
         }
@@ -226,7 +226,7 @@ fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, 
     for i32 y = 0; y < BOARD_H; y++ {
         bool has_garbage = false;
         for i32 x = 0; x < BOARD_W; x++ {
-            i32 cell = board[boardIndex(x, y)];
+            i32 cell = board[pieces_boardIndex(x, y)];
             if cell == 8 {has_garbage = true;}
         }
 
@@ -237,12 +237,12 @@ fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, 
         i32 row_best_access = 999999;
         i32 row_best_cover = 0;
         for i32 hole_x = 0; hole_x < BOARD_W; hole_x++ {
-            if board[boardIndex(hole_x, y)] != 0 {continue;}
+            if board[pieces_boardIndex(hole_x, y)] != 0 {continue;}
 
             i32 cover = 0;
             i32 access = 0;
             for i32 py = 0; py < y; py++ {
-                if board[boardIndex(hole_x, py)] != 0 {
+                if board[pieces_boardIndex(hole_x, py)] != 0 {
                     cover += 1;
                     access += 4;
                 }
@@ -250,7 +250,7 @@ fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, 
 
             if hole_x > 0 {
                 for i32 py = 0; py <= y; py++ {
-                    if board[boardIndex(hole_x - 1, py)] != 0 {access += 1;}
+                    if board[pieces_boardIndex(hole_x - 1, py)] != 0 {access += 1;}
                 }
             } else {
                 access += 6;
@@ -258,7 +258,7 @@ fun boardGarbageStats(board: ptr<i32>, out_rows: ptr<i32>, out_cover: ptr<i32>, 
 
             if hole_x + 1 < BOARD_W {
                 for i32 py = 0; py <= y; py++ {
-                    if board[boardIndex(hole_x + 1, py)] != 0 {access += 1;}
+                    if board[pieces_boardIndex(hole_x + 1, py)] != 0 {access += 1;}
                 }
             } else {
                 access += 6;
@@ -284,7 +284,7 @@ fun boardTSpinSlotCount(board: ptr<i32>) >> i32 {
     i32 slots = 0;
     for i32 cy = 1; cy < BOARD_H - 1; cy++ {
         for i32 cx = 1; cx < BOARD_W - 1; cx++ {
-            if board[boardIndex(cx, cy)] != 0 {continue;}
+            if board[pieces_boardIndex(cx, cy)] != 0 {continue;}
 
             i32 corners = 0;
             if boardCellBlocked(board, cx - 1, cy - 1) {corners += 1;}
@@ -322,7 +322,7 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
     for i32 x = 0; x < BOARD_W; x++ {
         i32 top = -1;
         for i32 y = 0; y < BOARD_H; y++ {
-            if board[boardIndex(x, y)] != 0 {
+            if board[pieces_boardIndex(x, y)] != 0 {
                 top = y;
                 break;
             }
@@ -332,7 +332,7 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
         if top >= 0 {
             h = BOARD_H - top;
             for i32 y = top + 1; y < BOARD_H; y++ {
-                if board[boardIndex(x, y)] == 0 {
+                if board[pieces_boardIndex(x, y)] == 0 {
                     holes += 1;
                     hole_depth += BOARD_H - y;
                 }
@@ -345,7 +345,7 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
 
     i32 bump = 0;
     for i32 x = 0; x < BOARD_W - 1; x++ {
-        bump += absi(heights[x] - heights[x + 1]);
+        bump += pieces_absi(heights[x] - heights[x + 1]);
     }
 
     i32 preferred_well_x = BOARD_W - 1;
@@ -357,7 +357,7 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
         if x > 0 {left_h = heights[x - 1];}
         if x + 1 < BOARD_W {right_h = heights[x + 1];}
 
-        i32 wall = minI(left_h, right_h);
+        i32 wall = pieces_minI(left_h, right_h);
         i32 depth = wall - heights[x];
         if depth < 0 {depth = 0;}
 
@@ -375,11 +375,11 @@ fun evaluateBoardStructural(board: ptr<i32>) >> i32 {
     i32 near_full_well = 0;
     if garbage_rows == 0 {
         for i32 y = 0; y < BOARD_H; y++ {
-            if board[boardIndex(preferred_well_x, y)] != 0 {continue;}
+            if board[pieces_boardIndex(preferred_well_x, y)] != 0 {continue;}
             i32 filled = 0;
             for i32 x = 0; x < BOARD_W; x++ {
                 if x == preferred_well_x {continue;}
-                if board[boardIndex(x, y)] != 0 {filled += 1;}
+                if board[pieces_boardIndex(x, y)] != 0 {filled += 1;}
             }
             if filled >= BOARD_W - 1 {near_full_well += 1;}
         }
@@ -468,7 +468,7 @@ fun simulateMove(board: ptr<i32>, kind: i32, rotation: i32, x: i32, spawn_y: i32
     for i32 i = 0; i < 4; i++ {
         i32 mx = x + aiMinoX(kind, rotation, i);
         i32 my = y + aiMinoY(kind, rotation, i);
-        if my >= 0 {out_board[boardIndex(mx, my)] = kind + 1;}
+        if my >= 0 {out_board[pieces_boardIndex(mx, my)] = kind + 1;}
     }
     if kind == PIECE_T && last_rotate_success && isTSpinPlacement(out_board, kind, x, y) {out_tspin[0] = 1;} else {out_tspin[0] = 0;}
     out_lines[0] = clearLinesLocal(out_board);
@@ -724,7 +724,7 @@ fun findBestMove(board: ptr<i32>, kind: i32, spawn_y: i32, queue: ptr<i32>, queu
             score = evaluateExactLockedState(board, &temp[0], before_score, cur_garbage_rows, cur_garbage_cover, cur_garbage_access, cur_holes, cur_hole_depth, cur_max_h, lines, tspin != 0, all_clear != 0, queue, queue_count, spawn_y, combo, b2b, level, mode, pending_garbage);
 
             i32 rot_steps = rotationStepDistance(0, rot);
-            i32 move_cost = absi(x - 3) + rot_steps * aiTune(AI_TUNE_MOVE_BASE + 0);
+            i32 move_cost = pieces_absi(x - 3) + rot_steps * aiTune(AI_TUNE_MOVE_BASE + 0);
             if apm_cost_weight > 0 {score -= move_cost * apm_cost_weight;}
             if move_budget > 0 && move_cost > move_budget {
                 i32 over = move_cost - move_budget;

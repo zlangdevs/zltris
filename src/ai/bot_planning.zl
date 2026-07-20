@@ -71,7 +71,7 @@ fun botAppendSearchState(count: ptr<i32>, visited: ptr<i32>, xs: ptr<i32>, ys: p
     visited[slot] = idx + 1;
     xs[idx] = x;
     ys[idx] = y;
-    rots[idx] = normalizeRotation(rot);
+    rots[idx] = pieces_normalizeRotation(rot);
     if rotate_flag != 0 {rotate_flags[idx] = 1;} else {rotate_flags[idx] = 0;}
     parents[idx] = parent_idx;
     actions[idx] = action;
@@ -548,7 +548,7 @@ fun botPlanMove() >> bool {
     if mode == BOT_MODE_CLEAN {
         if lookahead_count > 6 {lookahead_count = 6;}
         if lookahead_count < 2 {lookahead_count = 2;}
-        if max_h >= 14 {lookahead_count = minI(lookahead_count, 4);}
+        if max_h >= 14 {lookahead_count = pieces_minI(lookahead_count, 4);}
     } else if mode == BOT_MODE_DIG {
         if lookahead_count > 4 {lookahead_count = 4;}
         if lookahead_count < 2 {lookahead_count = 2;}
@@ -566,9 +566,9 @@ fun botPlanMove() >> bool {
 }
 
 fun botRotationDelta(target: i32) >> i32 {
-    i32 current = normalizeRotation(g_bot.piece_rotation);
-    i32 want = normalizeRotation(target);
-    i32 diff = normalizeRotation(want - current);
+    i32 current = pieces_normalizeRotation(g_bot.piece_rotation);
+    i32 want = pieces_normalizeRotation(target);
+    i32 diff = pieces_normalizeRotation(want - current);
     if diff == 0 {return 0;}
     if diff == 3 {return -1;}
     return 1;

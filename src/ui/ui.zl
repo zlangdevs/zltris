@@ -435,13 +435,13 @@ fun fractf(v: f32) >> f32 {
     return f;
 }
 
-fun visibleBaseLeft() >> i64 {
+fun ui_visibleBaseLeft() >> i64 {
     f32 scale = uiScale();
     i32 ox = uiOffsetX(scale);
     return (((0 - ox) as f32) / scale) as i64;
 }
 
-fun visibleBaseRight() >> i64 {
+fun ui_visibleBaseRight() >> i64 {
     f32 scale = uiScale();
     i32 ox = uiOffsetX(scale);
     return (((GetScreenWidth() - ox) as f32) / scale) as i64;

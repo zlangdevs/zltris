@@ -24,7 +24,7 @@ fun aiBotTempPieceFits(board: ptr<i32>, kind: i32, rotation: i32, x: i32, y: i32
         i32 mx = x + aiMinoX(kind, rotation, i);
         i32 my = y + aiMinoY(kind, rotation, i);
         if mx < 0 || mx >= BOARD_W || my >= BOARD_H {return false;}
-        if my >= 0 && board[boardIndex(mx, my)] != 0 {return false;}
+        if my >= 0 && board[pieces_boardIndex(mx, my)] != 0 {return false;}
     }
     return true;
 }
@@ -40,7 +40,7 @@ fun aiBotTempBoardCellBlocked(board: ptr<i32>, x: i32, y: i32) >> bool {
     if x < 0 || x >= BOARD_W {return true;}
     if y >= BOARD_H {return true;}
     if y < 0 {return false;}
-    return board[boardIndex(x, y)] != 0;
+    return board[pieces_boardIndex(x, y)] != 0;
 }
 
 fun aiBotTempIsTSpin(board: ptr<i32>, kind: i32, x: i32, y: i32, last_rotate_success: bool) >> bool {
@@ -61,14 +61,14 @@ fun aiClearLinesTemp(board: ptr<i32>) >> i32 {
     for i32 y = BOARD_H - 1; y >= 0; y-- {
         bool full = true;
         for i32 x = 0; x < BOARD_W; x++ {
-            if board[boardIndex(x, y)] == 0 {full = false;}
+            if board[pieces_boardIndex(x, y)] == 0 {full = false;}
         }
         if full {
             cleared += 1;
             for i32 pull = y; pull > 0; pull-- {
-                for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, pull)] = board[boardIndex(x, pull - 1)];}
+                for i32 x = 0; x < BOARD_W; x++ {board[pieces_boardIndex(x, pull)] = board[pieces_boardIndex(x, pull - 1)];}
             }
-            for i32 x = 0; x < BOARD_W; x++ {board[boardIndex(x, 0)] = 0;}
+            for i32 x = 0; x < BOARD_W; x++ {board[pieces_boardIndex(x, 0)] = 0;}
             y += 1;
         }
     }
@@ -85,8 +85,8 @@ fun aiBoardIsEmptyTemp(board: ptr<i32>) >> bool {
 fun aiBotApplyRotateState(board: ptr<i32>, kind: i32, x: i32, y: i32, rotation: i32, dir: i32, out_x: ptr<i32>, out_y: ptr<i32>, out_rotation: ptr<i32>, out_kick_test: ptr<i32>) >> bool {
     if kind == PIECE_O {return false;}
 
-    i32 from = normalizeRotation(rotation);
-    i32 to = normalizeRotation(rotation + dir);
+    i32 from = pieces_normalizeRotation(rotation);
+    i32 to = pieces_normalizeRotation(rotation + dir);
     if aiBotTempPieceFits(board, kind, to, x, y) {
         out_x[0] = x;
         out_y[0] = y;
@@ -96,8 +96,8 @@ fun aiBotApplyRotateState(board: ptr<i32>, kind: i32, x: i32, y: i32, rotation: 
     }
 
     for i32 test = 0; test < 5; test++ {
-        i32 dx = kickX(kind, from, to, test);
-        i32 dy = kickY(kind, from, to, test);
+        i32 dx = pieces_kickX(kind, from, to, test);
+        i32 dy = pieces_kickY(kind, from, to, test);
         i32 next_x = x + dx;
         i32 next_y = y - dy;
         if aiBotTempPieceFits(board, kind, to, next_x, next_y) {
@@ -119,7 +119,7 @@ fun aiBotStateTableIndex(x: i32, y: i32, rot: i32, rotate_flag: i32) >> i32 {
     if yi < 0 || yi >= BOT_STATE_Y_COUNT {return -1;}
     i32 flag = 0;
     if rotate_flag != 0 {flag = 1;}
-    return ((((yi * BOT_STATE_X_COUNT) + xi) * 4) + normalizeRotation(rot)) * 2 + flag;
+    return ((((yi * BOT_STATE_X_COUNT) + xi) * 4) + pieces_normalizeRotation(rot)) * 2 + flag;
 }
 
 fun aiBotSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: i32, last_rotate: bool, out_board: ptr<i32>, out_final_y: ptr<i32>, out_lines: ptr<i32>, out_spin: ptr<i32>, out_all_clear: ptr<i32>) >> bool {
@@ -131,7 +131,7 @@ fun aiBotSimulateDropPlacement(board: ptr<i32>, kind: i32, x: i32, y: i32, rot: 
     for i32 mi = 0; mi < 4; mi++ {
         i32 px = x + aiMinoX(kind, rot, mi);
         i32 py = final_y + aiMinoY(kind, rot, mi);
-        if py >= 0 {temp_board[boardIndex(px, py)] = kind + 1;}
+        if py >= 0 {temp_board[pieces_boardIndex(px, py)] = kind + 1;}
     }
 
     bool spin = aiBotTempIsTSpin(&temp_board[0], kind, x, final_y, last_rotate);
@@ -259,7 +259,7 @@ fun aiBotProjectDirtyNext(board: ptr<i32>, next_kind: i32, spawn_y: i32, out_row
                 g_ai_dirty_visited[slot] = idx + 1;
                 g_ai_dirty_xs[idx] = rx;
                 g_ai_dirty_ys[idx] = ry;
-                g_ai_dirty_rots[idx] = normalizeRotation(rrot);
+                g_ai_dirty_rots[idx] = pieces_normalizeRotation(rrot);
                 g_ai_dirty_rotate_flags[idx] = 1;
                 g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
                 count += 1;
@@ -273,7 +273,7 @@ fun aiBotProjectDirtyNext(board: ptr<i32>, next_kind: i32, spawn_y: i32, out_row
                 g_ai_dirty_visited[slot] = idx + 1;
                 g_ai_dirty_xs[idx] = rx;
                 g_ai_dirty_ys[idx] = ry;
-                g_ai_dirty_rots[idx] = normalizeRotation(rrot);
+                g_ai_dirty_rots[idx] = pieces_normalizeRotation(rrot);
                 g_ai_dirty_rotate_flags[idx] = 1;
                 g_ai_dirty_depths[idx] = g_ai_dirty_depths[head] + 1;
                 count += 1;

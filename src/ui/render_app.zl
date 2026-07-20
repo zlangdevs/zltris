@@ -629,25 +629,25 @@ fun onlineTiledColumns(count: i32) >> i32 {
     return 4;
 }
 
-fun visibleBaseLeft() >> i64 {
+fun render_visibleBaseLeft() >> i64 {
     f32 scale = uiScale();
     if scale <= 0.0001 {return 0;}
     return ((0 - uiOffsetX(scale)) as f32 / scale) as i64;
 }
 
-fun visibleBaseRight() >> i64 {
+fun render_visibleBaseRight() >> i64 {
     f32 scale = uiScale();
     if scale <= 0.0001 {return scaleBaseWidth() as i64;}
     return (((GetScreenWidth() - uiOffsetX(scale)) as f32) / scale) as i64;
 }
 
-fun visibleBaseTop() >> i64 {
+fun render_visibleBaseTop() >> i64 {
     f32 scale = uiScale();
     if scale <= 0.0001 {return 0;}
     return ((0 - uiOffsetY(scale)) as f32 / scale) as i64;
 }
 
-fun visibleBaseBottom() >> i64 {
+fun render_visibleBaseBottom() >> i64 {
     f32 scale = uiScale();
     if scale <= 0.0001 {return scaleBaseHeight() as i64;}
     return (((GetScreenHeight() - uiOffsetY(scale)) as f32) / scale) as i64;
@@ -756,10 +756,10 @@ fun drawOnlineTiledBoards(font: Font, theme: Theme) >> void {
     i64 gap = 22;
     i64 margin_x = 18;
     i64 margin_y = 30;
-    i64 visible_l = visibleBaseLeft();
-    i64 visible_r = visibleBaseRight();
-    i64 visible_t = visibleBaseTop();
-    i64 visible_b = visibleBaseBottom();
+    i64 visible_l = render_visibleBaseLeft();
+    i64 visible_r = render_visibleBaseRight();
+    i64 visible_t = render_visibleBaseTop();
+    i64 visible_b = render_visibleBaseBottom();
     i64 region_x = visible_l + margin_x;
     i64 region_w = visible_r - visible_l - margin_x * 2;
     bool align_with_local = false;
@@ -825,8 +825,8 @@ fun drawOnlineRoundResultOverlay(font: Font, theme: Theme) >> void {
 
     i64 box_w = 330;
     i64 box_h = 138;
-    i64 box_x = visibleBaseLeft() + (visibleBaseRight() - visibleBaseLeft() - box_w) / 2;
-    i64 box_y = visibleBaseTop() + (visibleBaseBottom() - visibleBaseTop() - box_h) / 2;
+    i64 box_x = render_visibleBaseLeft() + (render_visibleBaseRight() - render_visibleBaseLeft() - box_w) / 2;
+    i64 box_y = render_visibleBaseTop() + (render_visibleBaseBottom() - render_visibleBaseTop() - box_h) / 2;
     fillRect(box_x, box_y, box_w, box_h, alphaColor(theme.overlay_bg, 0.90));
     strokeRect(box_x, box_y, box_w, box_h, alphaColor(theme.panel_stroke, 0.92));
 

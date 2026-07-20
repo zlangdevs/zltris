@@ -2,37 +2,37 @@ module zltris.test;
 use zltris.ai
 
 fun testKickDispatch() >> void {
-    checkEqI("O never kicks x", kickX(1, 0, 1, 2), 0);
-    checkEqI("O never kicks y", kickY(1, 0, 1, 2), 0);
-    checkEqI("test 0 is no-op x", kickX(2, 0, 1, 0), 0);
-    checkEqI("test 0 is no-op y", kickY(2, 0, 1, 0), 0);
-    checkEqI("I test 0 is no-op x", kickX(0, 0, 1, 0), 0);
-    checkEqI("I test 0 is no-op y", kickY(0, 0, 1, 0), 0);
+    checkEqI("O never kicks x", pieces_kickX(1, 0, 1, 2), 0);
+    checkEqI("O never kicks y", pieces_kickY(1, 0, 1, 2), 0);
+    checkEqI("test 0 is no-op x", pieces_kickX(2, 0, 1, 0), 0);
+    checkEqI("test 0 is no-op y", pieces_kickY(2, 0, 1, 0), 0);
+    checkEqI("I test 0 is no-op x", pieces_kickX(0, 0, 1, 0), 0);
+    checkEqI("I test 0 is no-op y", pieces_kickY(0, 0, 1, 0), 0);
 }
 
 fun testJlstzKicks() >> void {
-    checkEqI("jlstz 0->1 x t1", kickX(2, 0, 1, 1), -1);
-    checkEqI("jlstz 0->1 x t2", kickX(2, 0, 1, 2), -1);
-    checkEqI("jlstz 0->1 x t3", kickX(2, 0, 1, 3), 0);
-    checkEqI("jlstz 0->1 x t4", kickX(2, 0, 1, 4), -1);
-    checkEqI("jlstz 0->1 y t1", kickY(2, 0, 1, 1), 0);
-    checkEqI("jlstz 0->1 y t2", kickY(2, 0, 1, 2), 1);
-    checkEqI("jlstz 0->1 y t3", kickY(2, 0, 1, 3), -2);
-    checkEqI("jlstz 0->1 y t4", kickY(2, 0, 1, 4), -2);
+    checkEqI("jlstz 0->1 x t1", pieces_kickX(2, 0, 1, 1), -1);
+    checkEqI("jlstz 0->1 x t2", pieces_kickX(2, 0, 1, 2), -1);
+    checkEqI("jlstz 0->1 x t3", pieces_kickX(2, 0, 1, 3), 0);
+    checkEqI("jlstz 0->1 x t4", pieces_kickX(2, 0, 1, 4), -1);
+    checkEqI("jlstz 0->1 y t1", pieces_kickY(2, 0, 1, 1), 0);
+    checkEqI("jlstz 0->1 y t2", pieces_kickY(2, 0, 1, 2), 1);
+    checkEqI("jlstz 0->1 y t3", pieces_kickY(2, 0, 1, 3), -2);
+    checkEqI("jlstz 0->1 y t4", pieces_kickY(2, 0, 1, 4), -2);
 
-    checkEqI("jlstz 1->0 x t1", kickX(2, 1, 0, 1), 1);
-    checkEqI("jlstz 1->0 y t4", kickY(2, 1, 0, 4), 2);
+    checkEqI("jlstz 1->0 x t1", pieces_kickX(2, 1, 0, 1), 1);
+    checkEqI("jlstz 1->0 y t4", pieces_kickY(2, 1, 0, 4), 2);
 }
 
 fun testIKicks() >> void {
-    checkEqI("I 0->1 x t1", kickX(0, 0, 1, 1), -2);
-    checkEqI("I 0->1 x t2", kickX(0, 0, 1, 2), 1);
-    checkEqI("I 0->1 x t3", kickX(0, 0, 1, 3), -2);
-    checkEqI("I 0->1 x t4", kickX(0, 0, 1, 4), 1);
-    checkEqI("I 0->1 y t3", kickY(0, 0, 1, 3), -1);
-    checkEqI("I 0->1 y t4", kickY(0, 0, 1, 4), 2);
+    checkEqI("I 0->1 x t1", pieces_kickX(0, 0, 1, 1), -2);
+    checkEqI("I 0->1 x t2", pieces_kickX(0, 0, 1, 2), 1);
+    checkEqI("I 0->1 x t3", pieces_kickX(0, 0, 1, 3), -2);
+    checkEqI("I 0->1 x t4", pieces_kickX(0, 0, 1, 4), 1);
+    checkEqI("I 0->1 y t3", pieces_kickY(0, 0, 1, 3), -1);
+    checkEqI("I 0->1 y t4", pieces_kickY(0, 0, 1, 4), 2);
 
-    checkEqI("I 1->2 x t2", kickX(0, 1, 2, 2), 2);
-    checkEqI("I 1->2 y t3", kickY(0, 1, 2, 3), 2);
-    checkEqI("I 1->2 y t4", kickY(0, 1, 2, 4), -1);
+    checkEqI("I 1->2 x t2", pieces_kickX(0, 1, 2, 2), 2);
+    checkEqI("I 1->2 y t3", pieces_kickY(0, 1, 2, 3), 2);
+    checkEqI("I 1->2 y t4", pieces_kickY(0, 1, 2, 4), -1);
 }

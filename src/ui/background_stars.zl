@@ -52,17 +52,17 @@ fun initBackgroundStars() >> void {
 
 fun initAiLogFile() >> void {
     if !LOGMODE {return;}
-    i32 fd = openForWrite(AI_LOG_FILE_PATH);
+    i32 fd = open_for_write(AI_LOG_FILE_PATH);
     if fd < 0 {return;}
-    writeLineFd(fd, "[zltris] ai log start");
+    write_line_fd(fd, "[zltris] ai log start");
     close(fd);
 }
 
 fun aiLog(text: ptr<u8>) >> void {
     if !LOGMODE {return;}
-    i32 fd = openForAppend(AI_LOG_FILE_PATH);
+    i32 fd = open_for_append(AI_LOG_FILE_PATH);
     if fd < 0 {return;}
-    writeLineFd(fd, text);
+    write_line_fd(fd, text);
     close(fd);
 }
 
@@ -222,8 +222,8 @@ fun drawBackgroundStars(theme: Theme) >> void {
     bool rhythm_indicator_only = isRhythmMode();
     f32 rhythm_flash = rhythmIndicatorLevel();
     i64 span_y = UI_BASE_H + 160;
-    i64 left = visibleBaseLeft();
-    i64 right = visibleBaseRight();
+    i64 left = render_visibleBaseLeft();
+    i64 right = render_visibleBaseRight();
     i64 span_x = right - left;
     if span_x < 1 {span_x = 1;}
 
@@ -413,8 +413,8 @@ fun drawBackgroundMusicBars(theme: Theme) >> void {
     i32 source_count = starMusicBarCount();
     if source_count < 1 {source_count = 1;}
 
-    i64 left = visibleBaseLeft();
-    i64 right = visibleBaseRight();
+    i64 left = render_visibleBaseLeft();
+    i64 right = render_visibleBaseRight();
     i64 span_x = right - left;
     if span_x < count {span_x = count;}
 

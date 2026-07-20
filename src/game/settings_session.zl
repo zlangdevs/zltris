@@ -128,7 +128,7 @@ fun bindSettingsUpdateParams() >> SettingsUpdateParams {
 }
 
 fun customShaderChanged(self: SettingsSnapshot) >> bool {
-    return !strEq(&self.custom_shader_name[0], &g_custom_shader_name[0]);
+    return !str_eq(&self.custom_shader_name[0], &g_custom_shader_name[0]);
 }
 
 fun changed(self: SettingsSnapshot) >> bool {

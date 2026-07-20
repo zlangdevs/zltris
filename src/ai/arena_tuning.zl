@@ -190,8 +190,8 @@ fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> 
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
         i32 value = base[i];
         i32 step = aiTuningMutationStep(i);
-        if generation >= 24 && step > 1 {step = maxI(1, (step * 3) / 4);}
-        if generation >= 64 && step > 1 {step = maxI(1, (step * 2) / 3);}
+        if generation >= 24 && step > 1 {step = pieces_maxI(1, (step * 3) / 4);}
+        if generation >= 64 && step > 1 {step = pieces_maxI(1, (step * 2) / 3);}
 
         if GetRandomValue(0, 99) < 78 {
             value += GetRandomValue(0 - step, step);
@@ -216,27 +216,27 @@ fun mutateArenaTuning(base: ptr<i32>, generation: i32, out_values: ptr<i32>) >> 
 
 fun saveBotDuelsFile() >> void {
     if !BOTDEVMODE {return;}
-    i32 fd = openForWrite(BOT_DUELS_FILE_PATH);
+    i32 fd = open_for_write(BOT_DUELS_FILE_PATH);
     if fd < 0 {return;}
 
-    writeLineFd(fd, TextFormat("champion_generation=%i", g_bot_arena.champion_generation));
-    writeLineFd(fd, TextFormat("history_size=%i", g_bot_arena.history_size));
-    writeLineFd(fd, TextFormat("champion_wins=%i", g_bot_arena.champion_wins));
-    writeLineFd(fd, TextFormat("total_matches=%i", g_bot_arena.total_matches));
-    writeLineFd(fd, TextFormat("target_apm=%.2f", g_bot_arena.champion_setup.target_apm));
-    writeLineFd(fd, TextFormat("garbage_messiness=%.2f", g_bot_arena.champion_setup.garbage_messiness));
+    write_line_fd(fd, TextFormat("champion_generation=%i", g_bot_arena.champion_generation));
+    write_line_fd(fd, TextFormat("history_size=%i", g_bot_arena.history_size));
+    write_line_fd(fd, TextFormat("champion_wins=%i", g_bot_arena.champion_wins));
+    write_line_fd(fd, TextFormat("total_matches=%i", g_bot_arena.total_matches));
+    write_line_fd(fd, TextFormat("target_apm=%.2f", g_bot_arena.champion_setup.target_apm));
+    write_line_fd(fd, TextFormat("garbage_messiness=%.2f", g_bot_arena.champion_setup.garbage_messiness));
     i32 high_stack_flag = 0;
     if g_bot_arena.champion_setup.high_stack_tolerance {high_stack_flag = 1;}
-    writeLineFd(fd, TextFormat("high_stack_tolerance=%i", high_stack_flag));
+    write_line_fd(fd, TextFormat("high_stack_tolerance=%i", high_stack_flag));
     for i32 i = 0; i < AI_TUNE_COUNT; i++ {
-        writeLineFd(fd, TextFormat("t%i=%i", i, g_bot_arena_champion_tuning[i]));
+        write_line_fd(fd, TextFormat("t%i=%i", i, g_bot_arena_champion_tuning[i]));
     }
     i32 history_slots = arenaHistorySlotCount();
     for i32 slot = 0; slot < history_slots; slot++ {
-        writeLineFd(fd, TextFormat("h%i_generation=%i", slot, g_bot_arena_history_generations[slot]));
+        write_line_fd(fd, TextFormat("h%i_generation=%i", slot, g_bot_arena_history_generations[slot]));
         ptr<i32> hist = arenaHistoryTuningPtr(slot);
         for i32 i = 0; i < AI_TUNE_COUNT; i++ {
-            writeLineFd(fd, TextFormat("h%i_t%i=%i", slot, i, hist[i]));
+            write_line_fd(fd, TextFormat("h%i_t%i=%i", slot, i, hist[i]));
         }
     }
 
@@ -275,14 +275,14 @@ fun loadBotDuelsFile() >> void {
         return;
     }
 
-    i32 fd = openForRead(BOT_DUELS_FILE_PATH);
+    i32 fd = open_for_read(BOT_DUELS_FILE_PATH);
     if fd < 0 {
         g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
         return;
     }
 
     arr<u8, 4096> data = {0};
-    i32 bytes_read = readAll(fd, &data[0], 4095) as i32;
+    i32 bytes_read = read_all(fd, &data[0], 4095) as i32;
     close(fd);
     if bytes_read <= 0 {
         g_bot_arena.champion_setup = clampArenaSetup(g_bot_arena.champion_setup);
@@ -319,26 +319,26 @@ fun loadBotDuelsFile() >> void {
                 ptr<u8> value = trimLeftSpaces(eq + 1);
                 trimRightSpacesInPlace(value);
 
-                if (strEq(key, "champion_generation")) {
+                if (str_eq(key, "champion_generation")) {
                     g_bot_arena.champion_generation = atoi(value);
-                } else if (strEq(key, "history_size")) {
+                } else if (str_eq(key, "history_size")) {
                     g_bot_arena.history_size = atoi(value);
-                } else if (strEq(key, "champion_wins")) {
+                } else if (str_eq(key, "champion_wins")) {
                     g_bot_arena.champion_wins = atoi(value);
-                } else if (strEq(key, "total_matches")) {
+                } else if (str_eq(key, "total_matches")) {
                     g_bot_arena.total_matches = atoi(value);
-                } else if (strEq(key, "target_apm")) {
+                } else if (str_eq(key, "target_apm")) {
                     g_bot_arena.champion_setup.target_apm = parseFloatValue(value, g_bot_arena.champion_setup.target_apm);
-                } else if (strEq(key, "garbage_messiness")) {
+                } else if (str_eq(key, "garbage_messiness")) {
                     g_bot_arena.champion_setup.garbage_messiness = parseFloatValue(value, g_bot_arena.champion_setup.garbage_messiness);
-                } else if (strEq(key, "high_stack_tolerance")) {
+                } else if (str_eq(key, "high_stack_tolerance")) {
                     g_bot_arena.champion_setup.high_stack_tolerance = parseBoolValue(value, g_bot_arena.champion_setup.high_stack_tolerance);
                 } else {
                     if key[0] == ('h' as u8) && key[1] >= ('0' as u8) && key[1] <= ('9' as u8) && key[2] == ('_' as u8) {
                         i32 slot = atoi(key + 1);
                         if slot >= 0 && slot < BOT_ARENA_HISTORY_STORAGE {
                             ptr<u8> hist_key = key + 3;
-                            if strEq(hist_key, "generation") {
+                            if str_eq(hist_key, "generation") {
                                 g_bot_arena_history_generations[slot] = atoi(value);
                             } else if hist_key[0] == ('t' as u8) {
                                 i32 tune_index = atoi(hist_key + 1);

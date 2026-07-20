@@ -97,7 +97,7 @@ fun pieceColor(theme: Theme, kind: i32) >> u32 {
     return color;
 }
 
-fun normalizeRotation(rotation: i32) >> i32 {
+fun board_normalizeRotation(rotation: i32) >> i32 {
     i32 res = rotation % 4;
     if res < 0 {res += 4;}
     return res;
@@ -130,7 +130,7 @@ fun minoTableKind(kind: i32) >> i32 {
 }
 
 fun minoTableIndex(kind: i32, rotation: i32, idx: i32) >> i32 {
-    return minoTableKind(kind) * 16 + normalizeRotation(rotation) * 4 + idx;
+    return minoTableKind(kind) * 16 + pieces_normalizeRotation(rotation) * 4 + idx;
 }
 
 fun boardWidth() >> i32 {
@@ -231,7 +231,7 @@ fun applyModeBoardSize(mode: i32) >> void {
     if g_board_height > BOARD_H_MAX {g_board_height = BOARD_H_MAX;}
 }
 
-fun boardIndex(x: i32, y: i32) >> i32 {
+fun board_boardIndex(x: i32, y: i32) >> i32 {
     return y * boardWidth() + x;
 }
 
@@ -240,11 +240,11 @@ fun botBoardIndex(x: i32, y: i32) >> i32 {
 }
 
 fun boardGet(x: i32, y: i32) >> i32 {
-    return g_board[boardIndex(x, y)];
+    return g_board[pieces_boardIndex(x, y)];
 }
 
 fun boardSet(x: i32, y: i32, value: i32) >> void {
-    g_board[boardIndex(x, y)] = value;
+    g_board[pieces_boardIndex(x, y)] = value;
 }
 
 fun minoX(kind: i32, rotation: i32, idx: i32) >> i32 {
@@ -255,7 +255,7 @@ fun minoY(kind: i32, rotation: i32, idx: i32) >> i32 {
     return g_mino_y_table[minoTableIndex(kind, rotation, idx)];
 }
 
-fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
+fun board_jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
         if test == 1 || test == 2 || test == 4 {return -1;}
         return 0;
@@ -288,7 +288,7 @@ fun jlstzKickX(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
+fun board_jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
         if test == 2 {return 1;}
         if test == 3 {return -2;}
@@ -337,7 +337,7 @@ fun jlstzKickY(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun iKickX(from: i32, to: i32, test: i32) >> i32 {
+fun board_iKickX(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
         if test == 1 || test == 3 {return -2;}
         if test == 2 || test == 4 {return 1;}
@@ -378,7 +378,7 @@ fun iKickX(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun iKickY(from: i32, to: i32, test: i32) >> i32 {
+fun board_iKickY(from: i32, to: i32, test: i32) >> i32 {
     if (from == 0 && to == 1) {
         if test == 3 {return -1;}
         if test == 4 {return 2;}
@@ -419,19 +419,19 @@ fun iKickY(from: i32, to: i32, test: i32) >> i32 {
     return 0;
 }
 
-fun kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
-    if kind == PIECE_I {return iKickX(from, to, test);}
+fun board_kickX(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_I {return pieces_iKickX(from, to, test);}
     if kind == PIECE_O {return 0;}
-    return jlstzKickX(from, to, test);
+    return pieces_jlstzKickX(from, to, test);
 }
 
-fun kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
-    if kind == PIECE_I {return iKickY(from, to, test);}
+fun board_kickY(kind: i32, from: i32, to: i32, test: i32) >> i32 {
+    if kind == PIECE_I {return pieces_iKickY(from, to, test);}
     if kind == PIECE_O {return 0;}
-    return jlstzKickY(from, to, test);
+    return pieces_jlstzKickY(from, to, test);
 }
 
-fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
+fun board_pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
     for i32 idx = 0; idx < 4; idx++ {
         i32 x = base_x + minoX(kind, rotation, idx);
         i32 y = base_y + minoY(kind, rotation, idx);
@@ -444,7 +444,7 @@ fun pieceFits(kind: i32, rotation: i32, base_x: i32, base_y: i32) >> bool {
 }
 
 fun currentFitsAt(x: i32, y: i32, rotation: i32) >> bool {
-    return pieceFits(g_piece_kind, rotation, x, y);
+    return board_pieceFits(g_piece_kind, rotation, x, y);
 }
 
 fun refillBag() >> void {
@@ -651,12 +651,12 @@ fun resetGame() >> void {
     spawnNextPiece();
 }
 
-fun minI(a: i32, b: i32) >> i32 {
+fun board_minI(a: i32, b: i32) >> i32 {
     if a < b {return a;}
     return b;
 }
 
-fun maxI(a: i32, b: i32) >> i32 {
+fun board_maxI(a: i32, b: i32) >> i32 {
     if a > b {return a;}
     return b;
 }
@@ -954,12 +954,12 @@ fun queueBotGarbage(amount: i32) >> void {
 
 fun cancelPlayerIncomingGarbage(attack: i32) >> i32 {
     i32 remaining = attack;
-    i32 cancel = minI(remaining, g_player_pending_garbage);
+    i32 cancel = pieces_minI(remaining, g_player_pending_garbage);
     g_player_pending_garbage -= cancel;
     remaining -= cancel;
     if remaining <= 0 {return 0;}
 
-    i32 delayed_cancel = minI(remaining, g_player_delayed_garbage);
+    i32 delayed_cancel = pieces_minI(remaining, g_player_delayed_garbage);
     g_player_delayed_garbage -= delayed_cancel;
     remaining -= delayed_cancel;
     if g_player_delayed_garbage <= 0 {
@@ -972,12 +972,12 @@ fun cancelPlayerIncomingGarbage(attack: i32) >> i32 {
 
 fun cancelBotIncomingGarbage(attack: i32) >> i32 {
     i32 remaining = attack;
-    i32 cancel = minI(remaining, g_bot_pending_garbage);
+    i32 cancel = pieces_minI(remaining, g_bot_pending_garbage);
     g_bot_pending_garbage -= cancel;
     remaining -= cancel;
     if remaining <= 0 {return 0;}
 
-    i32 delayed_cancel = minI(remaining, g_bot_delayed_garbage);
+    i32 delayed_cancel = pieces_minI(remaining, g_bot_delayed_garbage);
     g_bot_delayed_garbage -= delayed_cancel;
     remaining -= delayed_cancel;
     if g_bot_delayed_garbage <= 0 {
@@ -1114,8 +1114,8 @@ fun tryMove(dx: i32, dy: i32) >> bool {
 }
 
 fun tryRotate(dir: i32) >> bool {
-    i32 from = normalizeRotation(g_piece_rotation);
-    i32 to = normalizeRotation(g_piece_rotation + dir);
+    i32 from = pieces_normalizeRotation(g_piece_rotation);
+    i32 to = pieces_normalizeRotation(g_piece_rotation + dir);
 
     if (g_piece_kind == PIECE_O) {
         if (currentFitsAt(g_piece_x, g_piece_y, to)) {
@@ -1132,8 +1132,8 @@ fun tryRotate(dir: i32) >> bool {
     i32 max_tests = 5;
     if modeUsesCustomRules() && modeKickTable() == CHALLENGE_KICK_NONE {max_tests = 1;}
     for i32 test = 0; test < max_tests; test++ {
-        i32 dx = kickX(g_piece_kind, from, to, test);
-        i32 dy = kickY(g_piece_kind, from, to, test);
+        i32 dx = pieces_kickX(g_piece_kind, from, to, test);
+        i32 dy = pieces_kickY(g_piece_kind, from, to, test);
         if (currentFitsAt(g_piece_x + dx, g_piece_y - dy, to)) {
             g_piece_x += dx;
             g_piece_y -= dy;
@@ -1151,7 +1151,7 @@ fun tryRotate(dir: i32) >> bool {
 
 fun currentGhostY() >> i32 {
     i32 ghost_y = g_piece_y;
-    for (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, ghost_y + 1)) {
+    for (board_pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, ghost_y + 1)) {
         ghost_y += 1;
     }
     return ghost_y;
@@ -1180,8 +1180,8 @@ fun botTryRotate(dir: i32) >> bool {
         return true;
     }
 
-    i32 from = normalizeRotation(g_bot.piece_rotation);
-    i32 to = normalizeRotation(g_bot.piece_rotation + dir);
+    i32 from = pieces_normalizeRotation(g_bot.piece_rotation);
+    i32 to = pieces_normalizeRotation(g_bot.piece_rotation + dir);
     if (botPieceFits(g_bot.piece_kind, to, g_bot.piece_x, g_bot.piece_y)) {
         g_bot.piece_rotation = to;
         g_bot.last_rotate_success = true;
@@ -1189,8 +1189,8 @@ fun botTryRotate(dir: i32) >> bool {
     }
 
     for i32 test = 0; test < 5; test++ {
-        i32 dx = kickX(g_bot.piece_kind, from, to, test);
-        i32 dy = kickY(g_bot.piece_kind, from, to, test);
+        i32 dx = pieces_kickX(g_bot.piece_kind, from, to, test);
+        i32 dy = pieces_kickY(g_bot.piece_kind, from, to, test);
         if (botPieceFits(g_bot.piece_kind, to, g_bot.piece_x + dx, g_bot.piece_y - dy)) {
             g_bot.piece_x += dx;
             g_bot.piece_y -= dy;

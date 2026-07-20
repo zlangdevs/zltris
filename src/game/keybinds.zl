@@ -84,7 +84,7 @@ fun keybindConfigName(action: i32) >> ptr<u8> {
 
 fun keybindActionFromConfigName(name: ptr<u8>) >> i32 {
     for i32 a = 0; a < KB_COUNT; a++ {
-        if strEq(name, keybindConfigName(a)) {return a;}
+        if str_eq(name, keybindConfigName(a)) {return a;}
     }
     return -1;
 }

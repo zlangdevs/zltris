@@ -45,8 +45,8 @@ fun trimRightSpacesInPlace(s: ptr<u8>) >> void {
 fun parseBoolValue(s: ptr<u8>, fallback: bool) >> bool {
     ptr<u8> v = trimLeftSpaces(s);
     trimRightSpacesInPlace(v);
-    if strEq(v, "1") || strEq(v, "true") || strEq(v, "TRUE") || strEq(v, "on") || strEq(v, "ON") {return true;}
-    if strEq(v, "0") || strEq(v, "false") || strEq(v, "FALSE") || strEq(v, "off") || strEq(v, "OFF") {return false;}
+    if str_eq(v, "1") || str_eq(v, "true") || str_eq(v, "TRUE") || str_eq(v, "on") || str_eq(v, "ON") {return true;}
+    if str_eq(v, "0") || str_eq(v, "false") || str_eq(v, "FALSE") || str_eq(v, "off") || str_eq(v, "OFF") {return false;}
     return fallback;
 }
 
@@ -86,15 +86,6 @@ fun parseFloatValue(s: ptr<u8>, fallback: f32) >> f32 {
     f32 value = (int_part as f32) + (frac_part as f32) / (frac_div as f32);
     if sign < 0 {value = -value;}
     return value;
-}
-
-fun startsWith(s: ptr<u8>, prefix: ptr<u8>) >> bool {
-    i32 i = 0;
-    for (prefix[i] != 0) {
-        if s[i] != prefix[i] {return false;}
-        i += 1;
-    }
-    return true;
 }
 
 fun parseHexNibble(c: u8) >> i32 {
@@ -184,20 +175,20 @@ fun copyCustomShaderName(dst: ptr<u8>, src: ptr<u8>) >> void {
 }
 
 fun saveSettingsFile() >> void {
-    i32 fd = openForWrite(SETTINGS_FILE_PATH);
+    i32 fd = open_for_write(SETTINGS_FILE_PATH);
     if fd < 0 {return;}
 
-    writeLineFd(fd, TextFormat("theme=%i", g_game.theme_index));
-    writeLineFd(fd, TextFormat("shader_mode=%i", g_post_shader_mode));
-    writeLineFd(fd, TextFormat("custom_shader=%s", &g_custom_shader_name[0]));
-    writeLineFd(fd, TextFormat("crt_curvature=%.2f", g_crt_curvature));
-    writeLineFd(fd, TextFormat("crt_brightness=%.2f", g_crt_brightness));
-    writeLineFd(fd, TextFormat("vhs_waves=%.2f", g_vhs_waves));
-    writeLineFd(fd, TextFormat("vhs_damage=%.2f", g_vhs_damage));
-    writeLineFd(fd, TextFormat("arr=%.2f", g_arr_frames));
-    writeLineFd(fd, TextFormat("das=%.2f", g_das_frames));
-    writeLineFd(fd, TextFormat("dcd=%.2f", g_dcd_frames));
-    writeLineFd(fd, TextFormat("sdf=%.2f", g_sdf_multiplier));
+    write_line_fd(fd, TextFormat("theme=%i", g_game.theme_index));
+    write_line_fd(fd, TextFormat("shader_mode=%i", g_post_shader_mode));
+    write_line_fd(fd, TextFormat("custom_shader=%s", &g_custom_shader_name[0]));
+    write_line_fd(fd, TextFormat("crt_curvature=%.2f", g_crt_curvature));
+    write_line_fd(fd, TextFormat("crt_brightness=%.2f", g_crt_brightness));
+    write_line_fd(fd, TextFormat("vhs_waves=%.2f", g_vhs_waves));
+    write_line_fd(fd, TextFormat("vhs_damage=%.2f", g_vhs_damage));
+    write_line_fd(fd, TextFormat("arr=%.2f", g_arr_frames));
+    write_line_fd(fd, TextFormat("das=%.2f", g_das_frames));
+    write_line_fd(fd, TextFormat("dcd=%.2f", g_dcd_frames));
+    write_line_fd(fd, TextFormat("sdf=%.2f", g_sdf_multiplier));
     i32 double_row_flag = 0;
     if g_double_row_ui {double_row_flag = 1;}
     i32 instant_restart_flag = 0;
@@ -211,55 +202,55 @@ fun saveSettingsFile() >> void {
     i32 fullscreen_mode_flag = 0;
     if g_fullscreen_mode {fullscreen_mode_flag = 1;}
 
-    writeLineFd(fd, TextFormat("double_row_ui=%i", double_row_flag));
-    writeLineFd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
-    writeLineFd(fd, TextFormat("hard_drop_ring=%i", hard_drop_ring_flag));
-    writeLineFd(fd, TextFormat("high_contrast_blocks=%i", high_contrast_blocks_flag));
-    writeLineFd(fd, TextFormat("big_first_bag_preview=%i", big_first_bag_preview_flag));
-    writeLineFd(fd, TextFormat("fullscreen_mode=%i", fullscreen_mode_flag));
-    writeLineFd(fd, TextFormat("bg_stars_amount=%i", g_bg_stars_amount));
-    writeLineFd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
-    writeLineFd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
-    writeLineFd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
-    writeLineFd(fd, TextFormat("bg_visual_mode=%i", g_bg_visual_mode));
-    writeLineFd(fd, TextFormat("bg_bars_amount=%i", g_bg_bars_amount));
-    writeLineFd(fd, TextFormat("bg_bars_intensity=%.2f", g_bg_bars_intensity));
-    writeLineFd(fd, TextFormat("bg_bars_height_limit=%.2f", g_bg_bars_height_limit));
-    writeLineFd(fd, TextFormat("bg_bars_opacity=%.2f", g_bg_bars_opacity));
-    writeLineFd(fd, TextFormat("bg_bars_glow=%.2f", g_bg_bars_glow));
-    writeLineFd(fd, TextFormat("bg_bars_layout=%i", g_bg_bars_layout));
-    writeLineFd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
-    writeLineFd(fd, TextFormat("star_music_style=%i", g_star_music_style));
-    writeLineFd(fd, TextFormat("music_volume=%.2f", g_music_volume));
-    writeLineFd(fd, TextFormat("music_mode=%i", g_music_mode));
+    write_line_fd(fd, TextFormat("double_row_ui=%i", double_row_flag));
+    write_line_fd(fd, TextFormat("instant_restart=%i", instant_restart_flag));
+    write_line_fd(fd, TextFormat("hard_drop_ring=%i", hard_drop_ring_flag));
+    write_line_fd(fd, TextFormat("high_contrast_blocks=%i", high_contrast_blocks_flag));
+    write_line_fd(fd, TextFormat("big_first_bag_preview=%i", big_first_bag_preview_flag));
+    write_line_fd(fd, TextFormat("fullscreen_mode=%i", fullscreen_mode_flag));
+    write_line_fd(fd, TextFormat("bg_stars_amount=%i", g_bg_stars_amount));
+    write_line_fd(fd, TextFormat("bg_star_react_mode=%i", g_bg_star_react_mode));
+    write_line_fd(fd, TextFormat("star_peak_target_dps=%.2f", g_star_peak_target_dps));
+    write_line_fd(fd, TextFormat("star_intensity=%.2f", g_star_intensity));
+    write_line_fd(fd, TextFormat("bg_visual_mode=%i", g_bg_visual_mode));
+    write_line_fd(fd, TextFormat("bg_bars_amount=%i", g_bg_bars_amount));
+    write_line_fd(fd, TextFormat("bg_bars_intensity=%.2f", g_bg_bars_intensity));
+    write_line_fd(fd, TextFormat("bg_bars_height_limit=%.2f", g_bg_bars_height_limit));
+    write_line_fd(fd, TextFormat("bg_bars_opacity=%.2f", g_bg_bars_opacity));
+    write_line_fd(fd, TextFormat("bg_bars_glow=%.2f", g_bg_bars_glow));
+    write_line_fd(fd, TextFormat("bg_bars_layout=%i", g_bg_bars_layout));
+    write_line_fd(fd, TextFormat("star_music_intensity=%.2f", g_star_music_intensity));
+    write_line_fd(fd, TextFormat("star_music_style=%i", g_star_music_style));
+    write_line_fd(fd, TextFormat("music_volume=%.2f", g_music_volume));
+    write_line_fd(fd, TextFormat("music_mode=%i", g_music_mode));
     i32 music_shuffle_flag = 0;
     if g_music_shuffle {music_shuffle_flag = 1;}
-    writeLineFd(fd, TextFormat("music_shuffle=%i", music_shuffle_flag));
+    write_line_fd(fd, TextFormat("music_shuffle=%i", music_shuffle_flag));
     buildDisabledBufFromFlags();
-    writeLineFd(fd, TextFormat("music_disabled=%s", &g_music_disabled_buf[0]));
-    writeLineFd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
+    write_line_fd(fd, TextFormat("music_disabled=%s", &g_music_disabled_buf[0]));
+    write_line_fd(fd, TextFormat("board_bounciness=%i", g_board_bounciness));
     i32 controls_open = 0;
     if g_settings_controls_expanded {controls_open = 1;}
     i32 video_open = 0;
     if g_settings_video_expanded {video_open = 1;}
     i32 audio_open = 0;
     if g_settings_audio_expanded {audio_open = 1;}
-    writeLineFd(fd, TextFormat("settings_controls_open=%i", controls_open));
-    writeLineFd(fd, TextFormat("settings_video_open=%i", video_open));
-    writeLineFd(fd, TextFormat("settings_audio_open=%i", audio_open));
+    write_line_fd(fd, TextFormat("settings_controls_open=%i", controls_open));
+    write_line_fd(fd, TextFormat("settings_video_open=%i", video_open));
+    write_line_fd(fd, TextFormat("settings_audio_open=%i", audio_open));
 
     for i32 kb = 0; kb < KB_COUNT; kb++ {
-        writeLineFd(fd, TextFormat("keybind_%s=%i,%i", keybindConfigName(kb), g_keybind_primary[kb], g_keybind_secondary[kb]));
+        write_line_fd(fd, TextFormat("keybind_%s=%i,%i", keybindConfigName(kb), g_keybind_primary[kb], g_keybind_secondary[kb]));
     }
 
     i32 custom_count = customThemeCount();
-    writeLineFd(fd, TextFormat("custom_theme_selected=%i", customThemeSelected()));
-    writeLineFd(fd, TextFormat("custom_theme_count=%i", custom_count));
+    write_line_fd(fd, TextFormat("custom_theme_selected=%i", customThemeSelected()));
+    write_line_fd(fd, TextFormat("custom_theme_count=%i", custom_count));
     for i32 i = 0; i < custom_count; i++ {
-        writeLineFd(fd, TextFormat("custom_theme_%i_name=%s", i, customThemeName(i)));
-        writeLineFd(fd, TextFormat("custom_theme_%i_bg_angle=%.2f", i, customThemeGradientAngle(i)));
+        write_line_fd(fd, TextFormat("custom_theme_%i_name=%s", i, customThemeName(i)));
+        write_line_fd(fd, TextFormat("custom_theme_%i_bg_angle=%.2f", i, customThemeGradientAngle(i)));
         for i32 f = 0; f < customThemeFieldCount(); f++ {
-            writeLineFd(fd, TextFormat("custom_theme_%i_%s=0x%08X", i, customThemeFieldConfigKey(f), customThemeGetColor(i, f)));
+            write_line_fd(fd, TextFormat("custom_theme_%i_%s=0x%08X", i, customThemeFieldConfigKey(f), customThemeGetColor(i, f)));
         }
     }
 
@@ -267,11 +258,11 @@ fun saveSettingsFile() >> void {
 }
 
 fun loadSettingsFile() >> void {
-    i32 fd = openForRead(SETTINGS_FILE_PATH);
+    i32 fd = open_for_read(SETTINGS_FILE_PATH);
     if fd < 0 {return;}
 
     arr<u8, 262144> data = {0};
-    i64 bytes_read = readAll(fd, &data[0], 262143);
+    i64 bytes_read = read_all(fd, &data[0], 262143);
     close(fd);
     if bytes_read <= 0 {return;}
     data[bytes_read as i32] = 0;
@@ -305,88 +296,88 @@ fun loadSettingsFile() >> void {
                 ptr<u8> value = trimLeftSpaces(eq + 1);
                 trimRightSpacesInPlace(value);
 
-                if (strEq(key, "theme")) {
+                if (str_eq(key, "theme")) {
                     g_game.theme_index = atoi(value);
-                } else if (strEq(key, "shader_mode")) {
+                } else if (str_eq(key, "shader_mode")) {
                     g_post_shader_mode = atoi(value);
-                } else if (strEq(key, "custom_shader")) {
+                } else if (str_eq(key, "custom_shader")) {
                     copyCustomShaderName(&g_custom_shader_name[0], value);
-                } else if (strEq(key, "crt_curvature")) {
+                } else if (str_eq(key, "crt_curvature")) {
                     g_crt_curvature = parseFloatValue(value, g_crt_curvature);
-                } else if (strEq(key, "crt_brightness")) {
+                } else if (str_eq(key, "crt_brightness")) {
                     g_crt_brightness = parseFloatValue(value, g_crt_brightness);
-                } else if (strEq(key, "vhs_waves")) {
+                } else if (str_eq(key, "vhs_waves")) {
                     g_vhs_waves = parseFloatValue(value, g_vhs_waves);
-                } else if (strEq(key, "vhs_damage")) {
+                } else if (str_eq(key, "vhs_damage")) {
                     g_vhs_damage = parseFloatValue(value, g_vhs_damage);
-                } else if (strEq(key, "arr")) {
+                } else if (str_eq(key, "arr")) {
                     g_arr_frames = parseFloatValue(value, g_arr_frames);
-                } else if (strEq(key, "das")) {
+                } else if (str_eq(key, "das")) {
                     g_das_frames = parseFloatValue(value, g_das_frames);
-                } else if (strEq(key, "dcd")) {
+                } else if (str_eq(key, "dcd")) {
                     g_dcd_frames = parseFloatValue(value, g_dcd_frames);
-                } else if (strEq(key, "sdf")) {
+                } else if (str_eq(key, "sdf")) {
                     g_sdf_multiplier = parseFloatValue(value, g_sdf_multiplier);
-                } else if (strEq(key, "double_row_ui")) {
+                } else if (str_eq(key, "double_row_ui")) {
                     g_double_row_ui = parseBoolValue(value, g_double_row_ui);
-                } else if (strEq(key, "instant_restart")) {
+                } else if (str_eq(key, "instant_restart")) {
                     g_instant_restart = parseBoolValue(value, g_instant_restart);
-                } else if (strEq(key, "hard_drop_ring")) {
+                } else if (str_eq(key, "hard_drop_ring")) {
                     g_hard_drop_ring = parseBoolValue(value, g_hard_drop_ring);
-                } else if (strEq(key, "high_contrast_blocks")) {
+                } else if (str_eq(key, "high_contrast_blocks")) {
                     g_high_contrast_blocks = parseBoolValue(value, g_high_contrast_blocks);
-                } else if (strEq(key, "big_first_bag_preview")) {
+                } else if (str_eq(key, "big_first_bag_preview")) {
                     g_big_first_bag_preview = parseBoolValue(value, g_big_first_bag_preview);
-                } else if (strEq(key, "fullscreen_mode")) {
+                } else if (str_eq(key, "fullscreen_mode")) {
                     g_fullscreen_mode = parseBoolValue(value, g_fullscreen_mode);
-                } else if (strEq(key, "bg_stars_amount")) {
+                } else if (str_eq(key, "bg_stars_amount")) {
                     g_bg_stars_amount = atoi(value);
-                } else if (strEq(key, "bg_star_react_mode")) {
+                } else if (str_eq(key, "bg_star_react_mode")) {
                     g_bg_star_react_mode = atoi(value);
-                } else if (strEq(key, "star_peak_target_dps")) {
+                } else if (str_eq(key, "star_peak_target_dps")) {
                     g_star_peak_target_dps = parseFloatValue(value, g_star_peak_target_dps);
-                } else if (strEq(key, "star_intensity")) {
+                } else if (str_eq(key, "star_intensity")) {
                     g_star_intensity = parseFloatValue(value, g_star_intensity);
-                } else if (strEq(key, "bg_visual_mode")) {
+                } else if (str_eq(key, "bg_visual_mode")) {
                     g_bg_visual_mode = atoi(value);
-                } else if (strEq(key, "bg_bars_amount")) {
+                } else if (str_eq(key, "bg_bars_amount")) {
                     g_bg_bars_amount = atoi(value);
-                } else if (strEq(key, "bg_bars_intensity")) {
+                } else if (str_eq(key, "bg_bars_intensity")) {
                     g_bg_bars_intensity = parseFloatValue(value, g_bg_bars_intensity);
-                } else if (strEq(key, "bg_bars_height_limit")) {
+                } else if (str_eq(key, "bg_bars_height_limit")) {
                     g_bg_bars_height_limit = parseFloatValue(value, g_bg_bars_height_limit);
-                } else if (strEq(key, "bg_bars_opacity")) {
+                } else if (str_eq(key, "bg_bars_opacity")) {
                     g_bg_bars_opacity = parseFloatValue(value, g_bg_bars_opacity);
-                } else if (strEq(key, "bg_bars_glow")) {
+                } else if (str_eq(key, "bg_bars_glow")) {
                     g_bg_bars_glow = parseFloatValue(value, g_bg_bars_glow);
-                } else if (strEq(key, "bg_bars_layout")) {
+                } else if (str_eq(key, "bg_bars_layout")) {
                     g_bg_bars_layout = atoi(value);
-                } else if (strEq(key, "star_music_intensity")) {
+                } else if (str_eq(key, "star_music_intensity")) {
                     g_star_music_intensity = parseFloatValue(value, g_star_music_intensity);
-                } else if (strEq(key, "star_music_style")) {
+                } else if (str_eq(key, "star_music_style")) {
                     g_star_music_style = atoi(value);
-                } else if (strEq(key, "music_volume")) {
+                } else if (str_eq(key, "music_volume")) {
                     g_music_volume = parseFloatValue(value, g_music_volume);
-                } else if (strEq(key, "music_mode")) {
+                } else if (str_eq(key, "music_mode")) {
                     g_music_mode = atoi(value);
-                } else if (strEq(key, "music_shuffle")) {
+                } else if (str_eq(key, "music_shuffle")) {
                     g_music_shuffle = parseBoolValue(value, g_music_shuffle);
-                } else if (strEq(key, "music_disabled")) {
+                } else if (str_eq(key, "music_disabled")) {
                     i32 vi = 0;
                     for (vi < 4094 && value[vi] != 0) {
                         g_music_disabled_buf[vi] = value[vi];
                         vi += 1;
                     }
                     g_music_disabled_buf[vi] = 0;
-                } else if (strEq(key, "board_bounciness")) {
+                } else if (str_eq(key, "board_bounciness")) {
                     g_board_bounciness = atoi(value);
-                } else if (strEq(key, "settings_controls_open")) {
+                } else if (str_eq(key, "settings_controls_open")) {
                     g_settings_controls_expanded = parseBoolValue(value, g_settings_controls_expanded);
-                } else if (strEq(key, "settings_video_open")) {
+                } else if (str_eq(key, "settings_video_open")) {
                     g_settings_video_expanded = parseBoolValue(value, g_settings_video_expanded);
-                } else if (strEq(key, "settings_audio_open")) {
+                } else if (str_eq(key, "settings_audio_open")) {
                     g_settings_audio_expanded = parseBoolValue(value, g_settings_audio_expanded);
-                } else if (startsWith(key, "keybind_")) {
+                } else if (starts_with(key, "keybind_")) {
                     i32 kb_action = keybindActionFromConfigName(key + 8);
                     if kb_action >= 0 {
                         ptr<u8> comma = value;
@@ -396,13 +387,13 @@ fun loadSettingsFile() >> void {
                         if comma[0] == (',' as u8) {sec = atoi(comma + 1);}
                         g_keybind_secondary[kb_action] = sec;
                     }
-                } else if (strEq(key, "custom_theme_selected")) {
+                } else if (str_eq(key, "custom_theme_selected")) {
                     loaded_custom_selected = atoi(value);
                     has_loaded_custom_selected = true;
-                } else if (strEq(key, "custom_theme_count")) {
+                } else if (str_eq(key, "custom_theme_count")) {
                     i32 cc = atoi(value);
                     if cc > 0 {customThemeEnsureIndex(cc - 1);}
-                } else if (startsWith(key, "custom_theme_")) {
+                } else if (starts_with(key, "custom_theme_")) {
                     ptr<u8> p = key + 13;
                     i32 idx = 0;
                     bool has_digits = false;
@@ -415,9 +406,9 @@ fun loadSettingsFile() >> void {
                     if has_digits && p[0] == ('_' as u8) {
                         p = p + 1;
                         customThemeEnsureIndex(idx);
-                        if strEq(p, "name") {
+                        if str_eq(p, "name") {
                             customThemeSetName(idx, value);
-                        } else if strEq(p, "bg_angle") {
+                        } else if str_eq(p, "bg_angle") {
                             customThemeSetGradientAngle(idx, parseFloatValue(value, customThemeGradientAngle(idx)));
                         } else {
                             i32 field = customThemeFieldFromConfigKey(p);

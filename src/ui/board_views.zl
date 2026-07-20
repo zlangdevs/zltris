@@ -353,7 +353,7 @@ fun arenaTuningPtr(side: i32) >> ptr<i32> {
 
 fun arenaBoardCell(side: i32, x: i32, y: i32) >> i32 {
     ptr<i32> board = arenaBoardPtr(side);
-    return board[boardIndex(x, y)];
+    return board[pieces_boardIndex(x, y)];
 }
 
 fun arenaSideApm(side: i32) >> f32 {

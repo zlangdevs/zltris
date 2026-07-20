@@ -152,7 +152,7 @@ fun updateGravity(dt: f32) >> void {
 }
 
 fun updateLock(dt: f32) >> void {
-    if (pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y + 1)) {
+    if (board_pieceFits(g_piece_kind, g_piece_rotation, g_piece_x, g_piece_y + 1)) {
         g_rt.lock_timer = 0.0;
         return;
     }
@@ -265,14 +265,14 @@ fun botApplyPlannedLock() >> void {
         for i32 idx = 0; idx < 4; idx++ {
             i32 x = g_bot.target_x + minoX(g_bot.piece_kind, g_bot.target_rotation, idx);
             i32 y = g_bot.target_y + minoY(g_bot.piece_kind, g_bot.target_rotation, idx);
-            if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {temp[boardIndex(x, y)] = g_bot.piece_kind + 1;}
+            if y >= 0 && y < BOARD_H && x >= 0 && x < BOARD_W {temp[pieces_boardIndex(x, y)] = g_bot.piece_kind + 1;}
         }
 
         i32 fx_rows = 0;
         for i32 y = BOARD_H - 1; y >= 0; y-- {
             bool full = true;
             for i32 x = 0; x < BOARD_W; x++ {
-                if temp[boardIndex(x, y)] == 0 {full = false;}
+                if temp[pieces_boardIndex(x, y)] == 0 {full = false;}
             }
             if full {
                 spawnBotLineClearEffectsForRow(y);

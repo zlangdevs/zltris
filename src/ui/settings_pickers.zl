@@ -31,7 +31,7 @@ fun copyFixed(dst: ptr<u8>, src: ptr<u8>, cap: i32) >> void {
     dst[i] = 0;
 }
 
-fun endsWithFrag(name: ptr<u8>) >> bool {
+fun ends_with_frag(name: ptr<u8>) >> bool {
     i32 len = cstrLen(name);
     if len < 5 {return false;}
     if name[len - 5] != ('.' as u8) {return false;}
@@ -64,18 +64,18 @@ fun addPickerName(name: ptr<u8>) >> void {
 fun openShaderPicker(current_name: ptr<u8>) >> void {
     clearPickerList();
 
-    ptr<void> dir = openDir("assets/shaders");
+    ptr<void> dir = open_dir("assets/shaders");
     if dir != (0 as ptr<void>) {
         for true {
-            ptr<DirEntry> ent = readDirEntry(dir);
-            if ent == (0 as ptr<DirEntry>) {break;}
+            ptr<dir_entry> ent = read_dir_entry(dir);
+            if ent == (0 as ptr<dir_entry>) {break;}
             ptr<u8> name = &ent.d_name[0];
             if name[0] == ('.' as u8) {continue;}
             if cstrEq(name, "default") {continue;}
-            if !endsWithFrag(name) {continue;}
+            if !ends_with_frag(name) {continue;}
             addPickerName(name);
         }
-        closeDir(dir);
+        close_dir(dir);
     }
 
     for i32 i = 0; i < g_settings.picker_count; i++ {

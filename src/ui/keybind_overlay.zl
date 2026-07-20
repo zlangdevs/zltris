@@ -134,7 +134,7 @@ fun drawKeybindButtonRow(font: Font, theme: Theme, row: i32, label: ptr<u8>) >> 
 }
 
 fun drawKeybindOverlay(font: Font, theme: Theme) >> void {
-    fillRect(visibleBaseLeft(), 0, visibleBaseRight() - visibleBaseLeft(), 920, alphaColor(0xFF000000, 0.55));
+    fillRect(render_visibleBaseLeft(), 0, render_visibleBaseRight() - render_visibleBaseLeft(), 920, alphaColor(0xFF000000, 0.55));
     drawRetroPanel(86, 92, 476, 752, alphaColor(theme.bg_outer, 0.97), alphaColor(theme.panel_stroke, 0.92), theme.text_main);
     drawTextColor(font, "REBIND KEYS", 118, 124, 22, theme.text_main);
     drawTextColor(font, "Primary / Secondary", 118, 160, 10, theme.text_muted);
